@@ -1,19 +1,20 @@
-// Package pluginmeta persists a database's durable identity inside it. An id
-// is assigned once and stored permanently, both in the DB and in server.yaml.
-// This is the in-DB half: every Gridwell DB is self-describing, so the server
-// verifies on each start that the DB it opens is the one the config names, and
-// a lost or rewritten server.yaml can be reconciled against the DB.
+// Package pluginmeta records a Gridwell database's durable identity inside the
+// database itself. An id is assigned once and stored permanently, in the DB and
+// in server.yaml. The node's gridwell.db is the caller, through
+// local.OpenVerified, so the server checks on each start that the DB it opens is
+// the one server.yaml names, and a lost or rewritten server.yaml can be
+// reconciled against the DB.
 //
-// Three keys live in the storage-only `_gridwell_meta` table, which the
-// descriptor-to-proto drift test does not see, since that covers only grids
-// and tiles:
+// Three keys live in the storage-only _gridwell_meta table, which the
+// descriptor-to-proto drift test does not see, since that covers only grids and
+// tiles:
 //   - gridwell : a marker identifying the file as a Gridwell DB
-//   - id       : the plugin's durable routing id (== config id)
-//   - kind     : the plugin kind (== config kind); selects the schema
+//   - id       : the durable routing id, the same as the config id
+//   - kind     : which schema the DB holds, the same as the config kind
 //
-// id and kind are immutable: once written they are strictly verified, both
-// directions, on every subsequent open. The display name is NOT stored here —
-// it is config-only and freely editable.
+// id and kind are immutable. Once written they are strictly verified, in both
+// directions, on every subsequent open. The display name is not stored here. It
+// is config-only and freely editable.
 package pluginmeta
 
 import (
@@ -22,26 +23,26 @@ import (
 	"fmt"
 	"os"
 
-	// The sqlite driver: this package calls sql.Open("sqlite", ...) and so
-	// owns the driver registration. It must not rely on another linked
-	// package happening to import it, or a binary that links pluginmeta
-	// without the store fails at run time with `unknown driver`.
+	// This package calls sql.Open("sqlite", ...), so it owns the driver
+	// registration. Relying on another linked package to import the driver
+	// would fail at run time with "unknown driver" in a binary that links
+	// pluginmeta without the store.
 	_ "modernc.org/sqlite"
 )
 
 // Sentinel errors. Callers should use errors.Is to test for them.
 var (
 	// ErrIDMismatch is returned when a DB already carries a different id than
-	// the one configured: the durable identity must never silently change.
+	// the one configured. The durable identity must never silently change.
 	ErrIDMismatch = errors.New("pluginmeta: configured id does not match the one stored in the plugin DB")
 	// ErrKindMismatch is returned when a DB already carries a different kind.
 	// The kind selects the schema, so opening a DB as the wrong kind is
 	// refused.
 	ErrKindMismatch = errors.New("pluginmeta: configured kind does not match the one stored in the plugin DB")
 	// ErrNotInitialized is returned by Verify when the DB is missing or
-	// carries no stored identity. Verify never creates identity; only Create
-	// does. An entry whose DB was never created fails loudly instead of
-	// silently materializing a fresh, empty store.
+	// carries no stored identity. Only Create makes an identity, so a DB that
+	// was never created fails loudly instead of silently materializing a
+	// fresh, empty store.
 	ErrNotInitialized = errors.New("pluginmeta: plugin DB is missing or uninitialized")
 )
 
@@ -84,10 +85,10 @@ func Create(dbPath, id, kind string) error {
 	return writeIdentity(db, id, kind)
 }
 
-// Verify strictly checks an existing DB's identity against (id, kind). It
-// never creates a DB or a first-run identity: a missing file, or a DB with no
-// stored id, is ErrNotInitialized. That is what makes a changed config id fail
-// loudly instead of silently opening a fresh store.
+// Verify strictly checks an existing DB's identity against (id, kind). It never
+// creates a DB or a first-run identity: a missing file, or a DB with no stored
+// id, is ErrNotInitialized. That is what makes a changed config id fail loudly
+// instead of silently opening a fresh store.
 //
 //   - id == "" and kind == "" → a read-only probe: return whatever is stored
 //   - file missing, or no id  → ErrNotInitialized
@@ -116,15 +117,16 @@ func Verify(dbPath, id, kind string) (Meta, error) {
 		return Meta{}, fmt.Errorf("%w (%s)", ErrNotInitialized, dbPath)
 	}
 
-	// An older DB may carry an id, under the uuid key, but no kind. An empty
-	// stored kind means not recorded, so it is adopted, not a mismatch.
+	// An older DB may carry an id under the uuid key and no kind at all. An
+	// empty stored kind was never recorded, so it is adopted rather than
+	// refused.
 	if stored.ID != id {
 		return Meta{}, fmt.Errorf("%w (stored %q, configured %q)", ErrIDMismatch, stored.ID, id)
 	}
 	if stored.Kind != "" && stored.Kind != kind {
 		return Meta{}, fmt.Errorf("%w (stored %q, configured %q)", ErrKindMismatch, stored.Kind, kind)
 	}
-	// Upgrade an older DB in place: the id may have been readable only through
+	// Upgrade an older DB in place. The id may have been readable only through
 	// the uuid key, and the kind may not have been recorded at all.
 	if err := writeIdentity(db, id, kind); err != nil {
 		return Meta{}, err
@@ -138,9 +140,9 @@ func open(dbPath string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pluginmeta open %s: %w", dbPath, err)
 	}
-	// One connection: the single-writer discipline every SQLite handle in this
-	// repo pins, so a pooled second connection cannot race the file lock into
-	// an instant SQLITE_BUSY.
+	// One connection is the single-writer discipline every SQLite handle in
+	// this repo pins, so a pooled second connection cannot race the file lock
+	// into an instant SQLITE_BUSY.
 	db.SetMaxOpenConns(1)
 	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS _gridwell_meta (k TEXT PRIMARY KEY, v TEXT NOT NULL)`); err != nil {
 		db.Close()
