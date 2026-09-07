@@ -21,20 +21,21 @@ test('delete parks in the dated trash; delete there is forever', async ({ gw, se
   await gw.deleteTileCell(cx, cy);
   expect(tileAt(await gw.getGrid(f.gridID), 'text', cx, cy), 'gone from the source grid').toBeUndefined();
 
-  // The trashcan swatch is a declared root entry on the + menu's top row, and
+  // The trashcan swatch is a declared menu entry on the + menu's top row, and
   // clicking it descends like any other swatch.
   await gw.openPalette();
   await gw.expandPlugins();
   const pal = await gw.palette();
   const trash = pal.items.find((i) => i.isPlugin && i.entry === 'trash');
-  expect(trash, 'the + menu offers the declared trash root').toBeTruthy();
-  await gw.clickPluginSwatch('trash');
+  expect(trash, 'the + menu offers the declared trashcan').toBeTruthy();
+  await gw.clickPluginSwatch('home · trash');
   const troot = await gw.focused();
 
-  // The bar knows the door you came through: the title is the entry's declared
-  // label, which is config-owned and not renamable, and the level's crumb wears
-  // the entry's declared glyph rather than a generic grid face.
-  await expect.poll(async () => (await gw.barName()).label).toBe('trash');
+  // The bar knows the door you came through: the title is the entry's name —
+  // the instance and the collection, the same name its swatch wears — which is
+  // config-owned and not renamable, and the level's crumb wears the entry's
+  // declared glyph rather than a generic grid face.
+  await expect.poll(async () => (await gw.barName()).label).toBe('home · trash');
   expect((await gw.barName()).editable, 'a declared entry is not renamable').toBe(false);
   const bar = await gw.bar();
   const rootCrumb = bar.segments.filter((s) => s.kind === 'chain' && s.anchor).pop();

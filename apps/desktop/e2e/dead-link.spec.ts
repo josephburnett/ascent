@@ -106,13 +106,16 @@ test.describe('a declared namespace is never dead', () => {
   test('a link into a declared plugin stays alive', async ({ gw, window }) => {
     const pls = await gw.plugins();
     const files = pls.find((p) => p.label === 'files')!;
-    expect(files.rootGridID, 'the fs plugin is declared and rooted').toBeTruthy();
+    // A plugin names no grid of its own; the link goes to the collection it
+    // declares, which is what its swatch drops.
+    const collection = files.menuEntries[0]?.gridID;
+    expect(collection, 'the fs plugin is declared and serves a collection').toBeTruthy();
 
     await gw.enterPlugin('home');
     const f = await gw.focused();
     const cx = Math.round(f.cx) + 1;
     const cy = Math.round(f.cy) + 1;
-    await createExitWell(gw.origin, f.gridID, files.rootGridID, 'files', cx, cy);
+    await createExitWell(gw.origin, f.gridID, collection!, 'files', cx, cy);
 
     // Give the verdict every chance to fire wrongly before asserting it did
     // not: the grid has to land, and the tile has to be drawn.

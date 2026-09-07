@@ -220,9 +220,9 @@ test('the + menu inside a remote pane is the remote node, and its creations land
       },
       { timeout: 15_000 },
     )
-    // The far node's own menu, root entries included: its home brings its own
-    // trashcan, so a delete over there files over there.
-    .toBe('home,trash');
+    // The far node's own menu, declared entries included: its home brings its
+    // own trashcan, so a delete over there files over there.
+    .toBe('home,home · trash');
 
   // ── A primitive from the remote menu creates on the remote node ──
   const inside = await gw.focused();

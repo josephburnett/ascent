@@ -72,15 +72,31 @@ export interface PluginDescriptor {
   kind: string;
   label: string;
   uuid: string;
+  // The row's own grid, where it has one. A plugin names none — it declares
+  // collections instead — so this is empty for a plugin and menuEntries is
+  // where its grids are.
   rootGridID: string;
+  menuEntries: PluginCollection[];
   scratchGridID: string;
   infoError: string;
   status: string;
-  // The plugin's persisted root view from the handshake; zoom 0 means never
-  // set. This is the server-side oracle for a root-grid reframe.
+  // The row's persisted view of its own grid from the handshake; zoom 0 means
+  // never set. This is the server-side oracle for a root-grid reframe.
   rootViewCx: number;
   rootViewCy: number;
   rootViewZoom: number;
+}
+
+// PluginCollection is one declared menu entry: a grid the row is a doorway
+// onto. label is the swatch's name, instance and collection joined
+// (door.EntryName), and viewCx/Cy/Zoom is that grid's persisted view.
+export interface PluginCollection {
+  id: string;
+  label: string;
+  gridID: string;
+  viewCx: number;
+  viewCy: number;
+  viewZoom: number;
 }
 
 // PaletteToggle is the plugin section's disclosure strip: whether the popover

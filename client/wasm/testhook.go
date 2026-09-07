@@ -589,18 +589,35 @@ func (a *App) paneTileIDs(p *pane.Pane) []any {
 	return ids
 }
 
-// thPlugins returns the configured plugin list (identity, root/scratch grids,
-// pluginhealth classification) with no screen positions — available wherever
-// the pane sits. Empty until Handshake lands; the driver polls.
+// thPlugins returns the configured menu-row list (identity, the row's own
+// grid where it has one, its declared collections, pluginhealth
+// classification) with no screen positions — available wherever the pane
+// sits. Empty until Handshake lands; the driver polls.
+//
+// A plugin names no grid of its own, so rootGridID is empty for one and its
+// collections are where a spec finds a grid to link to or descend into.
 func (a *App) thPlugins(js.Value, []js.Value) any {
 	out := make([]any, 0, len(a.plugins))
 	for i, pl := range a.plugins {
+		entries := make([]any, 0, len(pl.MenuEntries))
+		for j := range pl.MenuEntries {
+			e := &pl.MenuEntries[j]
+			entries = append(entries, map[string]any{
+				"id":       e.ID,
+				"label":    door.EntryName(pl.Label, e.Label),
+				"gridID":   e.GridID,
+				"viewCx":   e.ViewCx,
+				"viewCy":   e.ViewCy,
+				"viewZoom": e.ViewZoom,
+			})
+		}
 		out = append(out, map[string]any{
 			"index":         i,
 			"kind":          pl.Kind,
 			"label":         pl.Label,
 			"uuid":          pl.UUID,
 			"rootGridID":    pl.RootGridID,
+			"menuEntries":   entries,
 			"scratchGridID": pl.ScratchGridID,
 			"infoError":     pl.InfoError,
 			"status":        pluginStatusName(pl),
