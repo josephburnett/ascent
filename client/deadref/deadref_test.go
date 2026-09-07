@@ -13,9 +13,8 @@ const (
 	gone = "z9gonee"
 )
 
-// roster is the node as the handshake declares it: home, one plugin, one
-// connection. It is exactly rpc.MenuRows' shape — a connection's UUID is
-// "<node>/<name>".
+// roster is rpc.MenuRows' shape: home, one plugin, one connection whose UUID
+// is "<node>/<name>".
 func roster() []*gridwellv1.PluginInfo {
 	return []*gridwellv1.PluginInfo{
 		{Uuid: node, Label: "home"},
@@ -24,9 +23,6 @@ func roster() []*gridwellv1.PluginInfo {
 	}
 }
 
-// The boundary itself: a namespace the node declares is alive whatever state
-// it is in, and one it does not declare is dead. Every case here is an id a
-// real link tile stores.
 func TestDeadIsDeclaredNessAndNothingElse(t *testing.T) {
 	cases := []struct {
 		name string
@@ -49,11 +45,7 @@ func TestDeadIsDeclaredNessAndNothingElse(t *testing.T) {
 	}
 }
 
-// A link through a DECLARED connection is never judged here, however deep it
-// chains: those segments name the far node's own plugins, which only the far
-// node declares. Judging them against this node's roster would grey every
-// mounted tile the moment a remote used a plugin this node happens not to
-// have.
+// Deeper segments name the far node's plugins, which this roster never lists.
 func TestAFarNodesNamespacesAreNotThisNodesToJudge(t *testing.T) {
 	for _, id := range []string{
 		node + "/laptop/" + gone + "/1",
@@ -65,9 +57,8 @@ func TestAFarNodesNamespacesAreNotThisNodesToJudge(t *testing.T) {
 	}
 }
 
-// The verdict must never fire on absence of knowledge. Before the handshake
-// lands the roster is empty and every link would read dead, which would grey
-// the whole grid for a blink on every boot.
+// Before the handshake lands the roster is empty and every link would read
+// dead.
 func TestAnEmptyRosterJudgesNothing(t *testing.T) {
 	if Dead(gone+"/1", nil, node) {
 		t.Error("an empty roster must judge nothing: the handshake has not landed yet")
@@ -77,9 +68,6 @@ func TestAnEmptyRosterJudgesNothing(t *testing.T) {
 	}
 }
 
-// TargetID reads Reference, the node's own derived "is a link" bit, and
-// covers both link shapes. A tile that is not a link has no target, so no
-// verdict.
 func TestTargetIDCoversBothLinkShapesAndOnlyLinks(t *testing.T) {
 	cases := []struct {
 		name string
@@ -108,8 +96,6 @@ func TestTargetIDCoversBothLinkShapesAndOnlyLinks(t *testing.T) {
 	}
 }
 
-// DeadTile is the two joined: an owned tile is never dead however missing
-// its ids look, and a link into a missing namespace is.
 func TestDeadTile(t *testing.T) {
 	dead := &gridwellv1.Tile{Kind: rpc.KindWell, Reference: true, ChildGridId: gone + "/1"}
 	if !DeadTile(dead, roster(), node) {
