@@ -14,27 +14,15 @@ import (
 	"github.com/josephburnett/gridwell/client/wsbar"
 )
 
-// The bottom bar: one bar at the bottom of the window, always there, riding
-// the focused pane. It carries the one nav chain — the complete path from the
-// root: outer chains, pane-tile boundary crumbs, and the focused pane's own
-// chain, as square previews truncated from the left on overflow — plus the
-// centered title and the circle slot. Geometry comes from wsbar, so the click
-// hit-test reads the identical layout and render and input cannot disagree;
-// the band it sits in is reserved layout (wsbar.Band, through rootLayoutRect),
-// so no pane and no surface sized from a pane can paint over it. What the bar
-// shows is the focused pane's state, derived per frame from the level stack
-// and the tree's own facts (pane.Levels.NavChain); nothing here stores a
-// second copy of where anything is. When focus moves the bar switches to that
-// pane and slides under it; a click in an unfocused pane moves focus and
-// nothing else.
+// The one bar at the bottom of the window, riding the focused pane, carrying
+// the complete nav chain, the centered title and the circle slot. Geometry
+// comes from wsbar, so the hit-test reads the identical layout, and the band
+// is reserved layout so no pane can paint over it. What the bar shows is
+// derived per frame, never stored.
 
-// bottomBarRect returns the bar's drawn rectangle: the RowH row at the band's
-// top edge, spanning the focused pane. wsbar.Rect owns that geometry — the
-// band's height is the same whatever has focus, so panes never resize, while
-// the chrome rides the pane you are working in — and this only resolves the
-// impure facts it needs: the window, the notice strip, and the focused pane's
-// span. ok=false when there is no pane to sit under or no room for the band;
-// then the row is plain background and nothing is drawn.
+// bottomBarRect is the bar's drawn rectangle, spanning the focused pane.
+// wsbar.Rect owns the geometry. ok=false when there is no pane to sit under
+// or no room for the band, and the row is then plain background.
 func (a *App) bottomBarRect() (x, top, w float64, ok bool) {
 	p := a.tree.FocusedPane()
 	if p == nil {
@@ -44,10 +32,8 @@ func (a *App) bottomBarRect() (x, top, w float64, ok bool) {
 	return wsbar.Rect(a.width, a.height, errsurface.StripHeight(a.errs.Len()), r.X, r.W)
 }
 
-// barTheme returns the band and button shades for the focused pane: a subtle
-// dark of the pane's color family for the band, and the family's saturated hue
-// for the buttons. It uses the same classifier as the pane border (pane.FamilyOf
-// through borderInputFor): one fact, two shades.
+// barTheme returns the band and button shades for the focused pane, from the
+// same classifier as the pane border: one fact, two shades.
 func (a *App) barTheme() (band, button string) {
 	p := a.tree.FocusedPane()
 	if p == nil {
@@ -73,7 +59,7 @@ func (a *App) barTheme() (band, button string) {
 }
 
 // navCrumb is pane.NavCrumb; navChain is the stack's NavChain for the
-// focused pane (the decision is pure and unit-tested there).
+// focused pane.
 type navCrumb = pane.NavCrumb
 
 func (a *App) navChain() []navCrumb {
@@ -96,10 +82,9 @@ func (a *App) bottomBarSegments(chain []navCrumb) []wsbar.Segment {
 	return wsbar.Layout(widths, w)
 }
 
-// drawBottomBar paints the one band: the focused pane's nav chain, then its
-// title and slot. The band's top edge carries no rule or accent: the bar meets
-// the pane area above it directly, so the pane's own border is the only line
-// there and the bar reads as the pane's own footer rather than a second frame.
+// drawBottomBar paints the band. The top edge carries no rule, so the pane's
+// own border is the only line there and the bar reads as that pane's
+// footer.
 func (a *App) drawBottomBar() {
 	bx, top, bw, ok := a.bottomBarRect()
 	if !ok {
@@ -128,12 +113,9 @@ func (a *App) drawBottomBar() {
 	a.drawBarSlot()
 }
 
-// drawStaleChip marks a focused pane whose grid is a cache-served memory, from
-// the wire-level stale bit: a small amber chip at the bar's right, beside the
-// slot. Bar chrome only — staleness never moves or restyles tiles. The room
-// renders exactly as remembered, and this is the one quiet sign that it is a
-// remembering — a source gone dark, or a serve-first answer whose refresh is
-// still in flight, which clears the chip through the GridChanged it emits.
+// drawStaleChip marks a focused pane whose grid is a cache-served memory,
+// from the wire-level stale bit. Bar chrome only: staleness never moves or
+// restyles tiles, so the room renders exactly as remembered.
 func (a *App) drawStaleChip(bx, top, bw float64) {
 	p := a.tree.FocusedPane()
 	if p == nil {
@@ -157,10 +139,8 @@ func (a *App) drawStaleChip(bx, top, bw float64) {
 	c.Set("textAlign", "start")
 }
 
-// drawBoundaryCrumb paints a pane-tile boundary crumb as the light-blue named
-// bar. This crumb is the thing you are working on, so the wide face stands
-// out from the preview squares and is the obvious rename target. The
-// innermost level reads brightest.
+// drawBoundaryCrumb paints a pane-tile boundary crumb as a wide named bar,
+// standing out from the preview squares as the obvious rename target.
 func (a *App) drawBoundaryCrumb(level int, s wsbar.Segment, top float64) {
 	c := a.cctx
 	if level == a.ws.Depth() {
@@ -182,10 +162,8 @@ func (a *App) drawBoundaryCrumb(level int, s wsbar.Segment, top float64) {
 	})
 }
 
-// barTitleGeom computes the centered current-pane title: the focused pane's
-// name, from bubbleLabel and bubbleDecorate, centered by wsbar.TitleSpan in
-// the free space between the crumbs and the circle slot. Render, hit-test, and
-// the rename input all read this one rect.
+// barTitleGeom is the centered current-pane title. Render, hit-test and the
+// rename input all read this one rect.
 func (a *App) barTitleGeom() (x, w float64, label string, editable, muted, ok bool) {
 	p := a.tree.FocusedPane()
 	if p == nil {
@@ -215,7 +193,7 @@ func (a *App) barTitleGeom() (x, w float64, label string, editable, muted, ok bo
 	return
 }
 
-// drawBarTitle paints the focused pane's name centered in the band. Hidden
+// drawBarTitle paints the focused pane's name centered in the band, hidden
 // while the rename input replaces it in place.
 func (a *App) drawBarTitle(top float64) {
 	if a.overlays.renameEditing {
@@ -240,13 +218,10 @@ func (a *App) drawBarTitle(top float64) {
 	c.Set("textAlign", "start")
 }
 
-// barSlotMode resolves the focused pane's slot mode: the impure half of the
-// slot, gathering the world facts barslot.Decide reads. The one lazy fact is
-// the shell refresh button's visibility, resolved only on a frozen shell
-// descent — shellRefreshButtonVisible kicks a ShellSessionAlive probe as a
-// side effect, and that probe belongs to the state that shows the button.
-// Since Decide reads the field on that arm alone, the guard cannot change the
-// verdict.
+// barSlotMode gathers the world facts barslot.Decide reads. The shell refresh
+// button's visibility is resolved only on a frozen shell descent, because
+// shellRefreshButtonVisible kicks a probe; Decide reads that field on the
+// same arm alone, so the guard cannot change the verdict.
 func (a *App) barSlotMode(p *pane.Pane) barslot.Mode {
 	in := barslot.Input{
 		Descent:      p.ContentID() != "",
@@ -264,10 +239,9 @@ func (a *App) barSlotMode(p *pane.Pane) barslot.Mode {
 	return barslot.Decide(in)
 }
 
-// descendedGridTile resolves the row the focused pane is descended into from
-// the pane's own grid, with no scratch-grid fallback: the slot's go-live and
-// refresh actions name a tile the grid holds, so an ephemeral visit — which
-// has no row there — has nothing to open and the slot does nothing.
+// descendedGridTile resolves the descended row from the pane's own grid, with
+// no scratch-grid fallback, so an ephemeral visit has nothing for the slot's
+// go-live and refresh actions to open.
 func (a *App) descendedGridTile(p *pane.Pane) (*gridwellv1.Tile, bool) {
 	g, ok := a.c.Grid(a.gridIDForPane(p))
 	if !ok {
@@ -277,10 +251,8 @@ func (a *App) descendedGridTile(p *pane.Pane) (*gridwellv1.Tile, bool) {
 	return t, ok
 }
 
-// drawBarSlot paints the bar's right-end circle for the focused pane's mode.
-// barslot.Decide says which mode; this only maps it to pixels, so the glyph
-// drawn is the same verdict barSlotClick acts on. A grid's + button carries
-// the trashcan during a tile drag, which is drawPlusButton's own business.
+// drawBarSlot paints the bar's right-end circle. barslot.Decide says which
+// mode, so the glyph drawn is the same verdict barSlotClick acts on.
 func (a *App) drawBarSlot() {
 	p := a.tree.FocusedPane()
 	if p == nil {
@@ -298,11 +270,9 @@ func (a *App) drawBarSlot() {
 	}
 }
 
-// barSlotClick dispatches a click on the bar's circle slot, always acting on
-// the focused pane; the slot never transfers focus. Left-click only: the
-// ascent gesture is clicking the previous crumb, and middle-click on a pane
-// remains the in-pane shortcut. The mode is barslot.Decide's, the same
-// verdict drawBarSlot drew, so the button always does what it shows.
+// barSlotClick dispatches a click on the circle slot, always on the focused
+// pane; the slot never transfers focus. Left-click only. The mode is the same
+// verdict drawBarSlot drew, so the button does what it shows.
 func (a *App) barSlotClick(button int) {
 	p := a.tree.FocusedPane()
 	if p == nil {
@@ -320,13 +290,13 @@ func (a *App) barSlotClick(button int) {
 		}
 	case barslot.ModeURLOpenTab:
 		// A browser host cannot place a live view, so the next-best descent
-		// is the browser's own: open the address in a new tab. The tile stays
-		// frozen and untouched — this gesture persists nothing. Synchronous
-		// within the click, so the popup rides the user-gesture allowance.
+		// is a new tab. The tile stays frozen and this persists nothing.
+		// Synchronous within the click, so the popup rides the user-gesture
+		// allowance.
 		a.openURLInNewTab(p)
 	case barslot.ModeShellRefresh:
-		// Refresh either creates a fresh tmux session, when there is no
-		// snapshot yet, or attaches to the existing one.
+		// Creates a fresh tmux session when there is no snapshot yet, else
+		// attaches to the existing one.
 		if t, ok := a.descendedGridTile(p); ok {
 			a.openShellStream(p, t.Id)
 		}
@@ -335,15 +305,11 @@ func (a *App) barSlotClick(button int) {
 		a.draw()
 	}
 	// ModeNothing: a markdown descent's slot is the DOM toggle button, which
-	// handles its own clicks, and a canvas click reaching here just missed it;
-	// a live shell and a shell whose session is gone have no slot gesture.
+	// handles its own clicks; a live shell has no slot gesture.
 }
 
-// openURLInNewTab opens the focused pane's web-content address in a new
-// browser tab: the frozen-host answer to "descend live". The address is the
-// tile's own — a url tile's frozen URLString, or a serves_page tile's derived
-// /content/ door URL, with a link resolving to its target's. A tile with no
-// address yet says so instead of a silent dead tap.
+// openURLInNewTab is the frozen host's answer to "descend live". A tile with
+// no address yet says so, instead of a silent dead tap.
 func (a *App) openURLInNewTab(p *pane.Pane) {
 	t, ok := a.descendedTile(p)
 	if !ok {
@@ -362,11 +328,9 @@ func (a *App) openURLInNewTab(p *pane.Pane) {
 	js.Global().Get("window").Call("open", url, "_blank", "noopener")
 }
 
-// drawChainCrumb paints one descent-chain square: the tile's own preview,
-// through the same drawer the parent grid uses, so each crumb carries its
-// grid appearance, kind border included — blue wells, text green, url purple.
-// A 1px margin is the only chrome: the rightmost crumb is always the current
-// one, so it needs no highlight.
+// drawChainCrumb paints one descent-chain square through the same drawer the
+// parent grid uses, so each crumb carries its grid appearance and kind
+// border. The rightmost crumb is the current one and needs no highlight.
 func (a *App) drawChainCrumb(cr pane.Crumb, s wsbar.Segment, top float64) {
 	c := a.cctx
 	square := min(s.W, wsbar.RowH)
@@ -379,8 +343,8 @@ func (a *App) drawChainCrumb(cr pane.Crumb, s wsbar.Segment, top float64) {
 
 	withClip(c, x, y, side, side, func() {
 		if cr.Anchor != "" {
-			// A root crumb: the namespace's identity glyph — the same drawing as
-			// its menu swatch — bordered in the grid blue, like the grid it is.
+			// A root crumb: the namespace's identity glyph, the same drawing
+			// as its menu swatch.
 			c.Set("fillStyle", colorBg)
 			c.Call("fillRect", x, y, side, side)
 			a.drawPluginGlyph(a.pluginGlyph(cr.Anchor), x, y, side, side)
@@ -394,9 +358,8 @@ func (a *App) drawChainCrumb(cr pane.Crumb, s wsbar.Segment, top float64) {
 			}
 			a.drawNodeWithPreview(t, x, y, side, side, side/cells, false, false, isLinkTile(t), "")
 		} else {
-			// The row is not cached — a stale level, a fetch in flight — so
-			// draw a muted placeholder square; the fetch kicked by
-			// chainCrumbTile fills it in.
+			// The row is not cached, so draw a placeholder; the fetch kicked
+			// by chainCrumbTile fills it in.
 			c.Set("strokeStyle", "#1d4a4a")
 			c.Set("lineWidth", 1.0)
 			c.Call("strokeRect", x+1, y+1, side-2, side-2)
@@ -418,26 +381,17 @@ func (a *App) chainCrumbTile(cr pane.Crumb) *gridwellv1.Tile {
 	}
 	t, ok := g.Tiles[cr.TileID]
 	if !ok {
-		// An ephemeral visit lives in the scratch grid, not the pane's, so
-		// resolve it by id and the crumb shows its live face.
+		// An ephemeral visit lives in the scratch grid, not the pane's.
 		return a.findTileByID(cr.TileID)
 	}
 	return t
 }
 
-// bottomBarClick consumes a click in the bar's band, always acting on the
-// focused pane — the pane the bar is riding. Every crumb of the one nav
-// chain answers a left-click by going there: a pane-tile crumb lands you
-// inside that level, closing the deeper ones, and the current boundary is
-// where you already are, so it is a no-op; a chain crumb pops to its tree and
-// ascends within it. One verb, whether the target is above, beside, or
-// outside the current level. A right-click renames the title, or a pane-tile
-// crumb's level, and on the circle slot of a live url descent it pops the
-// view's context menu (Freeze Page): a page can hijack contextmenu inside the
-// view, but the circle sits on the canvas, so this door always opens. The band
-// is below every pane, so a click anywhere in its row is never meant for one:
-// the quiet background either side of the bar swallows the click too, and
-// nothing falls through.
+// bottomBarClick consumes a click in the bar's band, always on the focused
+// pane, and the background either side swallows clicks too. Every crumb
+// answers a left-click by going there, one verb whether the target is above,
+// beside or outside the current level. A right-click renames, and on the slot
+// of a live url descent it pops the view's context menu.
 func (a *App) bottomBarClick(sx, sy float64, button int) bool {
 	bx, top, bw, ok := a.bottomBarRect()
 	if !ok {
@@ -447,7 +401,7 @@ func (a *App) bottomBarClick(sx, sy float64, button int) bool {
 	case wsbar.ZoneOutside:
 		return false
 	case wsbar.ZoneBand:
-		return true // beside the bar: plain background, no pane under it
+		return true // beside the bar: no pane under it
 	}
 	chain := a.navChain()
 	if button == 2 {
@@ -470,9 +424,8 @@ func (a *App) bottomBarClick(sx, sy float64, button int) bool {
 		a.barSlotClick(button)
 		return true
 	}
-	// The centered title is the pane's universal handle: a left-click
-	// toggles the tmux-style pane zoom. The right-click rename was handled
-	// above.
+	// The centered title is the pane's handle: left-click toggles the
+	// tmux-style pane zoom.
 	if tx, tw, _, _, _, ok := a.barTitleGeom(); ok && sx >= tx && sx < tx+tw {
 		if button == 0 {
 			a.togglePaneZoom()
@@ -481,23 +434,21 @@ func (a *App) bottomBarClick(sx, sy float64, button int) bool {
 	}
 	seg, segOK := wsbar.At(a.bottomBarSegments(chain), sx-bx)
 	if !segOK {
-		return true // empty band space swallows clicks (no gesture, #222)
+		return true // empty band space swallows clicks
 	}
 	if button != 0 {
 		return true
 	}
 	nc := chain[seg.Index]
 	if nc.PaneTile || nc.CloseOnly {
-		// Go there: be inside level wsLevel, or for the root crumb, back in
-		// the session (closeOnly: the levels close, and the session's own
-		// state is never touched from the bar).
+		// Be inside level wsLevel, or for the root crumb back in the
+		// session, whose own state the bar never touches.
 		a.runGesture(nav.Gesture{Kind: nav.GestureLeaveLevels, Count: a.ws.PopCountTo(nc.WsLevel)})
 		return true
 	}
-	// The current crumb of an ephemeral url visit is a drag handle: dropped
-	// onto another pane's grid it promotes the visit to a persistent tile
-	// there. Armed here on the press; onMouseUp decides between a click,
-	// which does nothing because this is where you are, and a drop.
+	// The current crumb of an ephemeral url visit is a drag handle that
+	// promotes the visit onto the grid it is dropped on. Armed on the press;
+	// the release decides between a click, which does nothing, and a drop.
 	if seg.Index == len(chain)-1 {
 		if p := a.tree.FocusedPane(); p != nil {
 			if t, ok := a.descendedTile(p); ok && t.Kind == rpc.KindURL && a.certainlyEphemeral(p, t) {
@@ -506,8 +457,7 @@ func (a *App) bottomBarClick(sx, sy float64, button int) bool {
 			}
 		}
 	}
-	// A current-chain crumb: ascend the focused pane to that level. How many
-	// ascents that is is the crumb's own arithmetic (pane.AscentsTo); the
+	// How many ascents a chain crumb is is pane.AscentsTo's arithmetic. The
 	// last hop animates and the ones above it are instant.
 	if p := a.tree.FocusedPane(); p != nil {
 		a.ascend(p, p.AscentsTo(nc.Crumb), true)
@@ -515,9 +465,8 @@ func (a *App) bottomBarClick(sx, sy float64, button int) bool {
 	return true
 }
 
-// startPromoteDrag arms the promote drag from the bar's current crumb:
-// a template-shaped drag (the drop creates a tile) whose item carries the
-// origin pane, ghosting the visit's own url tile at the crumb's square.
+// startPromoteDrag arms the promote drag from the bar's current crumb, as a
+// template-shaped drag whose item carries the origin pane.
 func (a *App) startPromoteDrag(p *pane.Pane, t *gridwellv1.Tile, seg wsbar.Segment, bx, top, sx, sy float64) {
 	square := min(seg.W, wsbar.RowH)
 	ghost := t
@@ -542,9 +491,7 @@ func (a *App) startPromoteDrag(p *pane.Pane, t *gridwellv1.Tile, seg wsbar.Segme
 }
 
 // openWorkspaceRenameInput opens the shared inline rename input over the
-// pane-tile crumb of level `level`: the same input the pane title uses,
-// committing through the same user-owned versioned rename. The input grows
-// rightward from the crumb to a typeable width, clamped off the slot.
+// pane-tile crumb of `level`, growing rightward to a typeable width.
 func (a *App) openWorkspaceRenameInput(level int) {
 	f := a.ws.At(level)
 	if f == nil {
@@ -563,7 +510,7 @@ func (a *App) openWorkspaceRenameInput(level int) {
 	}
 	seg, ok := wsbar.SegmentAt(a.bottomBarSegments(chain), idx)
 	if !ok {
-		return // truncated off the left edge; rename via the title instead
+		return // truncated off the left edge: rename via the title
 	}
 	bx, top, _, rectOK := a.bottomBarRect()
 	if !rectOK {
@@ -578,9 +525,8 @@ func (a *App) openWorkspaceRenameInput(level int) {
 }
 
 // openRenameInput swaps the centered bar title for the shared inline input.
-// The name lives in the bar, not in a pill over pane content, so this works
-// identically over live views with no native help. Enter or blur commits the
-// versioned rename; Escape cancels. A no-op on read-only contexts.
+// The name lives in the bar, not over pane content, so this works over live
+// views with no native help.
 func (a *App) openRenameInput() {
 	p := a.tree.FocusedPane()
 	if p == nil {
@@ -599,8 +545,8 @@ func (a *App) openRenameInput() {
 		return
 	}
 	if w < 160 {
-		// The input needs typing room; grow around the title's center but
-		// stay off the slot.
+		// Typing room: grow around the title's center but stay off the
+		// slot.
 		grown := 160.0
 		x = x + w/2 - grown/2
 		if max := bx + bw - wsbar.SlotW - 8; x+grown > max {
