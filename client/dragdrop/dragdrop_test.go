@@ -44,13 +44,13 @@ func TestChildPreviewRoundTrip(t *testing.T) {
 		X, Y, W, H     int64
 		ViewCx, ViewCy float64
 	}{X: -1, Y: 2, W: 3, H: 4, ViewCx: 11.5, ViewCy: -3}
-	// previewRatio = 1/8: legacy PreviewFactor fallback for an
-	// unvisited well. previewCell = 64 × 1/8 = 8 px per child cell.
+	// An unvisited well falls back to a ratio of 1/8, so a 64 px parent
+	// cell gives 8 px child cells.
 	cp := ChildPreviewFor(parent, well, 1.0/8.0)
 	if !near(cp.CellPx, 8) {
 		t.Errorf("CellPx = %v, want 8", cp.CellPx)
 	}
-	// Round-trip a few child cell coords through the screen mapping.
+	// Round-trip child cell coordinates through the screen mapping.
 	for _, c := range []struct{ cx, cy float64 }{
 		{0, 0}, {10, -5}, {11.5, -4.25}, {-7, 12},
 	} {
@@ -63,8 +63,8 @@ func TestChildPreviewRoundTrip(t *testing.T) {
 }
 
 func TestChildPreviewCenterAlignsWithViewCenter(t *testing.T) {
-	// The preview's view center should land at the well's screen
-	// center — that is the calibration zoomtrans relies on.
+	// The preview's view center lands at the well's screen center, which
+	// is the calibration zoomtrans relies on.
 	parent := Pane{
 		ScreenX: 0, ScreenY: 0, ScreenW: 1000, ScreenH: 1000,
 		Cx: 0, Cy: 0, Zoom: 2.0, CellPx: 64,
@@ -77,7 +77,7 @@ func TestChildPreviewCenterAlignsWithViewCenter(t *testing.T) {
 	parentCell := parent.CellPx * parent.Zoom
 	wellCenterX, wellCenterY := parent.CellToScreen(2, 2) // center of 4×4 well at (0,0)
 	_ = parentCell
-	// View center of the well is also (2, 2) in child-cell coords.
+	// The well's view center is also (2, 2) in child cells.
 	viewCenterScreenX, viewCenterScreenY := cp.CellToScreen(2, 2)
 	if !near(viewCenterScreenX, wellCenterX) || !near(viewCenterScreenY, wellCenterY) {
 		t.Errorf("view center maps to (%v,%v), want (%v,%v)",
@@ -110,16 +110,14 @@ func TestTileContainsCell(t *testing.T) {
 	}
 }
 
-// TestFloorCellAtCoversWholeCell guards the "right-half misses" class: a
-// hit-test using SnapToCell on the same coordinates rounds the lower-right
-// portion of each cell forward to the next cell, so tile-under-cursor
-// detection misses half its target. FloorCellAt is the correct answer for
-// "which cell am I in".
+// TestFloorCellAtCoversWholeCell pins that every interior point of a cell
+// reports that cell. SnapToCell would round the lower-right portion forward
+// and miss half of every tile.
 func TestFloorCellAtCoversWholeCell(t *testing.T) {
 	const origin = 100.0
 	const cs = 10.0
-	// (sx, sy) → (wantX, wantY). All "wantX=0, wantY=0" cases below
-	// would have rounded to (1, 1) or (0, 1) etc. under SnapToCell.
+	// Every case wanting (0, 0) would have rounded elsewhere under
+	// SnapToCell.
 	cases := []struct {
 		sx, sy float64
 		wantX  int64
@@ -142,8 +140,7 @@ func TestFloorCellAtCoversWholeCell(t *testing.T) {
 			t.Errorf("FloorCellAt(%.2f, %.2f) = (%d, %d), want (%d, %d)",
 				c.sx, c.sy, gotX, gotY, c.wantX, c.wantY)
 		}
-		// If SnapToCell agreed with FloorCellAt everywhere, the class could
-		// not exist. Catch anything that aliases the two.
+		// Catch anything that aliases the two functions.
 		snapX := SnapToCell((c.sx - origin) / cs)
 		snapY := SnapToCell((c.sy - origin) / cs)
 		if c.sx == 105.0 && c.sy == 105.0 && snapX == gotX && snapY == gotY {
@@ -152,10 +149,9 @@ func TestFloorCellAtCoversWholeCell(t *testing.T) {
 	}
 }
 
-// TestHiddenMatchByTileIDNotLineage: a clone is a different row that looks
-// the same, so the predicate keys on the row id. Any by-lineage match — a
-// field copied verbatim onto every clone — would suppress every clone of the
-// dragged tile, not just the dragged tile itself.
+// TestHiddenMatchByTileIDNotLineage pins that the predicate keys on the row
+// id. A match on anything a clone shares with its source would suppress every
+// clone of the dragged tile.
 func TestHiddenMatchByTileIDNotLineage(t *testing.T) {
 	const sourceID = "5"
 	const cloneID = "7" // a different row showing the same content
@@ -179,7 +175,7 @@ func TestHiddenMatchByTileIDNotLineage(t *testing.T) {
 }
 
 func TestInTileCenter(t *testing.T) {
-	// 3x3 tile at origin: center band is cell coords [1, 2] on both axes.
+	// A 3x3 tile at the origin has a center band of [1, 2] on both axes.
 	cases := []struct {
 		name         string
 		x, y, w, h   int64
@@ -226,7 +222,8 @@ func TestRangeFromAnchors(t *testing.T) {
 }
 
 func TestResizeAnchorsAndCursor(t *testing.T) {
-	// Original tile: (10, 20, 4, 4). Click in BR quadrant -> pin TL.
+	// A tile at (10, 20, 4, 4), clicked in the bottom-right quadrant, pins
+	// the top-left corner.
 	br := ResizeAnchorsFor(10, 20, 4, 4, 13.7, 23.7)
 	if br.PinX != 10 || br.PinY != 20 || br.OrigMovingX != 14 || br.OrigMovingY != 24 {
 		t.Errorf("BR quadrant: bad anchors %+v", br)
@@ -234,23 +231,23 @@ func TestResizeAnchorsAndCursor(t *testing.T) {
 	if br.ClickCellX != 14 || br.ClickCellY != 24 {
 		t.Errorf("BR quadrant: bad click cell %+v", br)
 	}
-	// No cursor movement => same tile.
+	// No cursor movement leaves the tile alone.
 	x, y, w, h := ResizeFromCursor(br, br.ClickCellX, br.ClickCellY)
 	if x != 10 || y != 20 || w != 4 || h != 4 {
 		t.Errorf("BR + no movement: got (%d,%d,%d,%d), want (10,20,4,4)", x, y, w, h)
 	}
-	// Drag cursor 2 cells right + 1 down => grow tile by (2, 1) on the BR.
+	// Two cells right and one down grows the bottom-right corner.
 	x, y, w, h = ResizeFromCursor(br, br.ClickCellX+2, br.ClickCellY+1)
 	if x != 10 || y != 20 || w != 6 || h != 5 {
 		t.Errorf("BR + (+2,+1): got (%d,%d,%d,%d), want (10,20,6,5)", x, y, w, h)
 	}
-	// Crossover: drag back past the pin so the cursor cell is at PinX-1.
+	// Dragging back past the pin puts the cursor cell at PinX-1.
 	x, y, w, h = ResizeFromCursor(br, br.PinX-1, br.PinY-1)
 	if w < 1 || h < 1 {
 		t.Errorf("crossover should keep w,h >= 1; got (%d,%d,%d,%d)", x, y, w, h)
 	}
 
-	// Click in TL quadrant -> pin BR.
+	// A click in the top-left quadrant pins the bottom-right corner.
 	tl := ResizeAnchorsFor(10, 20, 4, 4, 10.2, 20.2)
 	if tl.PinX != 14 || tl.PinY != 24 || tl.OrigMovingX != 10 || tl.OrigMovingY != 20 {
 		t.Errorf("TL quadrant: bad anchors %+v", tl)
@@ -262,27 +259,27 @@ func TestResizeAnchorsAndCursor(t *testing.T) {
 }
 
 func TestPaneCellAt(t *testing.T) {
-	// 1000x800 pane centered on cell (0,0), 64 px cells, zoom 1.
+	// A 1000x800 pane centered on cell (0, 0), 64 px cells, zoom 1.
 	p := Pane{
 		ScreenX: 0, ScreenY: 0, ScreenW: 1000, ScreenH: 800,
 		Cx: 0, Cy: 0, Zoom: 1, CellPx: 64,
 	}
-	// Pane center -> cell (0,0). Pane center is at (500, 400).
+	// The pane center at (500, 400) is cell (0, 0).
 	cx, cy := p.CellAt(500, 400)
 	if cx != 0 || cy != 0 {
 		t.Errorf("center: got (%d,%d), want (0,0)", cx, cy)
 	}
-	// One cell right (+64 px) of center -> cell (1, 0).
+	// One cell right of center is cell (1, 0).
 	cx, cy = p.CellAt(500+64, 400)
 	if cx != 1 || cy != 0 {
 		t.Errorf("one cell right: got (%d,%d), want (1,0)", cx, cy)
 	}
-	// Just barely into next cell.
+	// Just inside the next cell.
 	cx, cy = p.CellAt(500+0.1, 400)
 	if cx != 0 || cy != 0 {
 		t.Errorf("just barely positive: got (%d,%d), want (0,0)", cx, cy)
 	}
-	// Lower-right half of cell (5,3) — floor wins, round would have advanced.
+	// The lower-right half of cell (5, 3), where rounding would advance.
 	sx, sy := p.CellToScreen(5.8, 3.8)
 	cx, cy = p.CellAt(sx, sy)
 	if cx != 5 || cy != 3 {
@@ -290,11 +287,9 @@ func TestPaneCellAt(t *testing.T) {
 	}
 }
 
-// TestDecideDropFocusOnly: a bare click on a pane that was not focused at
-// press time is focus-only — no navigation, no selection — whatever sits
-// under the cursor. A bare click on an already-focused pane navigates. The +
-// button follows the same rule: act only when already focused. Clicking a
-// pane to focus it therefore never descends into a tile.
+// TestDecideDropFocusOnly pins that a bare click on a pane unfocused at
+// press time only moves focus, whatever sits under the cursor, so clicking a
+// pane to focus it never descends into a tile.
 func TestDecideDropFocusOnly(t *testing.T) {
 	unfocused := DropInput{Started: false, OriginFocused: false, TileID: "u/1"}
 	if got := DecideDrop(unfocused); got != DropFocusOnly {
@@ -304,17 +299,16 @@ func TestDecideDropFocusOnly(t *testing.T) {
 	if got := DecideDrop(focused); got != DropNavigate {
 		t.Errorf("bare click on focused pane = %v, want DropNavigate", got)
 	}
-	// A real drag acts regardless of prior focus — only the bare click is
-	// focus-gated (dragging is an unambiguous intent).
+	// A real drag acts whatever the prior focus, because only the bare
+	// click is ambiguous.
 	drag := DropInput{Started: true, OriginFocused: false, TileID: "u/1", HasTarget: true}
 	if got := DecideDrop(drag); got != DropMove {
 		t.Errorf("drag from unfocused pane = %v, want DropMove", got)
 	}
 }
 
-// TestDecideDropTargetReadOnly: a drop (any intent) onto a read-only grid
-// (fs/proc) is rejected up front — no doomed RPC, no
-// misleading "changed elsewhere" reconcile notice.
+// TestDecideDropTargetReadOnly pins that any intent onto a read-only grid is
+// rejected before the RPC, so no reconcile notice follows.
 func TestDecideDropTargetReadOnly(t *testing.T) {
 	base := DropInput{Started: true, TileID: "u/1", HasTarget: true, TargetReadOnly: true}
 	if got := DecideDrop(base); got != DropRejected {
@@ -332,10 +326,9 @@ func TestDecideDropTargetReadOnly(t *testing.T) {
 	}
 }
 
-// TestDecideDropReadOnlyPlacement: read-only gates arrivals, not placement. A
-// same-grid left-drag on any read-only grid — fs, proc, the launcher — is a
-// rearrangement the node persists, so things stay as the user left them on
-// every grid. Copies and links stay creation-class.
+// TestDecideDropReadOnlyPlacement pins that read-only gates arrivals and not
+// placement. A same-grid left-drag is a rearrangement the node persists on
+// every grid, while copies and links still create.
 func TestDecideDropReadOnlyPlacement(t *testing.T) {
 	rearrange := DropInput{Started: true, TileID: "u/1", HasTarget: true,
 		TargetReadOnly: true, SameGrid: true}
@@ -349,11 +342,9 @@ func TestDecideDropReadOnlyPlacement(t *testing.T) {
 	}
 }
 
-// TestMoveForbidden pins the move-drop policy to the server's placement rule.
-// The case to watch is host to host across grids (dragging a file from one
-// host directory's grid into another's): the server rejects any cross-grid
-// placement, and an XOR check here would report it allowed, inviting a drop
-// that then fails.
+// TestMoveForbidden pins the move-drop policy to the server's placement
+// rule. Host to host across grids is the case an XOR check would report
+// allowed, inviting a drop the server then rejects.
 func TestMoveForbidden(t *testing.T) {
 	cases := []struct {
 		name             string
@@ -368,11 +359,9 @@ func TestMoveForbidden(t *testing.T) {
 		{"cross host->regular", false, false, true, false, true},
 		{"cross regular->host", false, false, false, true, true},
 		{"cross host->host (regression)", false, false, true, true, true},
-		// Crossing an id namespace is not a forbidden move — it is not a
-		// move at all: the left-drag becomes a link (DropLink), so nothing
-		// is forbidden here. The host arms are exempted too: linking host
-		// content into a grid is the mount philosophy, and a read-only
-		// destination is rejected by the TargetReadOnly gate, not this one.
+		// A drag across an id namespace is not a move at all; it becomes
+		// a link. The host arms are exempt too, and TargetReadOnly gates
+		// a read-only destination.
 		{"cross-plugin left-drag is a link, not forbidden", false, true, false, false, false},
 		{"cross-plugin from a host grid links too", false, true, true, false, false},
 	}
@@ -385,13 +374,10 @@ func TestMoveForbidden(t *testing.T) {
 	}
 }
 
-// TestIntentCreates pins which intents put a NEW tile at the destination.
-// Three call sites branch on it — the occupancy self-exclusion, the
-// move-only Forbidden input, and the read-only placement exemption — so a
-// wrong answer here silently lets a copy land on its own source, or gates a
-// rearrangement that read-only grids are supposed to accept. The zero value
-// must stay IntentMove: a palette template drag and a plain left-drag both
-// leave the field unset.
+// TestIntentCreates pins which intents put a new tile at the destination.
+// Three call sites branch on it, so a wrong answer lets a copy land on its
+// own source or gates a rearrangement a read-only grid should accept. The
+// zero value stays IntentMove, which a palette template drag leaves unset.
 func TestIntentCreates(t *testing.T) {
 	var zero Intent
 	if zero != IntentMove {
@@ -412,9 +398,8 @@ func TestIntentCreates(t *testing.T) {
 }
 
 func TestDecideDrop(t *testing.T) {
-	// base is a clean, started, left-drag of a real tile over a valid
-	// empty target cell — i.e. the DropMove case. Each row flips just the
-	// fields under test so precedence is exercised in isolation.
+	// base is a started left-drag of a real tile over an empty target
+	// cell, the DropMove case. Each row flips only the fields under test.
 	base := DropInput{Started: true, TileID: "7", HasTarget: true}
 
 	cases := []struct {
@@ -422,12 +407,12 @@ func TestDecideDrop(t *testing.T) {
 		in   DropInput
 		want DropAction
 	}{
-		// --- the happy paths ---
+		// The happy paths.
 		{"clean left drag -> move", base, DropMove},
 		{"clean right drag -> clone",
 			DropInput{Started: true, TileID: "7", HasTarget: true, Intent: IntentCopy}, DropClone},
 
-		// --- early branches beat everything ---
+		// Early branches beat everything.
 		{"bare click on focused pane -> navigate (beats all)",
 			DropInput{Started: false, OriginFocused: true, IsTemplate: true, TileID: "7", OverDelete: true, HasTarget: true}, DropNavigate},
 		{"bare click on unfocused pane -> focus only (beats all)",
@@ -444,14 +429,12 @@ func TestDecideDrop(t *testing.T) {
 			DropInput{Started: true, TileID: "", OverDelete: true, HasTarget: true}, DropPanEnd},
 		{"pan off any pane -> still panEnd",
 			DropInput{Started: true, TileID: "", HasTarget: false}, DropPanEnd},
-		// A creation needs a destination, like every other landing arm. The
-		// swatch released over a content descent, or off the canvas, resolves
-		// no drop target, and a template that skipped this check would be
-		// committed against a second hit-test of its own.
+		// A creation needs a destination like every other landing arm. A
+		// swatch released over a content descent resolves no target.
 		{"template with no target -> rejected",
 			DropInput{Started: true, IsTemplate: true, TileID: "", HasTarget: false}, DropRejected},
 
-		// --- delete fires, and outranks the placement arms ---
+		// Delete fires and outranks the placement arms.
 		{"over delete button -> delete",
 			DropInput{Started: true, TileID: "7", OverDelete: true}, DropDelete},
 		{"delete wins over an occupied target (precedence)",
@@ -459,7 +442,7 @@ func TestDecideDrop(t *testing.T) {
 		{"delete fires even with no target",
 			DropInput{Started: true, TileID: "7", OverDelete: true, HasTarget: false}, DropDelete},
 
-		// --- rejection cases, one cause each ---
+		// Rejection cases, one cause each.
 		{"no target -> rejected",
 			DropInput{Started: true, TileID: "7", HasTarget: false}, DropRejected},
 		{"forbidden cross-grid move -> rejected",
@@ -469,31 +452,29 @@ func TestDecideDrop(t *testing.T) {
 		{"occupied -> rejected",
 			DropInput{Started: true, TileID: "7", HasTarget: true, Occupied: true}, DropRejected},
 
-		// --- the copy intent ---
+		// The copy intent.
 		{"clone with a clean target -> clone",
 			DropInput{Started: true, TileID: "7", HasTarget: true, Intent: IntentCopy}, DropClone},
-		// SameCell/Occupied still reject a clone (both commit paths check them).
+		// SameCell and Occupied still reject a clone.
 		{"clone onto occupied -> rejected",
 			DropInput{Started: true, TileID: "7", HasTarget: true, Intent: IntentCopy, Occupied: true}, DropRejected},
 		{"clone onto same cell -> rejected",
 			DropInput{Started: true, TileID: "7", HasTarget: true, Intent: IntentCopy, SameCell: true}, DropRejected},
-		// Forbidden is a per-gesture input; the verdict treats a forbidden
-		// clone like a forbidden move (no gesture sets it for clones today).
+		// Forbidden is a per-gesture input, and the verdict treats a
+		// forbidden clone like a forbidden move.
 		{"forbidden clone -> rejected",
 			DropInput{Started: true, TileID: "7", HasTarget: true, Intent: IntentCopy, Forbidden: true}, DropRejected},
 
-		// --- the link intent: ctrl + right-drag ---
-		// The gesture asks for a link, so it links inside one namespace too —
-		// that is the whole point of the modifier. Without this arm the
-		// verdict falls through to DropMove and the drop relocates the tile.
+		// The link intent, ctrl with a right-drag. The gesture asks for a
+		// link, so it links inside one namespace too.
 		{"ctrl right drag in one namespace -> link",
 			DropInput{Started: true, TileID: "7", HasTarget: true, Intent: IntentLink}, DropLink},
-		// A link is a link: crossing a namespace with the modifier held is
-		// the same verdict a plain left-drag reaches there, not a refusal.
+		// Crossing a namespace with the modifier held reaches the same
+		// verdict a plain left-drag does.
 		{"ctrl right drag across a namespace -> link",
 			DropInput{Started: true, TileID: "7", HasTarget: true, Intent: IntentLink, CrossPlugin: true}, DropLink},
-		// A link is creation-class, like a clone: it lands a new row, so the
-		// source cell is a real neighbor and a read-only grid refuses it.
+		// A link lands a new row, so the source cell is a real neighbor
+		// and a read-only grid refuses it.
 		{"ctrl right drag onto occupied -> rejected",
 			DropInput{Started: true, TileID: "7", HasTarget: true, Intent: IntentLink, Occupied: true}, DropRejected},
 		{"ctrl right drag onto same cell -> rejected",
@@ -505,7 +486,7 @@ func TestDecideDrop(t *testing.T) {
 		{"ctrl right drag over delete still deletes",
 			DropInput{Started: true, TileID: "7", OverDelete: true, Intent: IntentLink}, DropDelete},
 
-		// --- a cross-namespace left-drag is a link ---
+		// A cross-namespace left-drag is a link.
 		{"cross-plugin left drag -> link",
 			DropInput{Started: true, TileID: "7", HasTarget: true, CrossPlugin: true}, DropLink},
 		{"cross-plugin right drag -> clone (copy, not link)",
@@ -548,8 +529,7 @@ func TestGhostPlanForDrop(t *testing.T) {
 			GhostPlan{PaneID: target, TargetCellSize: tgtSz}},
 		{"clone snaps to target cell", DropClone, false,
 			GhostPlan{PaneID: target, TargetCellSize: tgtSz}},
-		// The teaching signal: a cross-namespace left-drag previews as a
-		// link (chain badge) — never as a bare move, or the source's
+		// A cross-namespace left-drag previews as a link, or the source's
 		// survival after the drop would read as a surprise duplicate.
 		{"link snaps to target cell with the chain badge", DropLink, false,
 			GhostPlan{PaneID: target, TargetCellSize: tgtSz, Link: true}},
@@ -584,7 +564,7 @@ func TestPromoteToWell(t *testing.T) {
 }
 
 // RectsOverlap is the client half of the placement collision contract:
-// strict interior intersection, and edge adjacency is not a collision.
+// strict interior intersection, so edge adjacency is not a collision.
 func TestRectsOverlap(t *testing.T) {
 	cases := []struct {
 		name           string
