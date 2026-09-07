@@ -9,50 +9,36 @@ import (
 	"github.com/josephburnett/gridwell/client/door"
 )
 
-// uuidOf and isExitWell forward to the canonical rpc helpers: the
-// "<uuid>/<local>" id convention and its exit-well classification live once,
-// in api/rpc, where they are tested. They keep local names because the wasm
-// renderer reads them at many call sites.
+// uuidOf and isExitWell forward to api/rpc, where the "<uuid>/<local>" id
+// convention lives and is tested. The local names are for the renderer's many
+// call sites.
 func uuidOf(id string) string            { return rpc.UUIDOf(id) }
 func isExitWell(n *gridwellv1.Tile) bool { return rpc.IsExitWell(n) }
 
-// nodeID is this node's own id: the segment its home grid and every one of
-// its connections hang under. The handshake's home grid is the one place it
-// is written down, so it is read from there rather than kept a second time.
+// nodeID is the segment this node's home grid and connections hang under,
+// read off the handshake's home grid, which is where it is written down.
 func (a *App) nodeID() string { return rpc.UUIDOf(a.home) }
 
 // deadNamespace reports that a qualified id names a namespace this node does
-// not declare — a plugin dropped from server.yaml, a connection name retired.
-// The rule and the boundary against a merely dark namespace are deadref's;
-// this is the impure half, handing it the handshake roster and the node id.
-//
-// Nothing asks a dead namespace for anything: every fetch door consults this
-// first, so a dead link costs no RPC, raises no verdict, and surfaces no
-// error. It just sits there, greyed, until the user throws it away.
+// not declare. The rule, and the boundary against a merely dark namespace, is
+// deadref's. Every fetch door consults it first, so a dead link costs no RPC,
+// raises no verdict, and surfaces no error.
 func (a *App) deadNamespace(id string) bool {
 	return deadref.Dead(id, a.plugins, a.nodeID())
 }
 
-// deadLink reports that a tile is a link into a namespace this node does not
-// declare: the greyed, inert face, and the one thing the renderer, the
-// descent guard, and the fetch doors all read.
+// deadLink reports that a tile links into a namespace this node does not
+// declare: the one thing the renderer, the descent guard and the fetch doors
+// all read.
 func (a *App) deadLink(n *gridwellv1.Tile) bool {
 	return deadref.DeadTile(n, a.plugins, a.nodeID())
 }
 
 // gridWritable reports whether the grid accepts new or edited tiles, and
-// whether that is known. The fact is per grid and travels on the grid
-// (Grid.Writable, stamped by the serving node from the owning plugin's Info):
-// a uuid lookup against the local plugin list cannot answer for a remote
-// plugin reached through an ssh mount, whose local first segment is the
-// transit plugin.
-//
-// An uncached grid answers (false, false) — not known yet, never a guess —
-// and each caller picks its own safe default at the call site, where the
-// reason is visible (the scratch.For convention). The two defaults are both
-// live: a write gate treats unknown as not writable, while a drop gesture
-// must not be refused on ignorance, since the server is the authority until
-// the fetch lands.
+// whether that is known. The fact travels on the grid, because a uuid lookup
+// against the local plugin list cannot answer for a remote plugin reached
+// through an ssh mount. An uncached grid answers (false, false), never a
+// guess, and each caller picks its own default where the reason is visible.
 func (a *App) gridWritable(gridID string) (writable, known bool) {
 	if gridID == "" {
 		return false, false
@@ -64,20 +50,17 @@ func (a *App) gridWritable(gridID string) (writable, known bool) {
 	return g.Meta.Writable, true
 }
 
-// pluginByRoot returns the doorway rooted at gridID — a menu row's own grid
-// or one of its declared entries', whose view a root-grid reframe persists to
-// and restores from, and whose face that grid wears. The rule is
-// door.ByRoot's, js-free and unit-tested; this is the impure half, resolving
+// pluginByRoot returns the doorway rooted at gridID, a menu row's own grid
+// or one of its declared entries'. The rule is door.ByRoot's; this resolves
 // the declaration list it reads.
 func (a *App) pluginByRoot(gridID string) (*gridwellv1.PluginInfo, bool) {
 	return door.ByRoot(gridID, a.allPlugins())
 }
 
-// cacheDoorwayFraming reconciles the local copy of a doorway's framing — the
-// Info handshake's, which the next + menu descent frames from — immediately
-// after a root-grid reframe is committed. It is keyed by the grid, the same
-// key pluginByRoot resolved it under, so a row's own grid and a declared
-// entry's each land on the field that carries them and never on each other's.
+// cacheDoorwayFraming reconciles the handshake's copy of a doorway's framing
+// after a root-grid reframe commits. Keyed by grid, the same key pluginByRoot
+// resolved it under, so a row's own grid and a declared entry's never land on
+// each other's field.
 func (a *App) cacheDoorwayFraming(gridID string, f rpc.Framing) {
 	if gridID == "" {
 		return
@@ -95,9 +78,8 @@ func (a *App) cacheDoorwayFraming(gridID string, f rpc.Framing) {
 }
 
 // pluginByUUID returns the plugin with the given, possibly chain-qualified,
-// namespace: the local list first, then every fetched remote menu context. A
-// remote plugin's descent guards need its PluginInfo, and its uuid arrives
-// chain-qualified, so the two spaces cannot collide.
+// namespace, searching the local list then every fetched remote menu context.
+// A chain-qualified uuid cannot collide with a local one.
 func (a *App) pluginByUUID(u string) (*gridwellv1.PluginInfo, bool) {
 	for i := range a.plugins {
 		if a.plugins[i].Uuid == u {
@@ -114,10 +96,9 @@ func (a *App) pluginByUUID(u string) (*gridwellv1.PluginInfo, bool) {
 	return nil, false
 }
 
-// pluginGlyph returns the identity glyph for the plugin owning the given
-// qualified grid id. The rule is door.GlyphFor's, js-free and unit-tested;
-// this is the impure half, resolving the cached grid and the declaration
-// list the rule reads. No kind strings anywhere.
+// pluginGlyph returns the identity glyph for the plugin owning a qualified
+// grid id. The rule is door.GlyphFor's; this resolves the cached grid and the
+// declaration list it reads.
 func (a *App) pluginGlyph(gridID string) string {
 	plugins := a.allPlugins()
 	if g, ok := a.c.Grid(gridID); ok {
@@ -126,9 +107,8 @@ func (a *App) pluginGlyph(gridID string) string {
 	return door.GlyphFor(gridID, nil, plugins)
 }
 
-// allPlugins is every PluginInfo the client knows — the boot handshake's list
-// plus each fetched remote menu context — for declaration scans (door.Find,
-// door.EntryGlyph) that must see remote declarations too.
+// allPlugins is the boot handshake's list plus each fetched remote menu
+// context, for declaration scans that must see remote declarations too.
 func (a *App) allPlugins() []*gridwellv1.PluginInfo {
 	out := a.plugins
 	for _, ctx := range a.views.menuCtxs {
