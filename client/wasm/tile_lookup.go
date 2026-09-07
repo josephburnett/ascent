@@ -9,14 +9,12 @@ import (
 )
 
 // Tile-by-id resolution: an ephemeral url visit focuses a tile off the pane's
-// grid, so the renderer, the url stream, and the ascent need a cache-wide
+// grid, so the renderer, the url stream and the ascent need a cache-wide
 // walk.
 
-// forEachCachedGrid walks the grids this client has cached, in no defined
-// order, calling f(gridID, grid); f returns false to stop the walk. It is the
-// one cache-wide sweep: by-id lookup, the nav-event url rewrite and the url
-// autocomplete all ask "what does this client already know" the same way. A
-// grid id whose entry went away between the id list and the read is skipped.
+// forEachCachedGrid is the one cache-wide sweep, in no defined order; f
+// returns false to stop it. By-id lookup, the nav-event url rewrite and the
+// url autocomplete all ask what this client knows the same way.
 func (a *App) forEachCachedGrid(f func(gid string, g *cache.Grid) bool) {
 	for _, gid := range a.c.KnownGridIDs() {
 		g, ok := a.c.Grid(gid)
@@ -29,8 +27,7 @@ func (a *App) forEachCachedGrid(f func(gid string, g *cache.Grid) bool) {
 	}
 }
 
-// cachedTileByID walks the cached grids for the tile row without kicking a
-// background fetch on a miss, which is findTileByID's side effect: the flush
+// cachedTileByID is findTileByID without the miss-side fetch, so the flush
 // path stays read-only on the cache.
 func (a *App) cachedTileByID(id string) *gridwellv1.Tile {
 	var found *gridwellv1.Tile
@@ -45,9 +42,8 @@ func (a *App) cachedTileByID(id string) *gridwellv1.Tile {
 	return found
 }
 
-// findTileByID is cachedTileByID with a miss-side kick: on a miss it starts a
-// background fetch (fetchTileByID) to pull in the target's grid — the id may
-// name a tile whose grid was never visited — so a later frame resolves.
+// findTileByID kicks a background fetch on a miss, since the id may name a
+// tile whose grid was never visited, so a later frame resolves.
 func (a *App) findTileByID(id string) *gridwellv1.Tile {
 	if t := a.cachedTileByID(id); t != nil {
 		return t
@@ -56,12 +52,10 @@ func (a *App) findTileByID(id string) *gridwellv1.Tile {
 	return nil
 }
 
-// descendedTile resolves the tile a pane is descended into (rpc.ContentID(p)). The
-// fast path is the pane's current grid; the fallback is a by-id cache walk for
-// a tile that lives OFF the pane's grid — an ephemeral url visit focuses a tile
-// in the plugin's scratch grid without re-anchoring the pane onto it, so the
-// renderer, the url stream, and the ascent must still find it. Returns
-// (_, false) when the pane isn't descended or the tile isn't cached yet.
+// descendedTile resolves the tile a pane is descended into. The fallback
+// by-id walk is for a tile off the pane's grid: an ephemeral url visit
+// focuses one in the scratch grid without re-anchoring the pane. False when
+// the pane is not descended or the tile is not cached yet.
 func (a *App) descendedTile(p *pane.Pane) (*gridwellv1.Tile, bool) {
 	if p.ContentID() == "" {
 		return nil, false
