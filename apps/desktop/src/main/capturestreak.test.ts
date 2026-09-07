@@ -5,7 +5,8 @@ import { decideStreak, FRESH, AttemptKind, StreakDecision, StreakState } from '.
 // Every failure kind, so no arm can be added without a row here.
 const FAILURES: AttemptKind[] = ['empty', 'timeout', 'rejected', 'view-gone'];
 
-// A mirror that has captured before: the state every "it froze" row starts in.
+// A mirror that has captured before, the state every frozen-preview row starts
+// in.
 function live(failures = 0): StreakState {
   return { everCaptured: true, failures };
 }
@@ -23,10 +24,8 @@ const TABLE: { name: string; prev: StreakState; kind: AttemptKind; want: StreakD
     kind: 'ok',
     want: { state: live(0), report: null },
   },
-  // 3–6: the failures the streak never used to see. A timeout, a rejection and
-  // an empty image all resolved to '' inside captureJpegBase64, so capture()'s
-  // catch — the only place the count moved — never ran. These are the actual
-  // "frozen preview with no evidence" cases.
+  // 3-6 are the failures that leave a frozen preview with no evidence: a
+  // timeout, a rejection and an empty image.
   ...FAILURES.map((kind, i) => ({
     name: `${i + 3}. the first ${kind} on a live mirror opens the streak and is reported`,
     prev: live(0),
@@ -55,17 +54,16 @@ const TABLE: { name: string; prev: StreakState; kind: AttemptKind; want: StreakD
   },
   {
     name: '10. the next success after a recovery is silent',
-    // Recovery is reported exactly once: the count is back to 0, so the arm
-    // above cannot fire again until a new failure opens a new streak.
+    // Recovery is reported once. The count is back to 0, so the arm above
+    // cannot fire again until a new failure opens a new streak.
     prev: live(0),
     kind: 'ok',
     want: { state: live(0), report: null },
   },
   {
     name: '11. a destroyed view recovers like anything else',
-    // The old flag latched here: view-gone was the one arm that set it, and it
-    // was cleared only by a success the same view could never produce. A
-    // reloaded renderer does capture again, and the count is what says so.
+    // A reloaded renderer captures again, so view-gone closes like any other
+    // failure kind.
     prev: live(1),
     kind: 'ok',
     want: { state: live(0), report: { kind: 'recovered', afterFailures: 1 } },
@@ -79,8 +77,8 @@ const TABLE: { name: string; prev: StreakState; kind: AttemptKind; want: StreakD
   {
     name: '13. a view that has never painted is not a frozen mirror',
     // Chromium answers capturePage with an empty image for the first frames
-    // after a place. The pane is showing its stored preview, which is right;
-    // there is nothing frozen to report.
+    // after a place, while the pane still shows its stored preview, so there is
+    // nothing frozen to report.
     prev: FRESH,
     kind: 'empty',
     want: { state: { everCaptured: false, failures: 1 }, report: null },

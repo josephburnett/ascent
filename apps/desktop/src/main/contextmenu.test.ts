@@ -2,13 +2,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { urlContextMenuTemplate } from './contextmenu';
 
-// The template's parameter shapes, read off the function: nothing outside
+// The template's parameter shapes, read off the function. Nothing outside
 // contextmenu.ts names them, so they are not exported.
 type ContextParams = Parameters<typeof urlContextMenuTemplate>[0];
 type ContextActions = Parameters<typeof urlContextMenuTemplate>[1];
 
-// A spy bag: each action records the argument it was called with so a test can
-// invoke an item's click() and assert the effect, exactly as the real menu does.
+// Each action records the argument it was called with, so a test can invoke an
+// item's click() and assert the effect as the real menu does.
 function spyActions() {
   const calls: Record<string, unknown[]> = {};
   const rec =
@@ -46,8 +46,8 @@ function baseParams(over: Partial<ContextParams> = {}): ContextParams {
 const labels = (t: ReturnType<typeof urlContextMenuTemplate>) =>
   t.filter((i) => i.label).map((i) => i.label);
 
-// The navigation block is always present (it disables rather than vanishes),
-// so every menu ends with Back / Forward / Reload.
+// The navigation block is always present and disables instead of vanishing, so
+// every menu ends with Back / Forward / Reload.
 test('navigation items are always present', () => {
   const { actions } = spyActions();
   const t = urlContextMenuTemplate(baseParams(), actions);
@@ -73,7 +73,8 @@ test('a link yields Open Link + Copy Link Address that copy the href', () => {
   assert.deepEqual(calls.openLink, [url]);
 });
 
-// No link → no link items (the menu never shows a dead "Copy Link Address").
+// No link means no link items, so the menu never shows a dead "Copy Link
+// Address".
 test('no link omits the link items', () => {
   const { actions } = spyActions();
   const t = urlContextMenuTemplate(baseParams(), actions);
@@ -130,10 +131,10 @@ test('Back/Forward enablement tracks the history flags', () => {
   assert.equal(calls.reload?.length, 1);
 });
 
-// Freeze Page is gated by durability: a durable tile's menu offers it and the
+// Freeze Page is gated by durability. A durable tile's menu offers it and the
 // click fires the injected action, while an ephemeral visit has nothing to
-// re-descend into and gets no item. Clearing browser state is not a menu item
-// at all; it is the `gridwell clear-browser-data` CLI.
+// re-descend into and gets no item. Clearing browser state is the
+// `gridwell clear-browser-data` CLI and no menu item.
 test('Freeze Page appears only for a durable tile and fires the action', () => {
   const { actions, calls } = spyActions();
   const t = urlContextMenuTemplate(baseParams({ canFreeze: true }), actions);

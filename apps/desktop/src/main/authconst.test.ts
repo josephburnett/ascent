@@ -4,9 +4,9 @@ import { execFileSync } from 'node:child_process';
 import * as path from 'node:path';
 import { AUTH_COOKIE_NAME, AUTH_COOKIE_MAX_AGE_S } from './authconst';
 
-// Drift lint across the language seam: the server's auth.go owns the cookie
-// name and lifetime, so this asserts the TypeScript copies against the Go
-// source text. Neither side can move alone.
+// Drift lint across the language seam. internal/server/auth.go owns the cookie
+// name and lifetime, and this asserts the TypeScript copies against the Go
+// source text.
 test('auth cookie constants match the server source', () => {
   const authGo = path.resolve(__dirname, '..', '..', '..', '..', 'internal', 'server', 'auth.go');
   const src = execFileSync('cat', [authGo], { encoding: 'utf8' });

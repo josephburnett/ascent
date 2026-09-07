@@ -5,17 +5,14 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { VIEW } from './ipc';
 
-// Drift lint for the drag threshold. "How far is a drag, not a click" is the
-// same value in three places and two languages, and they must agree or the same
-// gesture means different things depending on where it starts: a right-drag over
-// a live page could arm a pane gesture on the canvas side while the view side
-// still reads a plain right-click.
+// Drift lint for the drag threshold. The same value lives in three places and
+// two languages, and if they disagree a right-drag over a live page arms a pane
+// gesture on the canvas side while the view side reads a plain right-click.
 //
-// It cannot be one shared runtime constant. A sandboxed preload may not require
+// It cannot be one shared runtime constant: a sandboxed preload may not require
 // local modules (urlview-preload.ts), and Go and TypeScript share no source. The
-// owner is the canvas value, client/wasm/main.go `dragThreshold`; this lint fails
-// the build if either TypeScript copy drifts from it, and points at each copy to
-// fix when the owner changes.
+// owner is `dragThreshold` in client/wasm/main.go, and this fails the build if
+// either TypeScript copy drifts from it.
 
 const here = dirname(fileURLToPath(import.meta.url)); // apps/desktop/src/main
 const repoRoot = resolve(here, '../../../..');
@@ -40,12 +37,12 @@ test('the drag threshold agrees across the canvas and both native copies', () =>
   assert.equal(preload, canvas, 'urlview-preload.ts RIGHT_DRAG_THRESHOLD drifted from the canvas dragThreshold (the owner)');
 });
 
-// Drift lints for the two right-press thresholds. Both live in viewutil.ts
-// (classifyRightPress's defaults, unit-tested) and again in urlview-preload.ts,
-// which is sandboxed and cannot import from main. viewutil.ts is the owner. A
-// drifted far threshold means a fast flick arms a pane gesture on the canvas but
-// pops a context menu over the live view; a drifted time threshold splits the
-// hold-then-move gesture the same way.
+// Drift lints for the two right-press thresholds. viewutil.ts owns them, as
+// classifyRightPress's defaults, and urlview-preload.ts carries a copy because
+// it is sandboxed and cannot import from main. A drifted far threshold means a
+// fast flick arms a pane gesture on the canvas but pops a context menu over the
+// live view; a drifted time threshold splits the hold-then-move gesture the
+// same way.
 test('the right-drag far threshold agrees between viewutil and the preload', () => {
   const viewutil = literal('apps/desktop/src/main/viewutil.ts', /RIGHT_DRAG_FAR_THRESHOLD\s*=\s*([\d.]+)/);
   const preload = literal('apps/desktop/src/preload/urlview-preload.ts', /RIGHT_DRAG_FAR_THRESHOLD\s*=\s*([\d.]+)/);
@@ -68,12 +65,11 @@ test('the right-drag time threshold agrees between viewutil and the preload', ()
   );
 });
 
-// Drift lint for the view→main IPC channel names. The preload sends on four
-// channels (VIEW_RIGHTDOWN, …) that main registers under ipc.ts VIEW.*. Being
-// sandboxed, the preload cannot import ipc.ts, so the names are duplicated as
-// string literals. A rename in ipc.ts compiles clean and the handlers simply
+// Drift lint for the view-to-main IPC channel names. VIEW in ipc.ts owns them,
+// and the sandboxed preload duplicates them as string literals because it
+// cannot import ipc.ts. A rename in ipc.ts compiles clean and the handlers
 // never fire: no right-drag gesture, no middle-click ascend, no touch scroll
-// over live content, and nothing says why. VIEW is the owner.
+// over live content, and nothing says why.
 test('the preload sends on the same VIEW channels ipc.ts declares', () => {
   const preload = 'apps/desktop/src/preload/urlview-preload.ts';
   const copies: Record<keyof typeof VIEW, string> = {

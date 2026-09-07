@@ -5,12 +5,12 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { sweepLeakedHomes, pluginUUIDs } from './homes';
 
-// The start-of-run sweep, unit-covered: a fake leaked home from an aborted run
-// must be removed, and only gridwell-e2e-* prefixed homes are ever touched.
+// The start-of-run sweep. A fake leaked home from an aborted run must be
+// removed, and only gridwell-e2e-* prefixed homes are ever touched.
 
 test('sweepLeakedHomes removes leaked e2e homes and nothing else', () => {
   const leaked = fs.mkdtempSync(path.join(os.tmpdir(), 'gridwell-e2e-'));
-  // Both minted id shapes: 32-hex and the 7-char base36 short form. The regex
+  // Both minted id shapes, 32-hex and the 7-char base36 short form. The regex
   // must find each, or that id's tmux server leaks.
   fs.writeFileSync(
     path.join(leaked, 'server.yaml'),

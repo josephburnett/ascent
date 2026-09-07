@@ -1,8 +1,7 @@
-// Unit tests for the sidecar lifecycle: the settle rules that decide whether
-// the app boots, fails fast with a cause, or hangs. A fake child process
-// (EventEmitter plus PassThrough stdio) drives every path under `node --test`,
-// with no Go binary, no Electron, and no network. Real spawn and path
-// resolution are left alone through the test seams in StartOptions.
+// The sidecar lifecycle's settle rules, which decide whether the app boots,
+// fails fast with a cause, or hangs. A fake child process drives every path
+// under `node --test`, with no Go binary, no Electron and no network, through
+// the test seams in StartOptions.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -78,8 +77,8 @@ test('gives up on SILENCE and kills the child when nothing is announced', async 
 });
 
 test('a slow but TALKING boot is never killed: every line re-arms the window', async () => {
-  // A long boot: each step announces itself and then takes longer than the
-  // whole window before the next one. Only silence may end a boot.
+  // A long boot, where each step announces itself and then takes longer than
+  // the whole window before the next one. Only silence may end a boot.
   const child = new FakeChild();
   const p = boot(child, 40);
   for (const line of [
