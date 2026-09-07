@@ -22,8 +22,7 @@ func TestPlusCenter(t *testing.T) {
 }
 
 func TestTilePxFixed(t *testing.T) {
-	// Fixed at 3/4 of a default cell (CellPx 64 -> 48): the creation menu is
-	// a constant-size affordance.
+	// Three quarters of a default cell: CellPx 64 gives 48.
 	if got := makeLayout().TilePx(); got != 48 {
 		t.Errorf("TilePx = %v, want 48 (fixed)", got)
 	}
@@ -51,8 +50,7 @@ func TestTileIndexAt(t *testing.T) {
 }
 
 func TestLayoutHandlesExpandedKindCount(t *testing.T) {
-	// With six tiles the layout has to widen the popover to fit them, and
-	// the tile rects must stay non-overlapping.
+	// Six tiles widen the popover, and the rects stay non-overlapping.
 	l := makeLayout()
 	l.NumTiles = 6
 	pop := l.PopoverRect()
@@ -90,8 +88,8 @@ func TestPointInPopover(t *testing.T) {
 }
 
 func TestPopoverTracksCenter(t *testing.T) {
-	// The popover is anchored to the + center: moving the center (a window
-	// resize moves the bar slot) translates the popover one for one.
+	// The popover is anchored to the + center, so moving the center
+	// translates it one for one.
 	l := makeLayout()
 	r1 := l.PopoverRect()
 	l.PlusX += 500
@@ -102,8 +100,8 @@ func TestPopoverTracksCenter(t *testing.T) {
 	}
 }
 
-// TestTwoRowPopover: plugins fill the top row, primitives the bottom. The
-// popover is two tiles tall and the bottom-row tiles sit below the top.
+// TestTwoRowPopover pins that doorways fill the top row and primitives the
+// bottom, two tiles tall.
 func TestTwoRowPopover(t *testing.T) {
 	l := makeLayout()
 	l.NumTiles = 6
@@ -118,7 +116,6 @@ func TestTwoRowPopover(t *testing.T) {
 	if bottom.Y <= top.Y {
 		t.Errorf("bottom-row Y %v not below top-row Y %v", bottom.Y, top.Y)
 	}
-	// Index round-trips through both rows.
 	for i := range l.NumTiles {
 		r := l.TileRect(i)
 		if got := l.TileIndexAt(r.X+r.W/2, r.Y+r.H/2); got != i {
@@ -127,8 +124,8 @@ func TestTwoRowPopover(t *testing.T) {
 	}
 }
 
-// TestSingleRowWhenTopRowUnset: with no TopRow split (no plugins configured)
-// the popover stays a single row.
+// TestSingleRowWhenTopRowUnset pins that a node declaring no doorways gets a
+// single-row popover.
 func TestSingleRowWhenTopRowUnset(t *testing.T) {
 	l := makeLayout()
 	tile := l.TilePx()
@@ -148,8 +145,8 @@ func TestSingleRowWhenTopRowUnset(t *testing.T) {
 	}
 }
 
-// TestSingleRowWhenTopRowCoversAll: when every tile is a plugin (TopRow ==
-// NumTiles, the read-only-grid case) the popover stays a single row.
+// TestSingleRowWhenTopRowCoversAll pins the read-only grid, where every tile
+// is a doorway and the popover stays a single row.
 func TestSingleRowWhenTopRowCoversAll(t *testing.T) {
 	l := makeLayout()
 	l.NumTiles = 3
@@ -161,9 +158,8 @@ func TestSingleRowWhenTopRowCoversAll(t *testing.T) {
 	}
 }
 
-// TestCollapsedSectionLayout: with the plugin row folded away the popover is
-// the primitives row with the strip above it, and the strip is inside the
-// popover but on no tile.
+// TestCollapsedSectionLayout pins the folded popover: the primitives row
+// with the strip above it, inside the popover and on no tile.
 func TestCollapsedSectionLayout(t *testing.T) {
 	l := makeLayout()
 	l.NumTiles = 4 // primitives only: the section contributed nothing
@@ -185,7 +181,7 @@ func TestCollapsedSectionLayout(t *testing.T) {
 	if first := l.TileRect(0); first.Y < tr.Y+tr.H {
 		t.Errorf("primitives row Y %v overlaps the strip ending at %v", first.Y, tr.Y+tr.H)
 	}
-	// The strip is hit-tested as itself, and is not a swatch.
+	// The strip is hit-tested as itself rather than as a swatch.
 	cx, cy := tr.X+tr.W/2, tr.Y+tr.H/2
 	if !l.PointInToggle(cx, cy) {
 		t.Error("the strip center should hit the toggle")
@@ -196,7 +192,7 @@ func TestCollapsedSectionLayout(t *testing.T) {
 	if !l.PointInPopover(cx, cy) {
 		t.Error("the strip should be inside the popover, so a press there keeps it open")
 	}
-	// Every swatch still round-trips through the shifted geometry.
+	// Every swatch round-trips through the shifted geometry.
 	for i := range l.NumTiles {
 		r := l.TileRect(i)
 		if got := l.TileIndexAt(r.X+r.W/2, r.Y+r.H/2); got != i {
@@ -208,8 +204,8 @@ func TestCollapsedSectionLayout(t *testing.T) {
 	}
 }
 
-// TestExpandedSectionLayout: expanded, the strip sits between the plugin row
-// and the primitives, and both rows keep their order and hit-testing.
+// TestExpandedSectionLayout pins that the strip sits between the two rows
+// and both keep their order and hit-testing.
 func TestExpandedSectionLayout(t *testing.T) {
 	l := makeLayout()
 	l.NumTiles = 7
@@ -237,8 +233,8 @@ func TestExpandedSectionLayout(t *testing.T) {
 	}
 }
 
-// TestNoToggleNoBand: a popover without the strip is laid out exactly as
-// before, so the states with no control cost no space.
+// TestNoToggleNoBand pins that a popover without the strip costs no extra
+// space.
 func TestNoToggleNoBand(t *testing.T) {
 	l := makeLayout()
 	l.NumTiles = 7

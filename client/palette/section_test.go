@@ -2,9 +2,9 @@ package palette
 
 import "testing"
 
-// TestShow: every state of the + menu's plugin section, from the counts the
-// pane hands in. Collapsed by default is the first row of the table, and the
-// two no-toggle states are the ones where folding would leave nothing.
+// TestShow pins every state of the + menu's top section, including that it
+// starts collapsed and that the two no-toggle states are the ones where
+// folding would leave nothing.
 func TestShow(t *testing.T) {
 	tests := []struct {
 		name string
@@ -52,8 +52,7 @@ func TestShow(t *testing.T) {
 	}
 }
 
-// TestChevronNames pins the strings the test hook reports, so a spec asserts
-// the face the user sees rather than an integer.
+// TestChevronNames pins the strings a spec asserts instead of an integer.
 func TestChevronNames(t *testing.T) {
 	for c, want := range map[Chevron]string{
 		ChevronNone: "none",
