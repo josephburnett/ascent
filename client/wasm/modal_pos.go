@@ -9,16 +9,11 @@ import (
 	"github.com/josephburnett/gridwell/client/panebox"
 )
 
-// centerCardOnActivePane positions a modal card over the active pane's
-// center: the pane you acted in is where the dialog appears, not the middle
-// of the screen. It is the one centering rule for every modal card. The
-// geometry decision lives in panebox.ModalCardPos; this function only
-// measures and applies styles.
-//
-// Call it after the modal is visible: the card must have layout to measure.
-// The card is lifted out of the backdrop's flex centering by fixed
-// positioning; margins are zeroed so the measured size is the placed size.
-// With no laid-out focused pane (boot edge), the flex centering stays.
+// centerCardOnActivePane puts a modal card over the active pane's center, so
+// the dialog appears where you acted. The geometry is panebox.ModalCardPos'.
+// Call it after the modal is visible, since the card must have layout to
+// measure; margins are zeroed so the measured size is the placed size. With
+// no laid-out focused pane the backdrop's flex centering stays.
 func (a *App) centerCardOnActivePane(card js.Value) {
 	_, r, ok := a.focusedPaneRect()
 	if !ok {
