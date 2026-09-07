@@ -10,21 +10,12 @@ import (
 	"testing"
 )
 
-// These tests pin the crash-safety property of EnsureVersion: the
-// user_version stamp must be part of the same transaction as the work it
-// describes. SQLite header pragmas are transactional, so this is free.
-// Committing the non-idempotent ADD COLUMN migrations first and stamping
-// afterwards leaves a crash window: a file with the new columns and the old
-// version, whose every subsequent Open re-runs the chain, fails on
-// "duplicate column name", and never opens again. The fresh-DB path has the
-// same window between the application_id and user_version writes.
-//
-// A crash between two statements cannot be triggered deterministically from
-// a test, so the property is asserted at the statement level instead: a
-// recording driver logs every statement plus BEGIN and COMMIT, and the test
-// requires the stamp to appear between them.
-
-// ── recording driver ─────────────────────────────────────────────────────────
+// These tests pin the crash-safety property of EnsureVersion: the user_version
+// stamp rides the same transaction as the work it describes. Stamping after the
+// migrations commit would leave a file with the new columns and the old version,
+// whose every Open re-runs the chain and fails on "duplicate column name". A
+// crash between two statements cannot be triggered from a test, so a recording
+// driver logs every statement plus BEGIN and COMMIT and the test checks order.
 
 type recDriver struct {
 	inner driver.Driver
@@ -41,8 +32,7 @@ func (d *recDriver) Open(name string) (driver.Conn, error) {
 }
 
 // recConn implements only Prepare, Begin, and Close, so database/sql funnels
-// every statement through Prepare, taking no Execer or Queryer fast path,
-// and each one is logged. Begin and Commit are logged through recTx.
+// every statement through Prepare and takes no Execer or Queryer fast path.
 type recConn struct {
 	inner driver.Conn
 	mu    *sync.Mutex
@@ -129,11 +119,8 @@ func indexContaining(log []string, substr string) int {
 	return -1
 }
 
-// ── the properties ───────────────────────────────────────────────────────────
-
-// The migrate path: the user_version stamp must execute inside the migration
-// transaction (after the migration statements, before COMMIT), so a crash can
-// never persist the DDL without the version that records it.
+// The stamp must execute after the migration statements and before COMMIT, so a
+// crash can never persist the DDL without the version that records it.
 func TestMigrationStampIsInsideTheTransaction(t *testing.T) {
 	ctx := context.Background()
 	db := openRecordingDB(t)
@@ -167,16 +154,14 @@ func TestMigrationStampIsInsideTheTransaction(t *testing.T) {
 		t.Errorf("user_version stamp is not inside the migration transaction (crash window: a migrated-but-unstamped file re-runs non-idempotent migrations forever).\norder: BEGIN@%d DDL@%d stamp@%d COMMIT@%d\nlog:\n%s",
 			begin, ddl, stamp, commit, strings.Join(log, "\n"))
 	}
-	// And the result is right.
 	if got := pragma(t, db, "user_version"); got != 2 {
 		t.Errorf("user_version = %d, want 2", got)
 	}
 }
 
-// The fresh-DB path: application_id and user_version must land atomically. A
-// crash between them leaves application_id stamped with user_version 0, so
-// the next Open runs the full migration chain against the latest-shape
-// tables, which is the same duplicate-column failure.
+// application_id and user_version must land atomically. A crash between them
+// leaves application_id stamped with user_version 0, so the next Open runs the
+// full chain against latest-shape tables and hits the same duplicate column.
 func TestFreshStampIsAtomic(t *testing.T) {
 	ctx := context.Background()
 	db := openRecordingDB(t)

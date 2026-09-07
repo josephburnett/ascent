@@ -31,7 +31,6 @@ func pragma(t *testing.T, db *sql.DB, name string) int64 {
 
 const testAppID = 0x54455354 // "TEST"
 
-// A fresh, unstamped DB gets the caller's identity and target version.
 func TestFreshDBStamped(t *testing.T) {
 	db := openMem(t)
 	if err := EnsureVersion(context.Background(), db, testAppID, 3, nil); err != nil {
@@ -49,7 +48,6 @@ func TestFreshDBStamped(t *testing.T) {
 	}
 }
 
-// A file stamped by someone else is refused, never misread.
 func TestForeignFileRefused(t *testing.T) {
 	db := openMem(t)
 	if err := setPragmaInt(context.Background(), db, "application_id", 0x0BADF00D); err != nil {
@@ -61,8 +59,6 @@ func TestForeignFileRefused(t *testing.T) {
 	}
 }
 
-// A file from a future binary is refused — an old binary must not misread a
-// newer schema.
 func TestNewerVersionRefused(t *testing.T) {
 	db := openMem(t)
 	if err := EnsureVersion(context.Background(), db, testAppID, 2, nil); err != nil {
@@ -74,8 +70,7 @@ func TestNewerVersionRefused(t *testing.T) {
 	}
 }
 
-// An older file is brought forward by the pending chain entries, and rows
-// written under the old shape survive.
+// Rows written under the old shape survive the chain.
 func TestOlderFileMigrated(t *testing.T) {
 	ctx := context.Background()
 	db := openMem(t)
@@ -123,8 +118,8 @@ func TestOlderFileMigrated(t *testing.T) {
 	}
 }
 
-// A failing migration rolls back and leaves the version unstamped, so the
-// next open retries rather than proceeding on a half-migrated file.
+// The version stays unstamped, so the next open retries instead of proceeding
+// on a half-migrated file.
 func TestFailedMigrationRollsBack(t *testing.T) {
 	ctx := context.Background()
 	db := openMem(t)
