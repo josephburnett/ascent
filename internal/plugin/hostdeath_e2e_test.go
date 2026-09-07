@@ -15,20 +15,19 @@ import (
 	"github.com/josephburnett/gridwell/internal/plugintest"
 )
 
-// The host-death seam: a SIGKILLed host must not orphan its plugin
-// subprocesses. go-plugin gives the guest no host-death detection in our
-// configuration — the guest inherits the host's stdin and a dead host is just a
-// disconnected gRPC client — so the guest helper runs its own watchdog on the pid
-// the host hands over at spawn. This test fails without the watchdog: the
-// plugin survives its host indefinitely.
+// The host-death seam: a SIGKILLed host must not orphan its plugin subprocesses.
+// go-plugin gives the guest no host-death detection in our configuration, since
+// the guest inherits the host's stdin and a dead host is only a disconnected
+// gRPC client, so the guest helper runs its own watchdog on the pid the host
+// hands over at spawn. Without that watchdog the plugin survives its host
+// indefinitely and this test fails.
 //
-// The test re-execs itself as an intermediate host, TestHelperPluginHost,
-// gated by an env flag. That host spawns the real plugin binary through the
-// production LoadPlugin, prints the child pid, and blocks. The test then
-// SIGKILLs the host — the crashed-sidecar shape — and asserts the plugin exits
-// within the watchdog bound.
+// The test re-execs itself as an intermediate host, TestHelperPluginHost, gated
+// by an env flag. That host spawns the real plugin binary through the production
+// LoadPlugin, prints the child pid, and blocks. The test then SIGKILLs the host
+// and asserts the plugin exits within the watchdog bound.
 
-// TestHelperPluginHost is not a test: it is the intermediate host body,
+// TestHelperPluginHost is the intermediate host body rather than a test. It is
 // entered only when the test re-execs itself with GRIDWELL_TEST_HOST=1.
 func TestHelperPluginHost(t *testing.T) {
 	if os.Getenv("GRIDWELL_TEST_HOST") != "1" {
@@ -44,14 +43,14 @@ func TestHelperPluginHost(t *testing.T) {
 		os.Exit(1)
 	}
 	defer proc.Kill()
-	// Report the plugin child pid: the only child of this process.
+	// The plugin is the only child of this process.
 	out, err := exec.Command("pgrep", "-P", strconv.Itoa(os.Getpid())).Output()
 	if err != nil {
 		fmt.Printf("HELPER-ERR pgrep: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("HELPER-CHILD %s\n", strings.TrimSpace(strings.Split(string(out), "\n")[0]))
-	// Block forever — the test kills us hard.
+	// Block forever. The test kills this process hard.
 	select {}
 }
 
@@ -72,7 +71,6 @@ func TestPluginExitsWhenHostDiesHard(t *testing.T) {
 	}
 	defer func() { _ = host.Process.Kill(); _, _ = host.Process.Wait() }()
 
-	// Read the plugin child pid the host reports.
 	var pluginPID int
 	sc := bufio.NewScanner(stdout)
 	deadline := time.After(30 * time.Second)
@@ -105,14 +103,13 @@ func TestPluginExitsWhenHostDiesHard(t *testing.T) {
 		t.Fatalf("plugin pid %d not alive before the host dies: %v", pluginPID, err)
 	}
 
-	// The crash: SIGKILL the host, with no graceful path and no
-	// Registry.Close.
+	// SIGKILL the host, with no graceful path and no Registry.Close.
 	if err := host.Process.Kill(); err != nil {
 		t.Fatalf("kill host: %v", err)
 	}
 	_, _ = host.Process.Wait()
 
-	// The watchdog polls every 2s; give it a bounded margin.
+	// The watchdog polls every 2s, so allow a bounded margin.
 	deadline2 := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline2) {
 		if err := syscall.Kill(pluginPID, 0); err == syscall.ESRCH {

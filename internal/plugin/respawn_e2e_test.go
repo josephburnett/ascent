@@ -1,15 +1,14 @@
 package plugin_test
 
 // The supervision seam, end to end: a real gridwell-plugin-fs subprocess under
-// a supervisor, the adapter's event stream over it, the server's fan-in, and
-// the wire client a browser uses. Killing the subprocess must reach the user
-// as this namespace's health going down, and the respawn must reach them as it
-// coming back — with the SAME client answering live afterwards, because the
-// supervisor swapped the process underneath it.
+// a supervisor, the adapter's event stream over it, the server's fan-in, and the
+// wire client a browser uses. Killing the subprocess must reach the user as this
+// namespace's health going down, and the respawn must reach them as it coming
+// back, with the same client answering live afterwards because the supervisor
+// swapped the process underneath it.
 //
-// A unit test on the supervisor would prove the respawn and not that anyone is
-// told; a unit test on the adapter would prove the event and not that a real
-// process ever died. The bug this shape catches is the two disagreeing.
+// The bug this shape catches is the supervisor and the adapter disagreeing. A
+// unit test on either one proves only its own half.
 
 import (
 	"context"
@@ -36,11 +35,11 @@ import (
 
 const respawnUUID = "presp01"
 
-// pluginPID is the pid of the plugin subprocess this test spawned: the one
-// child of the test process running the fs binary. Killing it out of band is
-// the only honest way to crash a plugin — the supervisor's own kill is a
-// stop, not a crash — and the supervisor exposes no handle for it, because a
-// production accessor no shipped path calls is dead code.
+// pluginPID is the pid of the plugin subprocess this test spawned, the one child
+// of the test process running the fs binary. The supervisor's own kill is a
+// stop, so killing the process out of band is the only way to crash a plugin,
+// and the supervisor exposes no handle for it because a production accessor no
+// shipped path calls is dead code.
 func pluginPID(t *testing.T) int {
 	t.Helper()
 	out, err := exec.Command("pgrep", "-P", strconv.Itoa(os.Getpid()), "-f", "gridwell-plugin-fs").Output()
@@ -63,8 +62,8 @@ func TestAPluginSubprocessCrashSurfacesAndRespawns(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "notes.md"), []byte("# notes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// The plugin inherits this process's environment, so the test's own home
-	// is redirected: nothing may write into the developer's.
+	// The plugin inherits this process's environment, so the test redirects
+	// its own home. Nothing may write into the developer's.
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	st, err := store.Open(filepath.Join(t.TempDir(), "gridwell.db"))
 	if err != nil {
@@ -137,10 +136,10 @@ func TestAPluginSubprocessCrashSurfacesAndRespawns(t *testing.T) {
 		}
 	}
 
-	// The fan-in subscribes asynchronously, and this stream has no backlog: an
-	// event fired before it lands is simply missed. So prime with a write —
-	// which the adapter announces as a GridChanged, the other half of what
-	// this stream carries — and only crash the plugin once one has arrived.
+	// The fan-in subscribes asynchronously and this stream has no backlog, so
+	// an event fired before it lands is missed. Prime with a write, which the
+	// adapter announces as a GridChanged, and only crash the plugin once one
+	// has arrived.
 	prime := func() {
 		t.Helper()
 		g, gerr := cl.GetGrid(ctx, rootGrid)
@@ -187,8 +186,8 @@ func TestAPluginSubprocessCrashSurfacesAndRespawns(t *testing.T) {
 		t.Errorf("a health-up carries no complaint, got %q", up.Detail)
 	}
 
-	// The same wire client, the same adapter, the same registry entry: the
-	// process behind them is a new one and nothing above had to be rebuilt.
+	// The same wire client, adapter and registry entry, over a new process:
+	// nothing above had to be rebuilt.
 	if newPid := pluginPID(t); newPid == pid {
 		t.Fatalf("pid after respawn = %d, want a new process", newPid)
 	}

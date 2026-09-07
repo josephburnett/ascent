@@ -1,13 +1,12 @@
 // Package plugin builds the registry from server config. Every entry is a
-// content plugin, spawned as a gridwell-plugin-<kind> subprocess — the
-// third-party door, and the one way a plugin loads. The node constructs its
-// own home and transport around this call; neither is a plugin.
+// content plugin spawned as a subprocess, which is the one way a plugin loads.
+// The node constructs its own home and transport around this call, and neither
+// is a plugin.
 //
-// A loaded plugin reaches the registry as a namespace.Namespace, a Go value
-// the router calls directly. The plugin.v1 subprocess underneath is one of
-// the node's only two gRPC hops, and it is SUPERVISED (supervisor.go): this
-// package is the one owner of whether a plugin is alive, respawns the ones
-// that die, and is where the health the strip shows comes from.
+// A loaded plugin reaches the registry as a namespace.Namespace, a Go value the
+// router calls directly. The plugin.v1 subprocess underneath is supervised here
+// (supervisor.go), so this package is the one owner of whether a plugin is
+// alive, and the health the strip shows comes from it.
 package plugin
 
 import (
@@ -24,11 +23,11 @@ import (
 	"github.com/josephburnett/gridwell/internal/pluginhost"
 )
 
-// LoadInto registers every content plugin of the server config in reg, keyed
-// by its ID: a plugin.v1 subprocess, from a binary, fronted by the pluginhost
-// adapter over the node-owned store. Nothing is cached in front of it — a
-// subprocess on this machine is a call away, and the node's memory of what it
-// minted is the durable store. The node registers its own home and transport
+// LoadInto registers every content plugin of the server config in reg, keyed by
+// its ID: a plugin.v1 subprocess, from a binary, fronted by the pluginhost
+// adapter over the node-owned store. Nothing is cached in front of it, since a
+// subprocess on this machine is a call away and the node's store is the durable
+// memory of what it minted. The node registers its own home and transport
 // around this call.
 func LoadInto(reg *Registry, cfg *config.ServerConfig, home string, st *store.Store) error {
 	for i := range cfg.Plugins {
@@ -37,11 +36,11 @@ func LoadInto(reg *Registry, cfg *config.ServerConfig, home string, st *store.St
 		if err != nil {
 			return fmt.Errorf("plugin %q (%s): %w", pc.Kind, pc.ID, err)
 		}
-		// A failing handshake stops the launch: a plugin without the config
-		// it needs must not come up as an empty grid, and Info is where a
-		// plugin says so, with FailedPrecondition and the reason. Nothing is
-		// read from the answer here; every plugin-specific behavior rides a
-		// wire declaration the router reads per request.
+		// A failing Info stops the launch, because a plugin without the
+		// config it needs must not come up as an empty grid. Info is where
+		// the plugin says so, with FailedPrecondition and the reason. The
+		// answer itself is discarded, since the router reads a plugin's
+		// declarations per request.
 		ictx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_, ierr := ns.Info(ictx, &gridwellv1.InfoRequest{})
 		cancel()
@@ -59,14 +58,14 @@ func LoadInto(reg *Registry, cfg *config.ServerConfig, home string, st *store.St
 
 // loadPlugin materializes one plugin entry: the supervised subprocess, and the
 // adapter joining it with the plugin's namespace of the node's store, as an
-// ordinary namespace.Namespace the router calls in-process. home is the
-// Gridwell home config.Home() derived, threaded from the node; the plugin's
-// state directory hangs off it.
+// ordinary namespace.Namespace the router calls in-process. home is the Gridwell
+// home config.Home() derived, threaded in from the node, and the plugin's state
+// directory hangs off it.
 //
-// The client is built over the SUPERVISOR, not over one process: a respawn
-// swaps the process underneath it, so nothing here ever holds a handle to a
-// dead one. The supervisor is also the adapter's source of health, which is
-// what the namespace's event stream announces.
+// The client is built over the supervisor, so a respawn swaps the process
+// underneath it and nothing here ever holds a handle to a dead one. The
+// supervisor is also the adapter's source of health, which is what the
+// namespace's event stream announces.
 func loadPlugin(pc *config.PluginConfig, home string, st *store.Store) (namespace.Namespace, func(), error) {
 	cfg, err := spawnConfig(pc, home)
 	if err != nil {
@@ -85,15 +84,14 @@ func loadPlugin(pc *config.PluginConfig, home string, st *store.Store) (namespac
 }
 
 // spawnConfig is the config map one plugin is spawned with: its own keys, its
-// identity, and state_dir — the private directory the node mints for it at
-// <home>/plugins/<id>, 0700. A plugin holds no node facts; the node's store is
-// never the guest's. What it may keep in that directory is its own memory of
-// its source, under cache.db's contract: disposable, safe to delete, rewarmed
-// by use. Nothing here or anywhere else deletes one — a plugin dropped from
-// server.yaml may come back, and things stay as the user left them.
+// identity, and state_dir, the private directory the node mints for it at
+// <home>/plugins/<id>, 0700. What a plugin keeps there is its own memory of its
+// source, under cache.db's contract: disposable, safe to delete, rewarmed by
+// use. Nothing here or anywhere else deletes one, because a plugin dropped from
+// server.yaml may come back.
 //
-// An empty home is an error, not a relative path: a plugin must never write
-// into whatever directory the node happened to start in.
+// An empty home is an error rather than a relative path, so that a plugin never
+// writes into whatever directory the node happened to start in.
 func spawnConfig(pc *config.PluginConfig, home string) (map[string]string, error) {
 	if home == "" {
 		return nil, fmt.Errorf("no home directory for the plugin's state_dir")
