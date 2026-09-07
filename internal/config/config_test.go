@@ -107,11 +107,8 @@ func TestLoad_empty_and_defaults(t *testing.T) {
 	}
 }
 
-// The retired shapes fail loudly with the fix, never load silently: the flat
-// bind, a password in the file, a plugin row with no kind, an unknown key.
-// A file in the shape from before one database per node — `node_id:`, the
-// node's own store as a plugin row — is refused too, and the refusal names
-// the release that converts it, since nothing here does any more.
+// Every retired shape fails loudly with the fix, never loads silently, and a
+// pre-one-database file is refused naming the release that converts it.
 func TestLoad_refusesRetiredKeys(t *testing.T) {
 	cases := map[string]string{
 		"bind: 127.0.0.1:1\n":                    "web",
@@ -138,17 +135,15 @@ func TestLoad_rejectsBadIDs(t *testing.T) {
 		"plugins:\n  - id: dup1\n    kind: fs\n  - id: dup1\n    kind: proc\n",
 		"connections:\n  - name: \"9\"\n    addr: /s\n",
 		"connections:\n  - name: c1\n    addr: /s\n  - name: c1\n    addr: /t\n",
-		// A nameless stanza occupies the empty segment: every id through it
-		// would read as the node's own.
+		// A nameless stanza takes the empty segment: ids through it would
+		// read as the node's own.
 		"connections:\n  - addr: /s\n",
 		"connections:\n  - name: \"\"\n    addr: /s\n",
-		// retired_names is a list of namespace segments, and reserving one
-		// forever is a decision that has to be spelled right.
+		// A name reserved forever has to be spelled right.
 		"retired_names: [\"12\"]\n",
 		"retired_names: [\"has/slash\"]\n",
 		"retired_names: [\"\"]\n",
-		// Declared and retired at once: the name is either alive or gone
-		// forever, never both.
+		// A name is alive or retired, never both.
 		"connections:\n  - name: rtb\n    addr: /s\nretired_names: [rtb]\n",
 	} {
 		if _, err := Load(write(t, t.TempDir(), yml)); err == nil {
@@ -175,9 +170,8 @@ func TestLoad_invalid_yaml(t *testing.T) {
 	}
 }
 
-// Mint fills exactly the absent ids and reports it; Save writes the file
-// the next Load reads back byte-meaningfully, 0600, with no derived field
-// leaking into it.
+// Mint fills exactly the absent ids and reports it; Save writes 0600 a file
+// the next Load reads back, with no derived field in it.
 func TestMintAndSave(t *testing.T) {
 	dir := t.TempDir()
 	p := write(t, dir, "plugins:\n  - kind: fs\n  - id: keep1\n    kind: proc\n")
