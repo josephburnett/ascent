@@ -85,8 +85,7 @@ func TestToggleOtherPaneMovesMenu(t *testing.T) {
 	}
 }
 
-// SyncFocus is the "menu only on the focused pane" rule: focus moving away
-// from the menu's pane closes it.
+// Focus moving away from the menu's pane closes the menu.
 func TestSyncFocusClosesOnFocusMoveAway(t *testing.T) {
 	s := New()
 	s.Open("p1")
@@ -126,9 +125,8 @@ func TestSetHoverReportsChangeOnce(t *testing.T) {
 	}
 }
 
-// The descent/ascent round trip: a menu open on a pane is snapshotted (OpenOn),
-// closed for the descent, then restored (Open) on ascent — so you return exactly
-// as you left. Mirrors descend/ascend in the wasm client.
+// A menu open on a pane is snapshotted with OpenOn, closed for the descent,
+// and reopened with Open on the ascent, mirroring the wasm client.
 func TestDescendAscentRoundTrip(t *testing.T) {
 	s := New()
 	s.Open("p1")
@@ -159,16 +157,13 @@ func TestDescendAscentRoundTripClosedStaysClosed(t *testing.T) {
 	}
 }
 
-// TransferFocus is the single-call focus-change helper used by every path
-// that moves wasm focus (canvas, forwarded right-down, forwarded left-down).
-// These tests prove the omission class is unrepresentable: calling
-// TransferFocus from a new path closes the menu when focus moves away from
-// it, with no extra thought at the call site.
+// Calling TransferFocus from a new path closes the menu when focus moves
+// away from it, with nothing extra to remember at the call site.
 
 func TestTransferFocusReturnsChangedAndClosesMenu(t *testing.T) {
 	s := New()
 	s.Open("p1")
-	// Focus moves from p1 → p2: menu must close, changed must be true.
+	// Focus moves from p1 to p2.
 	if !s.TransferFocus("p1", "p2") {
 		t.Fatal("TransferFocus must report true when focus changed")
 	}
@@ -180,7 +175,7 @@ func TestTransferFocusReturnsChangedAndClosesMenu(t *testing.T) {
 func TestTransferFocusNoopWhenFocusUnchanged(t *testing.T) {
 	s := New()
 	s.Open("p1")
-	// Focus stays on p1: menu must remain open, changed must be false.
+	// Focus stays on p1.
 	if s.TransferFocus("p1", "p1") {
 		t.Fatal("TransferFocus must report false when focus did not change")
 	}
@@ -191,8 +186,7 @@ func TestTransferFocusNoopWhenFocusUnchanged(t *testing.T) {
 
 func TestTransferFocusMenuClosedNoChange(t *testing.T) {
 	s := New()
-	// Menu already closed — TransferFocus must still report the focus change
-	// correctly, even though there is nothing to close.
+	// A closed menu still reports the focus change.
 	if !s.TransferFocus("p1", "p2") {
 		t.Fatal("TransferFocus must still report true when focus changed (menu already closed)")
 	}
@@ -201,13 +195,11 @@ func TestTransferFocusMenuClosedNoChange(t *testing.T) {
 	}
 }
 
-// Calling TransferFocus from all paths (canvas, forwarded right, forwarded
-// left) means the menu closes whenever focus moves, regardless of which
-// gesture triggered the focus change.
+// The menu closes whenever focus moves, whichever gesture moved it.
 func TestTransferFocusForwardedPathClosesMenu(t *testing.T) {
 	s := New()
 	s.Open("p1") // menu open on the text pane
-	// Simulate: a forwarded press lands on the URL pane (p2), focus moves.
+	// A forwarded press lands on the url pane and focus moves.
 	changed := s.TransferFocus("p1", "p2")
 	if !changed {
 		t.Fatal("forwarded press that changes focus must report changed=true")
@@ -217,9 +209,8 @@ func TestTransferFocusForwardedPathClosesMenu(t *testing.T) {
 	}
 }
 
-// The plugin section is folded on every opening. The flag is live state, not
-// a preference: a reopened menu shows the primitives first however the user
-// left the last one.
+// The doorway section is folded on every opening, however the user left the
+// last one.
 func TestPluginsCollapsedOnEveryOpen(t *testing.T) {
 	s := New()
 	s.Open("p1")
@@ -247,8 +238,7 @@ func TestPluginsCollapsedOnEveryOpen(t *testing.T) {
 	}
 }
 
-// Toggling the section is not a focus or open-state gesture: only the fold and
-// the now-meaningless hover change.
+// Toggling the section changes only the fold and the stale hover.
 func TestTogglePluginsTouchesOnlyTheFold(t *testing.T) {
 	s := New()
 	s.Open("p1")
