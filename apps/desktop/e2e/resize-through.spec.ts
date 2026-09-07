@@ -1,9 +1,9 @@
 import { test, expect } from './fixtures';
 
-// Dragging a divider cascades tmux-style: the adjacent pane compresses to its
-// 32px minimum first, then the drag starts compressing the next pane along the
-// axis. Clamping the drag once the whole opposite side hits 32px combined would
-// instead squash its panes proportionally.
+// Dragging a divider cascades: the adjacent pane compresses to its 32px minimum
+// first, then the drag starts compressing the next pane along the axis.
+// Clamping the drag once the whole opposite side hits 32px combined would
+// squash its panes proportionally instead.
 
 test('a border drag compresses the middle pane to its min, then the third; backing off un-reds', async ({
   gw,

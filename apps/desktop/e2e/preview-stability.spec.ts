@@ -4,9 +4,8 @@ import { tileAt } from './oracle';
 // Preview equals descent target equals ascent return, and nothing the user did
 // not touch changes. framing-roundtrip.spec.ts locks the viewport half; this
 // locks the preview half through the read-only previewSigs hook, a per-tile
-// signature over exactly the fields the preview renderer reads: the tile row and
-// the well's cached child grid. The signatures are captured from a sibling pane
-// while another pane descends, reframes, and ascends.
+// signature over exactly the fields the preview renderer reads: the tile row
+// and the well's cached child grid.
 
 // sigs reads the preview signatures of the focused pane's grid.
 async function sigs(window: any): Promise<Record<string, string>> {
@@ -19,7 +18,7 @@ test('a descend/ascend round trip leaves every preview byte-identical; a reframe
   const cx = Math.round(a.cx);
   const cy = Math.round(a.cy) - 1;
 
-  // A well with content, plus an unrelated markdown tile beside it.
+  // A well with content, and an unrelated markdown tile beside it.
   await gw.openPalette();
   await gw.dragCreate('well', cx, cy);
   await gw.openPalette();
@@ -31,14 +30,14 @@ test('a descend/ascend round trip leaves every preview byte-identical; a reframe
   await gw.dragCreate('markdown', Math.round(inner.cx), Math.round(inner.cy) - 1);
   await gw.middleClickCell(Math.round(inner.cx), Math.round(inner.cy) + 1);
 
-  // Warm the caches, since previews fetch child grids, then capture the baseline.
+  // Previews fetch child grids, so warm the caches before the baseline.
   await gw.waitIdle();
   const before = await sigs(window);
   expect(Object.keys(before).length, 'baseline has both tiles').toBe(2);
   expect(before[well.id], 'well signature includes its child grid').toContain('|');
 
-  // A round trip without reframing: descend into the well and ascend straight
-  // back. Reading never mutates, so every signature must be byte-identical.
+  // Reading never mutates, so a round trip with no reframe leaves every
+  // signature byte-identical.
   await gw.descendCell(cx, cy);
   {
     const f = await gw.focused();
@@ -47,9 +46,8 @@ test('a descend/ascend round trip leaves every preview byte-identical; a reframe
   await gw.waitIdle();
   expect(await sigs(window), 'pure round trip changed a preview').toEqual(before);
 
-  // A round trip with a reframe: descend, zoom, which is a framing change, then
-  // ascend. The well's preview updates to the new framing, because preview
-  // equals ascent return; everything the user did not touch stays
+  // A zoom is a framing change, so the well's preview updates to it: preview
+  // equals ascent return. Everything the user did not touch stays
   // byte-identical.
   await gw.descendCell(cx, cy);
   await gw.wheelAtFocusedCenter(-300);

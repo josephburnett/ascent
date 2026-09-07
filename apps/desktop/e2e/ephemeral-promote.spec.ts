@@ -4,7 +4,7 @@ import { test, expect } from './fixtures';
 // another pane's grid and becomes a persistent url tile there carrying the
 // visit's address. The visiting pane relocates onto the new tile, so its nav
 // chain reads the new place, and the ephemeral row is deleted from the scratch
-// grid. The crumb itself shows the visit's live face, not a grey placeholder.
+// grid.
 test('dragging the ephemeral visit crumb onto another pane promotes it to a real tile', async ({
   electronApp,
   window,
@@ -34,24 +34,22 @@ test('dragging the ephemeral visit crumb onto another pane promotes it to a real
   const ephemeralID = visiting.textFocus;
   expect(ephemeralID, 'the visit is a descent').not.toBe('');
 
-  // The current crumb (last chain segment) is the drag handle. The drop cell
-  // is off the destination pane's center, so the assertion below pins WHICH
-  // pane the drop resolved in: the visiting pane frames the same home grid, at
-  // its descent's zoom, and a drop resolved there would land on a different
-  // cell.
+  // The current crumb (last chain segment) is the drag handle. The drop cell is
+  // off the destination pane's center, so the assertion below pins WHICH pane
+  // the drop resolved in: the visiting pane frames the same home grid at its
+  // descent's zoom, and a drop resolved there would land on a different cell.
   const dropX = Math.round(dest.cx) + 2;
   const dropY = Math.round(dest.cy) + 1;
   const bar = await gw.bar();
   const crumb = bar.segments[bar.segments.length - 1];
   const from = { x: crumb.x + crumb.w / 2, y: bar.top + bar.height / 2 }; // segment x is absolute
   const to = await gw.cellCenter(dest.id, dropX, dropY);
-  // The whole gesture in one synchronous turn. Arming the drag parks every
-  // live view, which changes what sits under the REAL cursor — and Playwright
-  // drives a virtual mouse, so the real one is still parked at the screen
-  // center. Chromium then reports that layer change as a mousemove with no
-  // button held, which is a lost release (recoverLostRelease) and ends the
-  // drag wherever the real cursor happens to be. Dispatching press, move, and
-  // release together leaves no window for it.
+  // The whole gesture in one synchronous turn. Arming the drag parks every live
+  // view, which changes what sits under the REAL cursor, and Playwright drives a
+  // virtual mouse, so the real cursor is still at the screen center. Chromium
+  // reports that layer change as a mousemove with no button held, which is a
+  // lost release (recoverLostRelease) and would end the drag wherever the real
+  // cursor sits. Press, move and release together leave no window for it.
   await window.evaluate(
     ([fx, fy, tx, ty]: number[]) => {
       const canvas = document.querySelector('canvas')!;
@@ -80,8 +78,7 @@ test('dragging the ephemeral visit crumb onto another pane promotes it to a real
     'the tile landed on the cell of the pane the drop resolved in',
   ).toEqual([dropX, dropY]);
 
-  // The visiting pane followed its content: it is descended into the new tile on
-  // the destination's grid, and the ephemeral row is gone.
+  // The visiting pane followed its content, and the ephemeral row is gone.
   await expect.poll(async () => (await gw.focused()).textFocus, { timeout: 10_000 }).toBe(promoted.id);
   expect((await gw.focused()).gridID, 'the pane relocated to where the tile lives').toBe(home.gridID);
   await expect

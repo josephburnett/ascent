@@ -31,10 +31,9 @@ test('a frozen url tile: the circle button opens the address in a new tab', asyn
   const cx = Math.round(f.cx);
   const cy = Math.round(f.cy);
 
-  // Drag-create still works in a browser: a url tile is a real persisted thing
-  // the desktop can visit later, and it stays frozen here. The drop lands it
-  // bare, and the first descent prompts for the address, then, with no live
-  // capability, lands on the frozen descent.
+  // A url tile is a real persisted thing the desktop can visit later, and it
+  // stays frozen here. The drop lands bare, the first descent prompts for the
+  // address, and with no live capability the descent is the frozen one.
   const addr = `${serve.origin}/wasm_exec.js?newtab=1`;
   await gw.openPalette();
   await gw.dragCreate('url', cx, cy);
@@ -47,10 +46,9 @@ test('a frozen url tile: the circle button opens the address in a new tab', asyn
   expect(t, 'url tile created (frozen) from a plain browser').toBeTruthy();
   const versionBefore = t.version;
 
-  // The submit descended, and the circle is the open-in-new-tab affordance: a
-  // browser host cannot place a live view, so the click opens the frozen address
-  // in a new tab. It arrives as the context 'page' event, since noopener severs
-  // the popup relationship.
+  // A browser host cannot place a live view, so the circle button opens the
+  // frozen address in a new tab. It arrives as the context 'page' event, because
+  // noopener severs the popup relationship.
   await expect.poll(async () => (await gw.focused()).textFocus).not.toBe('');
   const pal = await gw.palette();
   const [popup] = await Promise.all([
@@ -61,8 +59,6 @@ test('a frozen url tile: the circle button opens the address in a new tab', asyn
   expect(popup.url()).toBe(addr);
   await popup.close();
 
-  // The gesture persisted nothing: the tile row is byte-for-byte as it was, still
-  // frozen, same version.
   const after = tileAt(await gw.getGrid(f.gridID), 'url', cx, cy)!;
   expect(after.version, 'opening a tab must not touch the tile').toBe(versionBefore);
 });

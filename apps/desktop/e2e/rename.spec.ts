@@ -5,8 +5,8 @@ import { tileAt } from './oracle';
 // crumb shows the name, as part of the bar rather than floating over pane
 // content. Clicking its text opens an input, and Enter commits a user-owned name
 // through the versioned rename. The server latches ownership in alt_user, so the
-// automatic captures — a shell's foreground command on detach, a url's page
-// title on freeze — never overwrite a name the user chose.
+// automatic captures (a shell's foreground command on detach, a url's page title
+// on freeze) never overwrite a name the user chose.
 
 test('the bar crumb names the grid you are in', async ({ gw, window }) => {
   await gw.enterPlugin('home');
@@ -21,7 +21,6 @@ test('the bar crumb names the grid you are in', async ({ gw, window }) => {
   await gw.descendCell(cx, cy);
   await gw.waitIdle();
 
-  // The title shows "unnamed"; right-click it and type the room's name.
   await expect.poll(async () => (await gw.barName()).label).toBe('unnamed');
   // A real mouse click. A synthetic dispatchEvent runs no default actions, and
   // so cannot see a blur-to-body bug that makes real renames do nothing.
@@ -31,7 +30,7 @@ test('the bar crumb names the grid you are in', async ({ gw, window }) => {
   await input.fill('kitchen');
   await input.press('Enter');
 
-  // The name landed server-side on the containing well, and the crumb agrees.
+  // The name lands on the containing well, which is what the crumb names.
   await expect
     .poll(async () => String(tileAt(await gw.getGrid(home.gridID), 'well', cx, cy)?.altText ?? ''))
     .toBe('kitchen');
@@ -63,8 +62,8 @@ test('clicking away commits a rename; untouched closes write nothing; Escape can
     .toBe('porch');
   const named = tileAt(await gw.getGrid(home.gridID), 'well', cx, cy)!;
 
-  // An untouched input closed by clicking away writes nothing: reading never
-  // mutates, and a no-op close must not bump the version.
+  // An untouched input closed by clicking away writes nothing, because reading
+  // never mutates and a no-op close must not bump the version.
   await gw.clickBarName('right');
   await expect(input).toBeVisible();
   await window.mouse.click(200, 200);
@@ -97,10 +96,9 @@ test('an async tile event never steals the rename input focus', async ({ gw, win
   await gw.dragCreate('markdown', icx, icy);
   const doc = tileAt(await gw.getGrid(inside.gridID), 'text', icx, icy)!;
 
-  // Open the rename, then land a foreign write on the text tile. The TileChanged
-  // event refreshes the file overlay, and its focus-return arm must not call
-  // canvas.focus() unconditionally: that yanks focus out of the input and
-  // typing goes to the canvas. The guard must keep the input focused through it.
+  // A foreign write on the text tile fires TileChanged, which refreshes the file
+  // overlay. Its focus-return arm must not call canvas.focus() unconditionally,
+  // or focus leaves the open rename input and typing goes to the canvas.
   await gw.clickBarName('right');
   const input = window.locator('#gw-rename-input');
   await expect(input).toBeVisible();
@@ -123,7 +121,6 @@ test('a user-set shell name survives the detach command capture', async ({ gw, w
   const cx = Math.round(home.cx);
   const cy = Math.round(home.cy);
 
-  // A dragged shell tile lands bare; the descent spawns the PTY.
   await gw.openPalette();
   await gw.dragCreate('shell', cx, cy);
   await gw.descendCell(cx, cy); // the drop lands bare; the descent creates the session
@@ -138,8 +135,8 @@ test('a user-set shell name survives the detach command capture', async ({ gw, w
     .poll(async () => String(tileAt(await gw.getGrid(home.gridID), 'shell', cx, cy)?.altText ?? ''))
     .toBe('my-work');
 
-  // Ascend: the detach path captures the foreground command and calls SetTileAlt
-  // as a non-user write, so it must defer to the user's name.
+  // The detach path captures the foreground command and calls SetTileAlt as a
+  // non-user write, so it must defer to the user's name.
   await gw.ascendViaCrumb();
   await expect.poll(async () => (await gw.focused()).textFocus).toBe('');
   await window.waitForTimeout(1000); // the capture is async fire-and-forget

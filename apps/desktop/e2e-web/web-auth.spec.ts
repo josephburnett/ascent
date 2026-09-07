@@ -5,7 +5,7 @@ import { seedHome } from '../e2e/fixtures';
 import { spawnServe, stopServe, freePort } from './fixtures';
 
 // The web password gate, held in the minted <home>/web-password file, driven
-// from a real browser against the real server: the login page fronts everything,
+// from a real browser against the real server. The login page fronts everything,
 // a wrong password re-prompts, the right one sets the cookie and the wasm client
 // boots, and the cookie keeps working across a reload. The cookie is checked
 // against the current password, so there is no re-prompt until the password
@@ -22,11 +22,10 @@ type Fixtures = {
 const test = base.extend<Fixtures>({
   serve: async ({}, use) => {
     const home = seedHome();
-    // The password is the web-password file beside server.yaml. The door is
-    // never open: serve mints a password when the file is absent, and a user who
-    // wants a memorable one writes the file, as here. spawnServe waits for the
-    // banner, which the gate never hides, and this suite then deliberately
-    // ignores the token it announced.
+    // The password lives in the web-password file beside server.yaml. serve
+    // mints one when the file is absent, so the door is never open; a user who
+    // wants a memorable password writes the file, as here. spawnServe waits for
+    // the banner, and this suite ignores the token the banner announced.
     fs.writeFileSync(path.join(home, 'web-password'), PASSWORD + '\n', { mode: 0o600 });
     const served = await spawnServe(home, await freePort());
     await use({ origin: served.origin });
@@ -53,16 +52,16 @@ test('the password gate: prompt, wrong password, login, cookie survives reload',
   await page.locator('button[type=submit]').click();
   await expect(page.locator('.err')).toHaveText('wrong password');
 
-  // The right password sets the cookie and lands home, and the wasm client boots
-  // normally behind the gate.
+  // The right password sets the cookie and lands home, and the wasm client
+  // boots behind the gate.
   await page.locator('input[name=password]').fill(PASSWORD);
   await page.locator('button[type=submit]').click();
   await page.waitForURL(serve.origin + '/');
   await page.goto(serve.origin + '/?e2e=1');
   await expectBooted(page);
 
-  // The cookie is the durable credential: a fresh navigation re-enters the app
-  // directly, with no prompt.
+  // The cookie is the durable credential, so a fresh navigation re-enters the
+  // app with no prompt.
   await page.goto(serve.origin + '/?e2e=1');
   await expectBooted(page);
   await expect(page.locator('input[name=password]')).toHaveCount(0);

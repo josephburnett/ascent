@@ -9,9 +9,9 @@ import { tileAt } from './oracle';
 // up by the leftover cell fraction, visibly shifting the terminal pixels on
 // every park and unpark.
 //
-// The spec crosses that seam: the rect the renderer draws the stand-in at, read
-// through the shellStandin hook from the same shellStandinRect the draw path
-// uses, must match the live xterm canvas's own screen rect.
+// The rect the renderer draws the stand-in at, read through the shellStandin
+// hook from the same shellStandinRect the draw path uses, must match the live
+// xterm canvas's own screen rect.
 test('the parked shell stand-in sits exactly where the live canvas was', async ({ gw, window }) => {
   await gw.enterPlugin('home');
 
@@ -31,8 +31,7 @@ test('the parked shell stand-in sits exactly where the live canvas was', async (
   const shell = tileAt(await gw.getGrid(a.gridID), 'shell', cx, cy)!;
   expect(shell, 'shell created').toBeTruthy();
 
-  // Content on screen, then an ascent to freeze so a preview snapshot exists,
-  // then descend back into the live session.
+  // The ascent freezes the session, so a preview snapshot exists to stand in.
   await window.keyboard.type('echo STANDIN-MARKER');
   await window.keyboard.press('Enter');
   // Wait for echo's output line. The typed command also carries the marker, so a
@@ -75,17 +74,15 @@ test('the parked shell stand-in sits exactly where the live canvas was', async (
   );
   expect(standin, 'stand-in rect resolvable while parked').toBeTruthy();
 
-  // The stand-in must sit exactly where the live canvas was: same origin, same
-  // size, with only sub-pixel slack. A contain-fit misses by the centering offset
-  // and the scale-up.
+  // Same origin and same size, with only sub-pixel slack. A contain-fit misses
+  // by the centering offset and the scale-up.
   expect(Math.abs(standin.x - live!.x), 'x').toBeLessThan(1.5);
   expect(Math.abs(standin.y - live!.y), 'y').toBeLessThan(1.5);
   expect(Math.abs(standin.w - live!.w), 'w').toBeLessThan(1.5);
   expect(Math.abs(standin.h - live!.h), 'h').toBeLessThan(1.5);
 
-  // Leave clean: refocus the shell pane, which closes the menu through the focus
-  // transfer, ascend, and delete the tile so its tmux session dies before
-  // teardown.
+  // Refocusing the shell pane closes the menu. Delete the tile so its tmux
+  // session dies before teardown.
   await gw.focusPane((await gw.panes()).find((p) => p.id === shellPaneId)!);
   await gw.ascendViaCrumb();
   await expect.poll(async () => (await gw.focused()).textFocus).toBe('');

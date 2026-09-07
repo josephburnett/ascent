@@ -2,11 +2,10 @@ import { test, expect } from './fixtures';
 import { tileAt } from './oracle';
 
 // Crosses the failure-surfacing seam: a real RPC failing at the real transport
-// must produce a visible notice on the canvas strip, not a console line, and the
-// strip must be reserved layout that no pane or native view can cover. Failures
-// are injected by aborting the Connect route with Playwright, so the whole path
-// from RPC error through reactToErr and errsurface to the strip runs against the
-// live stack with no timing races.
+// must produce a visible notice on the canvas strip, and the strip must be
+// reserved layout that no pane or native view can cover. Failures are injected
+// by aborting the Connect route with Playwright, so the path from RPC error
+// through reportErr and errsurface to the strip runs against the live stack.
 
 async function errors(window: any) {
   return window.evaluate(() => (window as any).__gridwellTest.errors());
@@ -23,11 +22,9 @@ test('a failed mutation RPC surfaces a dismissible notice on the strip', async (
   const created = tileAt(await gw.getGrid(f.gridID), 'text', cx, cy)!;
   expect(created, 'markdown tile created').toBeTruthy();
 
-  // Sever PlaceTile at the transport and drag the tile one cell.
   await window.route('**/gridwell.v1.Gridwell/PlaceTile', (r: any) => r.abort());
   await gw.dragTileCell(cx, cy, cx + 1, cy);
 
-  // The failure lands on the strip, as an error, attributed to the RPC.
   await expect
     .poll(async () => {
       const e = await errors(window);
@@ -50,7 +47,7 @@ test('a failed mutation RPC surfaces a dismissible notice on the strip', async (
 
   await window.unroute('**/gridwell.v1.Gridwell/PlaceTile');
 
-  // Clicking the row dismisses it and returns the layout to full height.
+  // Clicking the row dismisses it, and the layout returns to full height.
   await gw.clickScreen(200, e.stripTop + 5);
   await expect
     .poll(async () => (await errors(window)).stripH)
@@ -59,10 +56,9 @@ test('a failed mutation RPC surfaces a dismissible notice on the strip', async (
 
 // Crosses the expiry seam: a one-shot failure must leave the strip on its own
 // once its source goes quiet for errsurface.ExpireAfter, returning the reserved
-// height to the panes with no user gesture, through the real timer, the real
-// Expire prune, and the real relayout. The sticky exemption, where plugin health
-// and a backend exit persist until resolved or dismissed, is pinned by the
-// errsurface unit tests; this proves the live wiring fires.
+// height to the panes with no user gesture. The sticky exemption, where plugin
+// health and a backend exit persist until resolved or dismissed, is pinned by
+// the errsurface unit tests; this proves the live wiring fires.
 test('a one-shot notice expires off the strip once its source goes quiet', async ({ gw, window }) => {
   await gw.enterPlugin('home');
   const f = await gw.focused();
@@ -73,8 +69,8 @@ test('a one-shot notice expires off the strip once its source goes quiet', async
   await gw.dragCreate('markdown', cx, cy);
   expect(tileAt(await gw.getGrid(f.gridID), 'text', cx, cy), 'markdown tile created').toBeTruthy();
 
-  // One failed mutation, then the failure stops when the route is removed: the
-  // canonical one-shot, like a url that failed to load once.
+  // One failed mutation, then the failure stops when the route is removed. That
+  // is the one-shot shape, like a url that failed to load once.
   await window.route('**/gridwell.v1.Gridwell/PlaceTile', (r: any) => r.abort());
   await gw.dragTileCell(cx, cy, cx + 1, cy);
   await expect
@@ -82,8 +78,8 @@ test('a one-shot notice expires off the strip once its source goes quiet', async
     .toBe(true);
   await window.unroute('**/gridwell.v1.Gridwell/PlaceTile');
 
-  // No click, no dismiss: the strip must clear on its own and the panes get
-  // their height back. ExpireAfter is 10s, so poll well past it.
+  // No click and no dismiss: the strip must clear on its own. ExpireAfter is
+  // 10s, so poll well past it.
   await expect
     .poll(async () => (await errors(window)).stripH, { timeout: 20_000, intervals: [1_000] })
     .toBe(0);
@@ -91,9 +87,9 @@ test('a one-shot notice expires off the strip once its source goes quiet', async
   const bar = await window.evaluate(() => (window as any).__gridwellTest.bar());
   const winH = await window.evaluate(() => globalThis.innerHeight);
   const bottom = Math.max(...panes.map((p: any) => p.y + p.h));
-  // Panes reclaim the strip's height and nothing more: the one bar's band
-  // stays reserved below them, and with no strip left it runs to the window's
-  // bottom edge.
+  // Panes reclaim the strip's height and nothing more. The bar's band stays
+  // reserved below them, and with no strip left it runs to the window's bottom
+  // edge.
   expect(bottom, 'panes reclaim the reserved strip height').toBe(bar.top);
   expect(bar.top + bar.height, 'the band now reaches the window bottom').toBe(winH);
 });
@@ -109,7 +105,7 @@ test('a rejected text save surfaces and reconciles instead of lingering as saved
   const created = tileAt(await gw.getGrid(f.gridID), 'text', cx, cy)!;
   expect(created, 'markdown tile created').toBeTruthy();
 
-  // Establish server truth: type, ascend to flush, verify it persisted.
+  // Establish server truth before any failure is injected.
   await gw.descendCell(cx, cy);
   await gw.typeText('saved-content');
   await gw.ascendViaCrumb();
@@ -117,13 +113,12 @@ test('a rejected text save surfaces and reconciles instead of lingering as saved
     .poll(async () => gw.getTileContent(created.id), { timeout: 10_000 })
     .toContain('saved-content');
 
-  // Re-descend, sever WriteContent, and type. The debounced save must fail
-  // visibly; otherwise the rejected bytes keep rendering as saved with no
-  // signal, which is what "it just disappeared" looks like.
+  // The debounced save must fail visibly. Rejected bytes that keep rendering as
+  // saved with no signal are what "it just disappeared" looks like.
   await gw.descendCell(cx, cy);
   // A real Connect rejection body, which the client classifies as
-  // OutcomeRejected. An aborted request is the transport contract instead: kept
-  // and retried, pinned by web-outage, and it would eventually land the suffix
+  // OutcomeRejected. An aborted request is the other transport contract, kept
+  // and retried (web-outage.spec.ts), and it would eventually land the suffix
   // and invert this spec's assertion.
   await window.route('**/gridwell.v1.Gridwell/WriteContent', (r: any) =>
     r.fulfill({
@@ -141,8 +136,7 @@ test('a rejected text save surfaces and reconciles instead of lingering as saved
     .toBe(true);
   await window.unroute('**/gridwell.v1.Gridwell/WriteContent');
 
-  // Reconcile: the server's body is untouched, and the client did not keep
-  // claiming otherwise. The strip said so and the cache dropped the bytes.
+  // The server's body is untouched, and the cache dropped the rejected bytes.
   const body = await gw.getTileContent(created.id);
   expect(body).toContain('saved-content');
   expect(body).not.toContain('rejected-suffix');
@@ -150,21 +144,20 @@ test('a rejected text save surfaces and reconciles instead of lingering as saved
 
 // Crosses the Electron main-process error seam: unhandled, a live url tile's
 // did-fail-load leaves the native WebContentsView blank with no signal to the
-// user. This descends into a real, unreachable address, so the Electron layer
-// fires a real net error on a real WebContentsView, which must reach the wasm
-// errsurface over gw:error attributed to 'electron:webview'. It is not an rpc:
-// source, since no RPC is involved.
+// user. A real net error on a real WebContentsView must reach the wasm
+// errsurface over gw:error, attributed to 'electron:webview' because no RPC is
+// involved.
 test('an unreachable live URL tile surfaces a did-fail-load notice from the Electron layer', async ({
   gw,
   window,
 }) => {
   await gw.enterPlugin('home');
 
-  // The ephemeral-visit modal, opened by clicking rather than dragging the url
-  // palette swatch, descends straight into a live url tile; see
-  // ephemeral-url.spec.ts. Port 9, discard, has nothing listening on a normal
-  // machine, so Chromium's connection attempt is refused immediately with
-  // ERR_CONNECTION_REFUSED rather than hanging on a timeout.
+  // Clicking the url swatch opens the ephemeral-visit modal, which descends
+  // straight into a live url tile; see ephemeral-url.spec.ts. Port 9, discard,
+  // has nothing listening on a normal machine, so Chromium's connection attempt
+  // is refused immediately with ERR_CONNECTION_REFUSED rather than hanging on a
+  // timeout.
   await gw.clickPaletteSwatch('url');
   await window.locator('#gw-url-modal.open').waitFor({ timeout: 5_000 });
   await window.fill('#gw-url-input', 'http://127.0.0.1:9/');
@@ -184,9 +177,9 @@ test('an unreachable live URL tile surfaces a did-fail-load notice from the Elec
 });
 
 // setupWellReframe is the shared body of the two framing-writeback failure
-// specs, the rejection and the transport abort: create a well, descend, note the
-// parent's cached signature, install `route` over SetFraming, then reframe so
-// the settle persister posts into it. It returns what the assertions need.
+// specs, the rejection and the transport abort. It reframes inside a well with
+// SetFraming failing in the shape `route` decides, and returns the parent grid,
+// the well, and the parent's cached signatures from before the reframe.
 async function setupWellReframe(
   gw: any,
   window: any,
@@ -201,9 +194,8 @@ async function setupWellReframe(
   await gw.descendCell(cx, cy);
   await gw.waitIdle();
 
-  // The parent grid's cached signatures before any reframe, read through the
-  // gesture-free gridSigs hook. A focus click would refetch the grid it lands
-  // on, healing the divergence this spec observes.
+  // Read through the gesture-free gridSigs hook. A focus click would refetch
+  // the grid it lands on, healing the divergence this spec observes.
   const sig0 = await window.evaluate(
     (gid: string) => (window as any).__gridwellTest.gridSigs(gid),
     parentGrid,
@@ -216,10 +208,9 @@ async function setupWellReframe(
 
   // Reframe inside the well, with a delivery ack. A synthetic wheel under xvfb
   // can be dropped, and a lost gesture leaves the settle persister nothing to
-  // persist: that was this spec's flake, where isolated runs saw zero SetFraming
-  // posts and the spec timed out on the far-end notice with no way to say which
-  // stage went quiet. The pane's own framing is the ack, and resending an
-  // undelivered wheel is harness recovery, not the property under test.
+  // persist, which is this spec's flake row in docs/flake-ledger.md. The pane's
+  // own framing is the ack, and resending an undelivered wheel is harness
+  // recovery rather than the property under test.
   const z0 = (await gw.focused()).zoom;
   let reframed = false;
   for (let attempt = 0; attempt < 5 && !reframed; attempt++) {
@@ -235,9 +226,9 @@ async function setupWellReframe(
   const zc = await gw.focused();
   await gw.panFocusedGrid(Math.round(zc.cx), Math.round(zc.cy), Math.round(zc.cx) - 1, Math.round(zc.cy) - 1);
 
-  // Staged attribution: the 600ms settle persister must flush and post the
-  // changed framing, counted by persistPosts, so the far-end notice below can
-  // only fail for far-end reasons.
+  // The 600ms settle persister must post the changed framing, counted by
+  // persistPosts, so the far-end notice below can only fail for far-end
+  // reasons.
   await expect
     .poll(
       () => window.evaluate(() => (window as any).__gridwellTest.persistPosts().SetFraming ?? 0),
@@ -259,11 +250,11 @@ test('a framing writeback REJECTED by the server rolls the optimistic patch back
   window,
 }) => {
   // persistFraming patches the cache before posting SetFraming, so the parent
-  // preview updates instantly. If the server rejects the write for a non-conflict
-  // reason, having spoken and said no, the patch must roll back; otherwise a
-  // sibling pane's well preview shows framing the server refused and snaps back
-  // on the next reload. The rejection here is a real Connect error body, the wire
-  // shape the client classifies as OutcomeRejected. A network abort is the other
+  // preview updates instantly. If the server rejects the write for a
+  // non-conflict reason, the patch must roll back; otherwise a sibling pane's
+  // well preview shows framing the server refused and snaps back on the next
+  // reload. The rejection here is a real Connect error body, the wire shape the
+  // client classifies as OutcomeRejected. A network abort is the other
   // contract, pinned by the transport spec below.
   const { parentGrid, wellID, sig0 } = await setupWellReframe(gw, window, (r: any) =>
     r.fulfill({
@@ -273,9 +264,9 @@ test('a framing writeback REJECTED by the server rolls the optimistic patch back
     }),
   );
 
-  // The rejected patch must not stick: the parent cache reconciles back to
-  // server truth, the original framing. Without the rollback the patched framing
-  // sits in the cache until an unrelated gesture refetches.
+  // The parent cache reconciles back to server truth, the original framing.
+  // Without the rollback the patched framing sits in the cache until an
+  // unrelated gesture refetches.
   await expect
     .poll(
       async () => {
@@ -295,16 +286,14 @@ test('a framing writeback lost to TRANSPORT keeps the patch (2026-08-14)', async
   gw,
   window,
 }) => {
-  // The other half of the contract: an aborted request means the server never
-  // spoke. The patched framing is the user's settled viewport and the only copy
-  // of it, so rolling it back would lose the value; against a flapping link a
-  // refetch could even succeed and revert the wheel. The patch stays on screen
-  // and the write parks in the outbox. web-outage.spec.ts proves the drain when
-  // the server comes back.
+  // An aborted request means the server never spoke. The patched framing is the
+  // user's settled viewport and the only copy of it, so rolling it back would
+  // lose the value, and against a flapping link a refetch could succeed and
+  // revert the wheel. The patch stays on screen and the write parks in the
+  // outbox. web-outage.spec.ts proves the drain when the server comes back.
   const { parentGrid, wellID, sig0 } = await setupWellReframe(gw, window, (r: any) => r.abort());
 
-  // The patch stays: the parent's cached signature keeps the reframed values,
-  // checked steadily rather than once, since a late rollback is the bug.
+  // Checked repeatedly rather than once, since a late rollback is the bug.
   for (let i = 0; i < 5; i++) {
     const sigs = await window.evaluate(
       (gid: string) => (window as any).__gridwellTest.gridSigs(gid),

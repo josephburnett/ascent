@@ -20,26 +20,24 @@ test('the plugin fs declares no tool it cannot honor (#271)', async ({ gw, windo
 });
 
 test('an fs grid wears the glyph its plugin declared, not a kind the client knows', async ({ gw }) => {
-  // The whole declaration flow in one assertion: the fs plugin declares
-  // glyph "folder" and host_content in its plugin.v1 handshake, the adapter
-  // stamps both onto every grid it serves, and the client's crumb renders the
-  // declared face. Nothing between them knows the word "fs" any more — before
-  // the declared facts this crumb came from a Grid.source_kind enum the client
-  // switched on, so a plugin that was not fs or proc could never wear a face.
+  // The fs plugin declares glyph "folder" and host_content in its plugin.v1
+  // handshake, the adapter stamps both onto every grid it serves, and the
+  // client's crumb renders the declared face. Nothing between them knows the
+  // word "fs".
   await gw.enterPlugin('code');
   const bar = await gw.bar();
   const chain = bar.segments.filter((s) => s.kind === 'chain');
   const here = chain[chain.length - 1];
   expect(here, 'the fs level has a crumb').toBeTruthy();
   expect(here.glyph, 'the crumb wears the declared folder face').toBe('folder');
-  // The level the descent came from is the node's own room: no declaration,
-  // so the well face. The two arms of the same rule, one gesture apart.
+  // The level the descent came from is the node's own room, which declares
+  // nothing, so it wears the well face.
   expect(chain[0].glyph, 'home is owned content').toBe('well');
 });
 
 test('a source file shows as plain text and refreshes each open', async ({ gw, window }) => {
-  // Reset the fixture: the freshness half of this test mutates the file, and the
-  // module-scoped dir persists across runs.
+  // The freshness half of this test mutates the file and the module-scoped dir
+  // persists across runs, so rewrite it first.
   fs.writeFileSync(path.join(ROOT, 'notes.go'), '# not a heading\nplain body v1\n');
   await gw.enterPlugin('code');
   const f = await gw.focused();
@@ -50,8 +48,8 @@ test('a source file shows as plain text and refreshes each open', async ({ gw, w
 
   await gw.descendCell(Number(tile.x ?? 0), Number(tile.y ?? 0));
   await expect.poll(async () => (await gw.focused()).textFocus).not.toBe('');
-  // Verbatim: the '#' line is not a heading, the body sits in a plain <pre>, and
-  // no toggle button offers a markdown flip.
+  // The '#' line is not a heading, the body sits in a plain <pre>, and no
+  // toggle offers a markdown flip.
   await expect
     .poll(() =>
       window.evaluate(() => document.getElementById('gw-rendered-view')?.innerHTML ?? ''),
@@ -65,8 +63,8 @@ test('a source file shows as plain text and refreshes each open', async ({ gw, w
     'no rendered/raw toggle for a plain declaration',
   ).toBe('none');
 
-  // Freshness: change the file on disk, leave, come back, and the new bytes
-  // show. Every open re-reads, since it is all read-only.
+  // Every open re-reads, since the body is read-only, so bytes changed on disk
+  // show on the next descent.
   await gw.ascendViaCrumb();
   await expect.poll(async () => (await gw.focused()).textFocus).toBe('');
   fs.writeFileSync(path.join(ROOT, 'notes.go'), 'plain body v2 — changed on disk\n');
@@ -89,7 +87,7 @@ test('a projection rearranged stays rearranged: fs tiles move and resize (#266)'
   const dir = (await gw.getGrid(f.gridID)).tiles!.find((t) => t.altText === 'movedir')!;
   expect(dir, 'movedir listed').toBeTruthy();
 
-  // Move: a same-grid left-drag is placement, not creation, so the read-only
+  // A same-grid left-drag is placement rather than creation, so the read-only
   // projection accepts it and its store persists it. The client must not refuse
   // the gesture before the RPC can fire.
   const fx = Number(dir.x ?? 0);
@@ -102,9 +100,9 @@ test('a projection rearranged stays rearranged: fs tiles move and resize (#266)'
     })
     .toBe(`${fx},${fy + 2}`);
 
-  // Resize persists too, through the same placement door. Park the tile at a
-  // known in-viewport cell first; the +2 target grows it one cell, since the
-  // moving corner snaps the way tile-gestures.spec pins.
+  // Resize goes through the same placement door. Park the tile at a known
+  // in-viewport cell first; the +2 target grows it one cell, because the moving
+  // corner snaps the way tile-gestures.spec pins.
   const file = (await gw.getGrid(f.gridID)).tiles!.find((t) => t.altText === 'sizeme.md')!;
   await gw.dragTileCell(Number(file.x ?? 0), Number(file.y ?? 0), 0, 1);
   await expect
@@ -133,11 +131,10 @@ test('a read-only file is selectable, and stays so through a reload (#268)', asy
   await gw.descendCell(Number(tile.x ?? 0), Number(tile.y ?? 0));
   await expect.poll(async () => (await gw.focused()).textFocus).not.toBe('');
 
-  // A reload lands back inside the descent. Two halves of one promise: the
-  // descent must reach the url at all, through the completion write, since a
-  // read-only file has no textarea events to paper over a missing one; and the
-  // restore must come back on the rendered DOM face, not the canvas-drawn text
-  // mode with nothing to select.
+  // The descent must reach the url through the completion write, since a
+  // read-only file has no textarea events to stand in for a missing one. The
+  // reload must then restore the rendered DOM face, because the canvas-drawn
+  // text mode has nothing to select.
   const fileSeg = String(tile.id).split('/').pop()!;
   await expect
     .poll(() => window.evaluate(() => location.pathname), { timeout: 10_000 })
@@ -156,8 +153,8 @@ test('a read-only file is selectable, and stays so through a reload (#268)', asy
     )
     .toContain('grab these words');
 
-  // A real mouse drag across the text selects it: no handler may swallow the
-  // drag and no user-select may block it.
+  // A real mouse drag must select the text, so no handler may swallow the drag
+  // and no user-select may block it.
   const box = await window.evaluate(() => {
     const pre = document.querySelector('#gw-rendered-view pre.gw-plain')!;
     const r = pre.getBoundingClientRect();

@@ -1,14 +1,13 @@
 import { test, expect } from './fixtures';
 
 // Every bridge verb is an ipcMain.handle on the other side, so every one of
-// them can reject. A dropped promise on `place` is the worst of them: the wasm
-// sets the pane's live handle BEFORE main answers, so a refused placement
-// leaves a pane the renderer believes is live with nothing on screen, nothing
-// said, and — because placeURLView returns early for the tile already live in
-// the pane — no way back to live short of ascending out.
-//
-// The registry is exposed to the spec under GRIDWELL_E2E, so the refusal is
-// injected at the real seam: main's own handler throws.
+// them can reject. A dropped promise on `place` is the worst: the wasm sets the
+// pane's live handle BEFORE main answers, so a refused placement leaves a pane
+// the renderer believes is live with nothing on screen and nothing said, and
+// placeURLView then returns early for the tile already live in the pane, so
+// there is no way back short of ascending out. The registry is exposed under
+// GRIDWELL_E2E, so the refusal is injected at the real seam: main's own handler
+// throws.
 
 async function notices(window: any): Promise<string[]> {
   const e = await window.evaluate(() => (window as any).__gridwellTest.errors());
@@ -25,8 +24,7 @@ test('a refused place surfaces and leaves the pane retryable, not falsely live',
   const cx = Math.round(home.cx);
   const cy = Math.round(home.cy);
 
-  // Main refuses every placement, the way a destroyed window or a view that
-  // will not attach does.
+  // A destroyed window or a view that will not attach refuses the same way.
   await electronApp.evaluate(() => {
     const g = globalThis as any;
     const reg = g.__gwRegistry;
@@ -50,8 +48,8 @@ test('a refused place surfaces and leaves the pane retryable, not falsely live',
       webContents.getAllWebContents().some((w) => w.getURL().includes('refused=1')),
     );
 
-  // The refusal reaches the strip, on the same source main's own webview
-  // failures report under.
+  // The refusal reaches the strip under the same source main's own webview
+  // failures report on.
   await expect
     .poll(async () => (await notices(window)).join('\n'), {
       message: 'a rejected bridge call must surface, never log and return',
@@ -60,9 +58,7 @@ test('a refused place surfaces and leaves the pane retryable, not falsely live',
     .toContain('placeWebview failed');
   expect(await liveWithMarker(), 'main made no view, so nothing is live').toBe(false);
 
-  // With main answering again, the bar circle's retry goes live. A live handle
-  // left standing from the refused place would make placeURLView return early
-  // — the pane already shows this tile — and the retry would do nothing at all.
+  // With main answering again, the bar circle's retry goes live.
   await electronApp.evaluate(() => {
     const g = globalThis as any;
     g.__gwRegistry.place = g.__gwRealPlace;

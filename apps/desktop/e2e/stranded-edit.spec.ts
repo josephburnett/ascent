@@ -26,20 +26,20 @@ test('an edit typed right before leaving the doc still persists', async ({ gw, w
   await gw.ascendViaCrumb();
 
   // Type the edit and leave inside the save-debounce window, with no waitIdle
-  // between: the point is to leave with the save still pending.
+  // between, so the pane leaves with the save still pending.
   await gw.descendCell(cx, cy);
   await window.keyboard.type(' EDIT');
   const p = await gw.focused();
-  await window.mouse.click(p.x + p.w / 2, p.y + p.h / 2, { button: 'middle' }); // leave with the edit still pending
-  // The race that matters is typing then leaving. The ascent may settle, and its
-  // animation must, or the next descend computes cells mid-transition.
+  await window.mouse.click(p.x + p.w / 2, p.y + p.h / 2, { button: 'middle' });
+  // The ascent's animation must settle, or the next descend computes cells
+  // mid-transition.
   await gw.waitIdle();
   await gw.descendCell(cx + 1, cy);
   await gw.waitIdle();
   expect((await gw.focused()).textFocus, 'the pane moved to the other doc').not.toBe(docA.id);
 
-  // The edit belongs to doc A, being tile-scoped, and must land server-side even
-  // though no pane shows A any more.
+  // The edit is tile-scoped, so it must land on doc A even though no pane shows
+  // A any more.
   await expect
     .poll(async () => gw.getTileContent(docA.id), { timeout: 10_000 })
     .toContain('EDIT');

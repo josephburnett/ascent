@@ -1,13 +1,13 @@
 import { test, expect } from './fixtures';
 import { tileAt } from './oracle';
 
-// The explicit freeze gesture stores the user's intent on the tile. Unlike the
-// transient navigate-away freeze, which revives on return, a deliberately frozen
-// url stays frozen across re-descent, until the reconnect button clears the
-// intent by going live. This drives the whole seam: the renderer entry the
-// context menu's "Freeze Page" fires, the SetTile url_frozen arm, the stored
-// column, and DecideAutoLive. The native menu cannot be driven headlessly; its
-// template and action binding are unit-tested in contextmenu.test.ts.
+// The explicit freeze gesture stores the user's intent on the tile. The
+// transient navigate-away freeze revives on return, while a deliberately frozen
+// url stays frozen across re-descent until the reconnect button clears the
+// intent by going live. This drives the seam: the renderer entry the context
+// menu's "Freeze Page" fires, the SetTile url_frozen arm, the stored column, and
+// DecideAutoLive. The native menu cannot be driven headlessly, so its template
+// and action binding are unit-tested in contextmenu.test.ts.
 
 test('freeze intent survives re-descent; reconnect clears it', async ({
   electronApp,
@@ -20,7 +20,7 @@ test('freeze intent survives re-descent; reconnect clears it', async ({
   const cy = Math.round(f.cy);
   const grid = f.gridID;
 
-  // A live url descent: create, then prompt on the first descent.
+  // A bare url tile prompts for its address on the first descent.
   await gw.openPalette();
   await gw.dragCreate('url', cx, cy);
   await gw.descendCell(cx, cy);
@@ -33,16 +33,15 @@ test('freeze intent survives re-descent; reconnect clears it', async ({
     );
   await expect.poll(live, { timeout: 15_000 }).toBe(true);
 
-  // The freeze gesture: send the exact IPC the "Freeze Page" menu item fires, at
-  // the pane holding the live view.
+  // The exact IPC the "Freeze Page" menu item fires, at the pane holding the
+  // live view.
   const paneId = (await gw.focused()).id;
   await electronApp.evaluate(({ BrowserWindow }, pid: string) => {
     BrowserWindow.getAllWindows()[0].webContents.send('gw:freeze-url', { paneId: pid });
   }, paneId);
 
-  // The live view tears down and the intent persists. It is framing-class, and
-  // the store's unit tests pin that it bumps no version; this pins the stored
-  // fact.
+  // The live view tears down and the intent persists. The intent is framing, so
+  // it bumps no version, which the store's unit tests pin.
   await expect.poll(live, { timeout: 15_000 }).toBe(false);
   await expect
     .poll(async () => {
@@ -51,8 +50,8 @@ test('freeze intent survives re-descent; reconnect clears it', async ({
     }, { timeout: 10_000 })
     .toBe(true);
 
-  // Ascend, then re-descend: a user-frozen url must not go live, the opposite of
-  // the descent behavior auto-live.spec.ts pins.
+  // On re-descent a user-frozen url must not go live, where an unfrozen one
+  // does; auto-live.spec.ts pins that half.
   await gw.middleClickCell(cx, cy);
   await expect.poll(async () => (await gw.focused()).textFocus).toBe('');
   await gw.descendCell(cx, cy);
@@ -60,8 +59,8 @@ test('freeze intent survives re-descent; reconnect clears it', async ({
   await window.waitForTimeout(1_500); // give a wrong auto-live time to fire
   expect(await live(), 'a deliberately frozen url stays frozen on descent').toBe(false);
 
-  // The bar slot shows the reconnect circle, and clicking it goes live and clears
-  // the standing intent: going live is the unfreeze.
+  // The bar slot shows the reconnect circle. Clicking it goes live, and going
+  // live is what clears the standing intent.
   const bar = await window.evaluate(() => (window as any).__gridwellTest.bar());
   await window.mouse.click(bar.left + bar.width - 24, bar.top + bar.height / 2);
   await expect.poll(live, { timeout: 15_000 }).toBe(true);

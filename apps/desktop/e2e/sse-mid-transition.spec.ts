@@ -2,13 +2,11 @@ import { test, expect } from './fixtures';
 import { tileAt } from './oracle';
 
 // An event landing mid-transition must update tile data and never move the
-// framing the animation owns: events own data, the animation owns framing, and
-// the two never cross. This drives it through the real stack. The transition
-// clock is stretched through the e2e-only setTransitionMs hook, a tile is
-// created through the server's front door while the descent animation is
-// provably in flight, per transitioning(), and the landing framing must be
-// identical to an uninjected control descent while the injected tile still shows
-// up, proving the data did fan out.
+// framing the animation owns. Events own data and the animation owns framing.
+// The transition clock is stretched through the e2e-only setTransitionMs hook
+// and a tile is created through the server's front door while transitioning()
+// says the descent animation is in flight, so the landing framing must match an
+// uninjected control descent while the injected tile still shows up.
 
 async function hook<T>(window: any, expr: string): Promise<T> {
   return window.evaluate(`(window).__gridwellTest.${expr}`);
@@ -25,7 +23,7 @@ test('an SSE event mid-descent updates data without deflecting the landing frami
   const child = well.childGridId as string;
   const origin = await hook<string>(window, 'origin()');
 
-  // The control: a clean descent, with no injection, fixes the expected landing.
+  // A clean descent with no injection fixes the expected landing.
   await gw.descendCell(cx, cy);
   const control = await gw.focused();
   {
@@ -37,8 +35,8 @@ test('an SSE event mid-descent updates data without deflecting the landing frami
   // Stretch the transition so the injection window is wide and deterministic.
   await hook(window, 'setTransitionMs(2000)');
 
-  // Start the descent without waiting for idle, then create a tile in the child
-  // grid through the front door while the animation runs.
+  // The descent starts without waiting for idle, so the CreateTile below lands
+  // while the animation is still running.
   const c = await gw.cellCenter(a.id, cx, cy);
   await window.mouse.click(c.x, c.y);
   const resp = await window.evaluate(
@@ -63,15 +61,12 @@ test('an SSE event mid-descent updates data without deflecting the landing frami
   await hook(window, 'setTransitionMs(350)');
   await gw.waitIdle();
 
-  // Framing: the injected event must not deflect the landing, so the pane sits
-  // exactly where the clean control descent landed.
   const landed = await gw.focused();
   expect(landed.gridID, 'descent completed into the child grid').toBe(child);
   expect(landed.cx, 'landing cx unchanged by the mid-flight event').toBeCloseTo(control.cx, 6);
   expect(landed.cy, 'landing cy unchanged by the mid-flight event').toBeCloseTo(control.cy, 6);
   expect(landed.zoom, 'landing zoom unchanged by the mid-flight event').toBeCloseTo(control.zoom, 6);
 
-  // Data: the injected tile fanned out and is visible in the descended pane.
   expect(landed.tileIds, 'the injected tile reached the animating pane').toContainEqual(
     expect.stringMatching(/\/(\d+|~[A-Za-z0-9_-]+)$/),
   );

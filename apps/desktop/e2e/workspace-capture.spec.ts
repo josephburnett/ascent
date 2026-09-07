@@ -2,10 +2,10 @@ import { test, expect } from './fixtures';
 import { tileAt } from './oracle';
 
 // The first descent into a never-arranged pane tile captures the current window
-// layout, so the user keeps looking at exactly what they had, now inside the
-// workspace, and the capture persists as the tile's arrangement with no save
-// gesture. A single-pane window captures a single pane, which is what the
-// roundtrip and bar specs pin.
+// layout, so the user keeps looking at what they had, now inside the workspace,
+// and the capture persists as the tile's arrangement with no save gesture. A
+// single-pane window captures a single pane, which is what the roundtrip and bar
+// specs pin.
 
 async function depth(window: any): Promise<number> {
   return window.evaluate(() => (window as any).__gridwellTest.workspace().depth);
@@ -21,7 +21,6 @@ test('first descent captures the current split; later descents restore it', asyn
   expect(panes0).toHaveLength(2);
   const rootGrid = panes0[0].gridID;
 
-  // Drop the pane tile in the left pane and descend into it.
   await gw.focusPane(panes0[0]);
   const f = await gw.focused();
   const cx = Math.round(f.cx);
@@ -33,15 +32,15 @@ test('first descent captures the current split; later descents restore it', asyn
   await gw.descendCell(cx, cy);
   await expect.poll(async () => depth(window)).toBe(1);
 
-  // The capture: both panes survive into the workspace, framing the same grid.
+  // Both panes survive into the workspace, framing the same grid.
   const inner = (await gw.panes()).slice().sort((a, b) => a.x - b.x);
   expect(inner, 'the split was captured').toHaveLength(2);
   for (const p of inner) {
     expect(p.gridID, 'captured panes keep their grids').toBe(rootGrid);
   }
 
-  // The capture persists with no gesture: the layout persister's first tick
-  // writes it, since a never-arranged tile has a nil baseline.
+  // A never-arranged tile has a nil baseline, so the layout persister's first
+  // tick writes the capture with no gesture.
   await expect
     .poll(
       async () => {
@@ -55,8 +54,7 @@ test('first descent captures the current split; later descents restore it', asyn
     )
     .toBe('captured');
 
-  // Leave, waiting for idle because the return animation swallows clicks, then
-  // re-enter: an ordinary blob descent restores the captured split.
+  // Re-entering is an ordinary blob descent, which restores the captured split.
   await gw.leaveWorkspace();
   await expect.poll(async () => depth(window)).toBe(0);
   await gw.descendCell(cx, cy);

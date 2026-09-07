@@ -1,11 +1,9 @@
 import { test, expect } from './fixtures';
 
 // Clicking the shell swatch, rather than dragging it, opens an ephemeral shell:
-// created off-grid in the scratch grid, descended into, PTY spawned. Ascending
-// deletes it. The tile row is gone, the delete kills the tmux session and all
-// its processes, nothing lands on the home grid, and no error surfaces. The
-// grey border while inside is the warning; the oracle asserts the fact behind
-// it, that the tile lives in the scratch grid.
+// created in the off-grid scratch grid, descended into, PTY spawned. Ascending
+// deletes the tile and kills its tmux session. Nothing lands on the home grid
+// and no error surfaces.
 
 test('clicking the shell swatch opens an ephemeral shell; ascent deletes it', async ({
   window,
@@ -21,11 +19,11 @@ test('clicking the shell swatch opens an ephemeral shell; ascent deletes it', as
   const home = await gw.focused();
   const homeBefore = await gw.getGrid(home.gridID);
 
-  // Click the shell swatch, rather than dragging: descend into a live shell.
+  // Clicking the swatch descends into a live shell.
   await gw.clickPaletteSwatch('shell');
   await expect.poll(async () => (await gw.focused()).textFocus, { timeout: 15_000 }).not.toBe('');
 
-  // The shell tile lives in the off-grid scratch grid, not on home.
+  // The tile lives in the scratch grid, and home is untouched.
   const scratch = await gw.getGrid(scratchGridID);
   const scratchShells = (scratch.tiles ?? []).filter((t) => t.kind === 'shell');
   expect(scratchShells, 'one ephemeral shell in the scratch grid').toHaveLength(1);
@@ -33,24 +31,23 @@ test('clicking the shell swatch opens an ephemeral shell; ascent deletes it', as
     tileCount(homeBefore),
   );
 
-  // The bar's current crumb labels the dying context read-only, as "ephemeral",
-  // and a left-click must not open the rename input.
+  // The crumb labels the dying context "ephemeral" and is read-only, so no
+  // rename input opens.
   await expect.poll(async () => (await gw.barName()).label).toBe('ephemeral');
   await gw.clickBarName('right');
   await expect(window.locator('#gw-rename-input')).toHaveCount(0);
 
-  // The terminal runs on the WebGL renderer, never the slower DOM fallback
-  // attachShellRenderer drops to when WebGL2 is unavailable. Chromium can drop
-  // software WebGL out from under it, so this assertion makes such a downgrade
-  // a loud suite failure.
+  // attachShellRenderer falls back to the slower DOM renderer when WebGL2 is
+  // unavailable, and Chromium can drop software WebGL out from under it. This
+  // assertion makes that downgrade a suite failure.
   await expect
     .poll(() => window.evaluate(() => (window as any).__gridwellTest.shellRenderer()))
     .toBe('webgl');
 
-  // It is a real terminal: typing sends the keys through xterm to the PTY.
+  // Typing sends the keys through xterm to the PTY.
   await window.keyboard.type('echo ephemeral-shell-proof');
   await window.keyboard.press('Enter');
-  // Wait for echo's output line, which proves the keys crossed the PTY and came
+  // Waiting for echo's output line proves the keys crossed the PTY and came
   // back, with no wall-clock guess.
   await expect
     .poll(async () => {
@@ -59,8 +56,7 @@ test('clicking the shell swatch opens an ephemeral shell; ascent deletes it', as
     }, { timeout: 10_000 })
     .toBe(true);
 
-  // Ascend by clicking the bar crumb: the tile is deleted, tmux session
-  // included.
+  // Ascending by crumb click deletes the tile and its tmux session.
   await gw.ascendViaCrumb();
   await expect.poll(async () => (await gw.focused()).textFocus).toBe('');
   await expect
@@ -70,7 +66,7 @@ test('clicking the shell swatch opens an ephemeral shell; ascent deletes it', as
     tileCount(homeBefore),
   );
 
-  // Nothing on the error strip: no stray freeze, no failed delete.
+  // Nothing on the error strip.
   const e = await window.evaluate(() => (window as any).__gridwellTest.errors());
   expect(e.notices, 'no error notices from the ephemeral shell round trip').toHaveLength(0);
 });

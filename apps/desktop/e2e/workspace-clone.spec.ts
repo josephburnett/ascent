@@ -14,8 +14,6 @@ async function workspaceState(window: any): Promise<{ depth: number }> {
 }
 
 async function barLeave(gw: any): Promise<void> {
-  // The bar lives inside the focused pane, and a crumb click goes to that crumb,
-  // so leaving means clicking the crumb before the pane boundary.
   await gw.leaveWorkspace();
 }
 
@@ -26,7 +24,7 @@ test('cloning a workspace: shared blob, independent divergence', async ({ gw, wi
   const ax = Math.round(f.cx);
   const ay = Math.round(f.cy);
 
-  // Create and arrange the original, with a split, so the blob is distinctive.
+  // A split makes the original's blob distinctive.
   await gw.openPalette();
   await gw.dragCreate('pane', ax, ay);
   const orig = tileAt(await gw.getGrid(rootGrid), 'pane', ax, ay);
@@ -52,7 +50,6 @@ test('cloning a workspace: shared blob, independent divergence', async ({ gw, wi
   expect(copy!.id).not.toBe(orig!.id);
   expect(await gw.getTileContent(copy!.id), 'clone shares the layout bytes').toBe(origBlob);
 
-  // Diverge the clone: enter it and split again, for three panes.
   await gw.descendCell(ax, ay + 2);
   await expect.poll(async () => (await workspaceState(window)).depth).toBe(1);
   await expect.poll(async () => (await gw.panes()).length).toBe(2);
@@ -67,7 +64,6 @@ test('cloning a workspace: shared blob, independent divergence', async ({ gw, wi
   }, { message: "the clone's blob must diverge", timeout: 10_000 }).toBe(true);
   await barLeave(gw);
 
-  // The original is untouched, byte for byte.
   expect(await gw.getTileContent(orig!.id), "editing the clone must never touch the original").toBe(origBlob);
 });
 
@@ -92,11 +88,10 @@ test('an unreadable layout opens read-only and is never overwritten', async ({ g
   await writeContent(gw.origin, pt!.id, 0, Buffer.from(futureBlob));
 
   // No echo-wait here, deliberately: the direct write races its own event echo,
-  // and descending inside that window is the trap this pins. The level fetch
+  // and descending inside that window is what this pins. The level fetch
   // (client/nav/level.go) must refetch the tile rather than trust the cached
-  // row, or a stale BlobID of 0 installs the writable default and the
-  // persister overwrites the blob. An earlier version of this spec found that
-  // as a one-run flake.
+  // row, or a stale BlobID of 0 installs the writable default and the persister
+  // overwrites the blob. It first showed up as a one-run flake.
   await gw.descendCell(ax, ay);
   await expect.poll(async () => (await workspaceState(window)).depth).toBe(1);
   expect(
@@ -104,8 +99,7 @@ test('an unreadable layout opens read-only and is never overwritten', async ({ g
     'an unreadable blob must open read-only',
   ).toBe(true);
 
-  // Arrange anyway, with a split, and give the persister every chance to
-  // misbehave: the blob must stay byte-identical.
+  // Arrange anyway and give the persister time to run; the blob must not change.
   await gw.splitFocusedPaneVertical();
   await window.waitForTimeout(1_500); // two debounce windows
   expect(await gw.getTileContent(pt!.id), 'read-only session must never overwrite').toBe(futureBlob);

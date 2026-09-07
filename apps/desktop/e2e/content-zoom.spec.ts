@@ -20,11 +20,9 @@ test('Ctrl+= zooms a text tile: persisted as framing, no version bump', async ({
   await gw.descendCell(cx, cy);
   await gw.waitIdle();
 
-  // Zoom in three steps: 1.1^3, about 1.331, persisted on the tile. Settle
-  // between presses. On a slow runner a rapid-fire chord can land while the
-  // previous step's redraw is still in flight, and the middle press is lost;
-  // what this pins is that the zoom persists as framing, not keyboard
-  // rapid-fire.
+  // Three steps of 1.1, about 1.331, persisted on the tile. Settle between
+  // presses: on a slow runner a chord sent while the previous redraw is in
+  // flight is lost, and keyboard rapid-fire is not what this pins.
   for (let i = 0; i < 3; i++) {
     await window.keyboard.press('Control+=');
     await gw.waitIdle();
@@ -35,11 +33,10 @@ test('Ctrl+= zooms a text tile: persisted as framing, no version bump', async ({
     })
     .toBeCloseTo(1.331, 2);
 
-  // Framing, not content: the version did not move.
+  // Zoom is framing, so the version does not move.
   const after = tileAt(await gw.getGrid(home.gridID), 'text', cx, cy)!;
   expect(after.version, 'no version bump from zooming').toBe(created.version);
 
-  // Ctrl+0 resets.
   await window.keyboard.press('Control+0');
   await expect
     .poll(async () => Number(tileAt(await gw.getGrid(home.gridID), 'text', cx, cy)?.contentZoom ?? 0))
@@ -89,17 +86,17 @@ test('Ctrl+= zooms a live url view (composed with the layout zoom)', async ({
     .toBeCloseTo(Math.min(base * 1.331, 3), 1);
 });
 
-// The chord must also work when the live view itself owns OS keyboard focus,
-// which is the real descended state and where the window-level keydown never
-// fires. Main intercepts the chord in before-input-event, as it does F11, and
-// relays it to the wasm zoom owner, so the cache update and the write still run.
+// When the live view owns OS keyboard focus, which is the real descended state,
+// the window-level keydown never fires. Main intercepts the chord in
+// before-input-event and relays it to the wasm zoom owner, so the cache update
+// and the write still run.
 test('the zoom chord works when the live view owns keyboard focus', async ({
   electronApp,
   window,
   gw,
 }) => {
-  // The scratch grid id, where the ephemeral url tile lands, is advertised on
-  // the plugin's entry.
+  // The ephemeral url tile lands in the scratch grid, advertised on the
+  // plugin's entry.
   const scratch = (await gw.plugins()).find((l) => l.kind === 'home')!.scratchGridID;
   expect(scratch, 'localdb advertises a scratch grid').toBeTruthy();
   await gw.enterPlugin('home');
@@ -134,8 +131,7 @@ test('the zoom chord works when the live view owns keyboard focus', async ({
   await expect.poll(factorOf, { timeout: 10_000 }).toBeGreaterThan(0);
   const base = await factorOf();
 
-  // Send the chord to the live view's webContents: the input path a user hits
-  // after clicking into the page.
+  // The input path a user hits after clicking into the page.
   const sendChord = () =>
     electronApp.evaluate(({ webContents }) => {
       const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('zoom=170'));
@@ -146,20 +142,17 @@ test('the zoom chord works when the live view owns keyboard focus', async ({
     });
   // Two ack counters bracket the relay: main's before-input-event interception
   // (registry.zoomChordRelays) and the wasm owner's receipt across the IPC hop
-  // (zoomKeyRelays). They make a lost chord attributable instead of leaving a
-  // stuck zoom factor with nothing to say where it was lost.
+  // (zoomKeyRelays). They say where a lost chord was lost.
   const mainRelays = () =>
     electronApp.evaluate(() => ((globalThis as any).__gwRegistry?.zoomChordRelays as number) ?? 0);
   const wasmRelays = () =>
     window.evaluate(() => (window as any).__gridwellTest.zoomKeyRelays() as number);
 
   // sendInputEvent is fire-and-forget, and under xvfb the synthetic event is
-  // occasionally dropped before the input pipeline. That is not the property
-  // under test: the relay is interception, then the wasm owner, then the write,
-  // and a real keyboard's autorepeat recovers a swallowed keypress the same way.
-  // So resend until main acks the interception. Everything downstream of the ack
-  // is product path and must work on the first delivery, so those assertions
-  // stay hard.
+  // sometimes dropped before the input pipeline, which is not the property under
+  // test. So resend until main acks the interception. Everything downstream of
+  // the ack is product path and must work on the first delivery, so those
+  // assertions stay hard.
   const sendChordAcked = async () => {
     for (let attempt = 0; attempt < 5; attempt++) {
       const before = await mainRelays();
@@ -168,32 +161,27 @@ test('the zoom chord works when the live view owns keyboard focus', async ({
         await expect.poll(mainRelays, { timeout: 2_000 }).toBeGreaterThan(before);
         return;
       } catch {
-        // Never intercepted: the synthetic event was lost, so send again.
+        // The synthetic event was lost, so send again.
       }
     }
     throw new Error('zoom chord never reached before-input-event after 5 sends');
   };
   for (let i = 1; i <= 3; i++) {
     await sendChordAcked();
-    // The intercepted chord crossed the IPC hop to the one zoom owner...
     await expect
       .poll(wasmRelays, {
         message: `chord ${i}: intercepted by main but never received by the wasm owner`,
         timeout: 5_000,
       })
       .toBeGreaterThanOrEqual(i);
-    // ...and the owner applied it to the composed live-view factor.
     const want = base * Math.pow(1.1, i);
     await expect.poll(factorOf, { timeout: 10_000 }).toBeGreaterThan(want * 0.97);
   }
 
-  // That the forward ran through the wasm owner, and not a main-side
-  // setZoomFactor, is what zoomKeyRelays above already witnesses: main
-  // intercepted, the owner received, the owner applied. The owner's OTHER
-  // half is that it wrote nothing — this visit is ephemeral, off-grid in the
-  // scratch grid and deleted on ascent, and a durable framing write about it
-  // would mark a row the user never asked to keep (possiblyEphemeral). The
-  // browser suite pins the same contract on an ephemeral shell.
+  // The owner's other half is that it wrote nothing. This visit is ephemeral,
+  // off-grid in the scratch grid and deleted on ascent, so a durable framing
+  // write would mark a row the user never asked to keep (possiblyEphemeral).
+  // web-ephemeral-zoom.spec.ts pins the same contract on an ephemeral shell.
   const snap: any = await gw.getGrid(scratch);
   const t = (snap.tiles ?? []).find((t: any) => t.kind === 'url');
   expect(Number(t?.contentZoom ?? 0), 'the ephemeral row is unmarked').toBe(0);

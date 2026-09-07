@@ -17,9 +17,8 @@ test('typing into a descended text tile persists to the server', async ({ gw, wi
   const created = tileAt(await gw.getGrid(grid), 'text', cx, cy)!;
   expect(created, 'markdown tile created').toBeTruthy();
 
-  // Descend into the tile, which enters its text editor, and type. The bar takes
-  // the text family's shades from the same classifier as the pane border, so the
-  // band and the frame cannot disagree.
+  // The bar takes the text family's shades from the same classifier as the pane
+  // border, so the band and the frame cannot disagree.
   await gw.descendCell(cx, cy);
   const themed = await window.evaluate(() => (window as any).__gridwellTest.bar());
   expect(themed.band, 'text-family band').toBe('#1b2213');
@@ -36,10 +35,9 @@ test('typing into a descended text tile persists to the server', async ({ gw, wi
   const marker = 'gridwell-e2e-typed';
   await gw.typeText(marker);
 
-  // Ascend back out with a bar crumb click, flushing the edit.
+  // The ascent flushes the edit.
   await gw.ascendViaCrumb();
 
-  // The server's stored body now contains what was typed.
   await expect
     .poll(async () => gw.getTileContent(created.id), { timeout: 10_000 })
     .toContain(marker);

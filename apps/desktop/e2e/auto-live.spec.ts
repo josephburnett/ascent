@@ -1,12 +1,10 @@
 import { test, expect } from './fixtures';
 import { tileAt } from './oracle';
 
-// Descending is the engagement gesture. A shell descent reconnects the
-// still-running tmux session and a url descent reopens the page, with no
-// refresh click. The frozen preview stays what a tile looks like from outside:
-// a sibling pane's preview is untouched by this pane's live descent. Reading
-// never mutates, since going live presents the target rather than editing it;
-// the version moves only at the ascent freeze.
+// A shell descent reconnects the running tmux session and a url descent
+// reopens the page, with no refresh click. A sibling pane's frozen preview is
+// untouched by this pane's live descent, because going live presents the
+// target without editing it: the version moves only at the ascent freeze.
 
 test('shell descent reconnects the running session with its state', async ({ gw, window }) => {
   await gw.enterPlugin('home');
@@ -14,8 +12,8 @@ test('shell descent reconnects the running session with its state', async ({ gw,
   const cx = Math.round(f.cx);
   const cy = Math.round(f.cy);
 
-  // Drag-create a shell: the drop lands bare, like every primitive. The first
-  // descent creates the session, through DecideAutoLive's fresh-shell arm.
+  // The drop lands bare, like every primitive; the first descent creates the
+  // session, through shellconn.DecideAutoLive's fresh-shell arm.
   await gw.openPalette();
   await gw.dragCreate('shell', cx, cy);
   await expect.poll(async () => tileAt(await gw.getGrid(f.gridID), 'shell', cx, cy)).toBeTruthy();
@@ -29,18 +27,16 @@ test('shell descent reconnects the running session with its state', async ({ gw,
     })
     .not.toBe('');
 
-  // Type state into the PTY, then ascend, which freezes and detaches; tmux
-  // keeps the session.
+  // The ascent freezes and detaches; tmux keeps the session.
   await window.keyboard.type('marker=auto-live-202');
-  // The marker renders only after the PTY echoes it back — poll for that
-  // round trip instead of sleeping for it.
+  // The marker renders only after the PTY echoes it back, so poll for that
+  // round trip.
   await expect
     .poll(() => window.evaluate(() => (window as any).__gridwellTest.shellText()), { timeout: 10_000 })
     .toContain('marker=auto-live-202');
   await gw.ascendViaCrumb();
   await expect.poll(async () => (await gw.focused()).textFocus).toBe('');
 
-  // Re-descend: the same session must come back live with no refresh click.
   await gw.descendCell(cx, cy);
   await expect.poll(async () => (await gw.focused()).textFocus, { timeout: 15_000 }).not.toBe('');
   await expect
@@ -50,15 +46,15 @@ test('shell descent reconnects the running session with its state', async ({ gw,
     })
     .not.toBe('');
   // The typed, unentered command line is still on the PTY, so it is the same
-  // session. Read through the buffer hook: the WebGL renderer paints to canvas,
-  // so the DOM carries no terminal text.
+  // session. The WebGL renderer paints to canvas, so the DOM carries no
+  // terminal text and the buffer hook is the only way to read it.
   await expect
     .poll(() => window.evaluate(() => (window as any).__gridwellTest.shellText()), {
       timeout: 10_000,
     })
     .toContain('marker=auto-live-202');
 
-  // Teardown: delete the shell tile so tmux does not hang the harness close.
+  // Delete the shell tile so tmux does not hang the harness close.
   await gw.ascendViaCrumb();
   await expect.poll(async () => (await gw.focused()).textFocus).toBe('');
   await gw.deleteTileCell(cx, cy);
@@ -74,8 +70,8 @@ test('url descent reopens the page live; a sibling preview stays frozen', async 
   const cx = Math.round(f.cx);
   const cy = Math.round(f.cy);
 
-  // Create a live url tile: the drop lands it bare, the first descent prompts
-  // for the address and goes live, then the ascent freezes it.
+  // The drop lands bare; the first descent prompts for the address and goes
+  // live, and the ascent freezes it.
   await gw.openPalette();
   await gw.dragCreate('url', cx, cy);
   await gw.descendCell(cx, cy);
@@ -104,7 +100,6 @@ test('url descent reopens the page live; a sibling preview stays frozen', async 
   const frozen = tileAt(await gw.getGrid((await gw.focused()).gridID), 'url', cx, cy)!;
   expect(Number(frozen.previewBlobId ?? 0), 'the freeze persisted a preview').toBeGreaterThan(0);
 
-  // Re-descend: the page reopens live with no refresh click...
   await gw.descendCell(cx, cy);
   await expect
     .poll(
@@ -116,8 +111,8 @@ test('url descent reopens the page live; a sibling preview stays frozen', async 
     )
     .toBe(true);
 
-  // ...and the tile row the outside sees did not change: same version, same
-  // frozen preview blob. Reading and going live never mutate.
+  // The row the outside sees did not change: reading and going live never
+  // mutate.
   const after = tileAt(await gw.getGrid((await gw.focused()).gridID), 'url', cx, cy)!;
   expect(after.version).toBe(frozen.version);
   expect(after.previewBlobId).toBe(frozen.previewBlobId);

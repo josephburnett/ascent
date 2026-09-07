@@ -23,8 +23,7 @@ test('the plain-browser client boots, creates, and edits', async ({ gw, window }
     .poll(async () => gw.getTileContent(created.id), { timeout: 10_000 })
     .toContain('written from a plain browser');
 
-  // No notice on the strip: browser mode must not error its way quietly through
-  // the core loop.
+  // Browser mode must not error its way quietly through the core loop.
   const errs = await window.evaluate(() => (window as any).__gridwellTest.errors());
   expect(errs.notices).toEqual([]);
 });
@@ -44,8 +43,8 @@ test('the browser offers shell creation and views shell tiles fine', async ({ gw
   await window.keyboard.press("Escape");
   await gw.waitIdle();
 
-  // A shell tile made elsewhere, created through the oracle as the desktop would,
-  // lands in the client's world.
+  // A shell tile made elsewhere, through the oracle as the desktop would, still
+  // lands in this client's world.
   const cx = Math.round(f.cx) + 2;
   const cy = Math.round(f.cy);
   const res = await fetch(`${gw.origin}/gridwell.v1.Gridwell/CreateTile`, {

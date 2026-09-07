@@ -14,8 +14,6 @@ test('clicking the bar title zooms a pane and back, restoring the layout exactly
   expect(before).toHaveLength(2);
   const focusedBefore = before.find((p) => p.focused)!;
 
-  // Zoom the focused pane through the title: it owns the whole layout, and the
-  // title's zoom marker says so.
   await gw.clickBarName();
   await gw.waitIdle();
   const zoomed = await gw.panes();
@@ -24,7 +22,7 @@ test('clicking the bar title zooms a pane and back, restoring the layout exactly
   expect(zoomed[0].w, 'zoomed pane spans the full width').toBeGreaterThan(focusedBefore.w * 1.5);
   expect((await gw.barName()).label).toContain('⛶');
 
-  // Unzoom: byte-identical layout.
+  // Unzooming restores the layout byte for byte.
   await gw.clickBarName();
   await gw.waitIdle();
   const after = (await gw.panes()).slice().sort((a, b) => a.x - b.x);
@@ -44,7 +42,7 @@ test('the title shows a read-only context label on non-renamable panes', async (
   // A root grid shows its configured label, and right-clicking it never opens
   // the rename input.
   await gw.plugins(); // wait for boot to settle on the root grid
-  await expect.poll(async () => (await gw.barName()).label).toBe('home'); // the home's name
+  await expect.poll(async () => (await gw.barName()).label).toBe('home');
   expect((await gw.barName()).editable).toBe(false);
   await gw.clickBarName('right');
   await expect(window.locator('#gw-rename-input')).toHaveCount(0);

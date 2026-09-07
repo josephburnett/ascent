@@ -1,17 +1,11 @@
 import { test, expect } from './fixtures';
 
 // The + menu's popover is anchored to the bar slot at the bottom of the window,
-// so on a stacked layout its swatches are drawn over the pane BELOW the focused
+// so on a stacked layout its swatches are drawn over the pane below the focused
 // one. Every swatch rect is laid out for the menu's own pane, so the hover
-// hit-test has to route the same way the press does — by the menu's pane, not
-// by the pane under the cursor. It did not: it looked up the pane at the
-// pointer and hit-tested the palette against that, the exact inversion of the
-// press. On a stacked layout that is always the wrong pane, so no swatch ever
-// highlighted and the menu read dead under the cursor. (The same lookup could
-// also hand back ok with a nil pane, which the next line dereferenced.)
-//
-// menuPaneForPointer is now the one router for both, and it cannot return a nil
-// pane.
+// hit-test has to route by the menu's pane rather than the pane under the
+// cursor. menuPaneForPointer is the one router for hover and press both, and it
+// cannot return a nil pane.
 test('a swatch highlights when the popover floats over another pane', async ({ gw, window }) => {
   await gw.enterPlugin('home');
 
@@ -32,7 +26,7 @@ test('a swatch highlights when the popover floats over another pane', async ({ g
   const cx = swatch!.x + swatch!.w / 2;
   const cy = swatch!.y + swatch!.h / 2;
 
-  // The configuration this spec exists for: the swatch is over the OTHER pane.
+  // The swatch is drawn over the pane that does not own the menu.
   expect(cy, 'the swatch is drawn over the lower pane').toBeGreaterThan(lower.y);
   expect(cy, 'and inside it').toBeLessThan(lower.y + lower.h);
 
@@ -44,8 +38,7 @@ test('a swatch highlights when the popover floats over another pane', async ({ g
     })
     .toBe(swatch!.index);
 
-  // Off the popover and the hover clears — the same router, answering "no
-  // swatch here" rather than "wrong pane".
+  // Off the popover the hover clears, through the same router.
   await window.mouse.move(upper.x + upper.w / 2, upper.y + upper.h / 2);
   await expect
     .poll(() => window.evaluate(() => (window as any).__gridwellTest.palette().hover), {
@@ -54,7 +47,7 @@ test('a swatch highlights when the popover floats over another pane', async ({ g
     })
     .toBe(-1);
 
-  // The menu is still open on its own pane: hovering moved nothing.
+  // Hovering moves neither the menu nor focus.
   const after = await gw.palette();
   expect(after.open, 'the menu stayed open').toBe(true);
   expect((await gw.focused()).id, 'focus stayed on the upper pane').toBe(upper.id);

@@ -10,15 +10,15 @@ import * as path from 'node:path';
 const FS_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'gridwell-framing-'));
 // A second fs root, with a document and a subdirectory in it: the read-only
 // scroll test needs a file to descend into and the mid-descent reframe needs a
-// doorway, and FS_ROOT must stay empty for the root-grid pan above, whose press
-// would otherwise land on a tile instead of the grid.
+// doorway. FS_ROOT stays empty for the root-grid pan test, whose press would
+// otherwise land on a tile instead of the grid.
 const DOC_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'gridwell-framing-doc-'));
 fs.writeFileSync(path.join(DOC_ROOT, 'long.md'), '# long\n\n' + 'line\n\n'.repeat(200));
 fs.mkdirSync(path.join(DOC_ROOT, 'papers'));
 fs.writeFileSync(path.join(DOC_ROOT, 'papers', 'one.md'), '# one\n');
-// Two plugins go through the FIXTURE form, not a plain array: Playwright reads
-// a two-element array option as its [value, options] tuple, so a literal pair
-// would seed only the first — silently, as a home with no plugins at all.
+// Two plugins go through the FIXTURE form. Playwright reads a two-element array
+// option as its [value, options] tuple, so a literal pair would silently seed
+// only the first, as a home with no plugins at all.
 test.use({
   extraPlugins: async ({}, use) => {
     await use([
@@ -99,7 +99,7 @@ test('a reload inside the settle window does not lose the framing', async ({ gw,
     .toBeGreaterThan(0);
 });
 
-// Text scroll persists on the settle tick, not only at ascent.
+// Text scroll persists on the settle tick, with no ascent.
 test('text scroll persists without an ascent', async ({ gw, window }) => {
   await gw.enterPlugin('home');
   const home = await gw.focused();
@@ -127,18 +127,15 @@ test('text scroll persists without an ascent', async ({ gw, window }) => {
     .toBeGreaterThan(0);
 });
 
-// A read-only host file scrolls like any other text tile: the body is the
-// plugin's, but where the user left the window is the node's, and the plugin's
-// namespace of the store holds it. The client used to skip the SetTextView for
-// these tiles (#236), so the reader was dropped back at the top every time
-// (#270).
+// A read-only host file scrolls like any other text tile. The body is the
+// plugin's; where the user left the window is the node's, held in the plugin's
+// namespace of the store (#236, #270).
 //
 // The scroll is also this entry's FIRST durable fact, so it mints the entry's
-// row while the reader is standing on the entry's id. The pane's content id
-// must not move under them (#297): when the mint renamed the entry, the
-// rendered overlay hid and the document vanished mid-read, and the URL was left
-// naming a tile the next listing did not contain, so the reload landed at the
-// plugin root.
+// row while the reader is standing on the entry's id. The pane's content id must
+// not move under them (#297): a rename would hide the rendered overlay mid-read
+// and leave the URL naming a tile the next listing does not contain, so the
+// reload would land at the plugin root.
 test('a read-only file keeps its scroll, and its id, across a reload', async ({ gw, window }) => {
   await gw.enterPlugin('docs');
   const root = (await gw.focused()).gridID;
@@ -148,9 +145,9 @@ test('a read-only file keeps its scroll, and its id, across a reload', async ({ 
   await gw.descendCell(Number(doc.x ?? 0), Number(doc.y ?? 0));
   await expect.poll(async () => (await gw.focused()).textFocus).not.toBe('');
   const standingOn = (await gw.focused()).textFocus;
-  // A read-only tile always shows the rendered face, which is a scrolling DOM
-  // overlay: scroll it the way the browser does, and the app's own listener
-  // writes the position onto the pane.
+  // A read-only tile always shows the rendered face, a scrolling DOM overlay.
+  // Scroll it the way the browser does, and the app's own listener writes the
+  // position onto the pane.
   await expect
     .poll(() => window.evaluate(() => document.getElementById('gw-rendered-view')?.textContent ?? ''))
     .toContain('line');
@@ -165,7 +162,7 @@ test('a read-only file keeps its scroll, and its id, across a reload', async ({ 
     )
     .toBeGreaterThan(0);
   // The write that mints. The document must still be on screen after it, under
-  // the same id, with the pane still standing on that id.
+  // the same id.
   await expect
     .poll(async () => Number(((await at()) as { textY?: number | string })?.textY ?? 0), {
       message: 'a read-only file persists its scroll',
@@ -179,8 +176,8 @@ test('a read-only file keeps its scroll, and its id, across a reload', async ({ 
     'the document left the screen when its row was minted',
   ).toBeGreaterThan(0);
 
-  // And the URL still names it: a reload restores the reader inside the file,
-  // at the scroll they left, with no second descent.
+  // The URL still names it, so a reload restores the reader inside the file at
+  // the scroll they left, with no second descent.
   await window.reload();
   await window.waitForFunction(() => !!(window as any).__gridwellTest, null, { timeout: 30_000 });
   await expect
@@ -198,10 +195,10 @@ test('a read-only file keeps its scroll, and its id, across a reload', async ({ 
 });
 
 // A directory doorway reframed MID-DESCENT is that entry's first durable fact,
-// and the URL is carrying the doorway's id while it happens. When the mint
-// renamed the doorway, the refetched listing no longer held the id the URL
-// named, urlwalk.Walk skipped it, and the reload dropped the user at the plugin
-// root instead of inside the directory. #297
+// and the URL is carrying the doorway's id while it happens. If the mint renamed
+// the doorway, the refetched listing would not hold the id the URL names,
+// urlwalk.Walk would skip it, and the reload would drop the user at the plugin
+// root. #297
 test('a directory reframed mid-descent is still there after a reload', async ({ gw, window }) => {
   await gw.enterPlugin('docs');
   const root = (await gw.focused()).gridID;
@@ -250,7 +247,6 @@ test('a split sibling never overwrites the focused pane framing', async ({ gw, w
   // Split: two panes now show the same child grid with different rects.
   await gw.splitFocusedPaneVertical();
   await gw.waitIdle();
-  // Reframe the focused pane and let it persist.
   await gw.wheelAtFocusedCenter(-240);
   const well = () => gw.getGrid(home.gridID).then((g) => tileAt(g, 'well', cx, cy)!);
   await expect
@@ -269,12 +265,12 @@ test('a split sibling never overwrites the focused pane framing', async ({ gw, w
   expect(after.viewCy, 'center stable').toEqual(settled.viewCy);
 });
 
-// A viewport in mid-flight is presentation, never the user's framing. The
-// settle persister fires on its own 600ms clock, so a stretched transition
-// puts a debounce tick squarely inside the animation: the pane's centre and
-// zoom are then racing toward the doorway's overtake, values the user never
-// chose. Whichever writer asks, the answer is the same, because only
-// persistFraming decides.
+// A viewport in mid-flight is presentation and never the user's framing. The
+// settle persister fires on its own 600ms clock, so a stretched transition puts
+// a debounce tick inside the animation, when the pane's centre and zoom are
+// racing toward the doorway's overtake and are values the user never chose.
+// Only persistFraming decides what a framing write carries, so every writer
+// gets the same answer.
 test('a mid-flight viewport never becomes the framing that persists', async ({ gw, window }) => {
   await gw.enterPlugin('home');
   const home = await gw.focused();

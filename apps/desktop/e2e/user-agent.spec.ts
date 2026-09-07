@@ -1,9 +1,9 @@
 import { test, expect } from './fixtures';
 
 // Sites that gate on browser version block a live url tile when Chromium's
-// default UA carries an `Electron/<ver>` token. index.ts strips that token, and
-// the app's own `<AppName>/<ver>` token, from app.userAgentFallback at boot, so a
-// live view must report a plain Chrome UA with no Electron in it.
+// default UA carries an `Electron/<ver>` token. index.ts runs
+// sanitizeUserAgent over app.userAgentFallback at boot, so a live view must
+// report a plain Chrome UA with no Electron in it.
 //
 // The canvas-only harness cannot see a WebContentsView, so this runs in the main
 // process: place a real live view through the GRIDWELL_E2E registry, then read

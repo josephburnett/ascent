@@ -1,12 +1,10 @@
 import { test, expect } from './fixtures';
 import { tileAt } from '../e2e/oracle';
 
-// The retina hypothesis: headed Electron on macOS runs deviceScaleFactor 2,
-// headless Chromium and xvfb run 1, and the headed gesture e2e fails at every
-// commit with drags landing on wrong cells. If dpr=2 alone breaks gestures in
-// plain Chromium, the fault is the wasm client's pointer geometry, and it is
-// bisectable headlessly. Same flows as tile-gestures + workspace descent, on
-// a fresh home.
+// Headed Electron on macOS runs deviceScaleFactor 2 while headless Chromium and
+// xvfb run 1, so pointer geometry bugs that only appear at dpr 2 are invisible
+// to the other gates. This runs the tile-gestures and workspace-descent flows in
+// plain Chromium at dpr 2, where such a bug is bisectable headlessly.
 
 test.use({ deviceScaleFactor: 2 });
 
@@ -27,7 +25,7 @@ test('gestures at deviceScaleFactor 2: move, resize, delete, pane descent', asyn
   t = tileAt(await gw.getGrid(grid), 'text', cx + 1, cy);
   expect(t, 'moved tile landed one cell right').toBeTruthy();
 
-  // RESIZE to 2x2 (drag from inside toward the far corner, as tile-gestures does).
+  // RESIZE, dragging from inside toward the far corner as tile-gestures does.
   await gw.resizeTileCell(cx + 1, cy, cx + 2, cy + 1);
   t = tileAt(await gw.getGrid(grid), 'text', cx + 1, cy);
   expect(Number(t!.w), 'resize grew the tile wider').toBeGreaterThan(1);

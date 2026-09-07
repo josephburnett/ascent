@@ -1,15 +1,11 @@
 import { test, expect } from './fixtures';
 import { tileAt } from './oracle';
 
-// The bottom bar shows the focused pane's descent chain, root included, as
-// square crumbs, and left-clicking a crumb ascends all the way back to that
-// level. This spec crosses the whole seam: a three-deep descent (well, well,
-// markdown text), the chain naming every level in order, then one crumb click
-// jumping straight to the root. That click must pop the text descent and both
-// wells, through instant intermediate pops and one animated final hop, consume
-// every panestate entry, land on the exact viewport the user left the root at,
-// and persist the intermediate framing so a re-descent restores the place the
-// jump left.
+// The bottom bar shows the focused pane's descent chain, root included, and a
+// left-click on a crumb ascends all the way back to that level. A three-deep
+// descent then one click on the root crumb: every frame pops, the root lands on
+// the viewport the user left it at, and the intermediate framing is persisted
+// so a re-descent restores the place the jump left.
 
 async function bar(window: any): Promise<{ top: number; height: number; segments: any[] }> {
   return window.evaluate(() => (window as any).__gridwellTest.bar());
@@ -39,9 +35,8 @@ test('a chain crumb click ascends all the way to that level and keeps the round 
   expect(segs.length).toBe(1);
   expect(segs[0].anchor, 'the root crumb names the anchor').toBe(f0.anchor);
 
-  // Give the root grid a distinctive viewport by wheel-zooming out over empty
-  // space, since over a well the wheel zooms the well, so the jump's landing
-  // can be compared against it.
+  // Wheel-zoom over empty space, since over a well the wheel zooms the well.
+  // This gives the root a viewport the jump's landing can be compared against.
   const rootEmpty = await gw.cellCenter(f0.id, cx + 5, cy + 3);
   await window.mouse.move(rootEmpty.x, rootEmpty.y);
   await window.mouse.wheel(0, 120);
@@ -68,13 +63,12 @@ test('a chain crumb click ascends all the way to that level and keeps the round 
   await gw.descendCell(c1x, c1y);
   await expect.poll(async () => (await gw.focused()).gridID).not.toBe(g1);
 
-  // A distinctive viewport in W2's grid too: what the jump must write back as
-  // W2's framing, and what a re-descent must restore.
+  // W2's grid gets a viewport too, which the jump must write back as W2's
+  // framing and a re-descent must restore.
   let f2 = await gw.focused();
   const g2 = f2.gridID;
-  // The fresh grid is empty, so the cell just right of center is safe, and the
-  // calibrated post-descent zoom keeps only about one cell either side
-  // on-screen.
+  // The grid is empty, so the cell just right of center is safe; the
+  // post-descent zoom keeps only about one cell either side on-screen.
   const g2Empty = await gw.cellCenter(f2.id, Math.round(f2.cx) + 1, Math.round(f2.cy));
   await window.mouse.move(g2Empty.x, g2Empty.y);
   await window.mouse.wheel(0, 120);
@@ -91,15 +85,14 @@ test('a chain crumb click ascends all the way to that level and keeps the round 
   await gw.descendCell(c2x, c2y);
   await expect.poll(async () => (await gw.focused()).textFocus).toBe(MD.id);
 
-  // The chain names every level, in order, root inclusive.
+  // The chain names every level in order, root included.
   segs = await chainSegs(window);
   expect(segs.map((s: any) => s.tileID || 'root')).toEqual(['root', W1.id, W2.id, MD.id]);
   expect(segs[3].text, 'the leaf crumb is a text descent').toBe(true);
   expect((await gw.focused()).placeDepth, 'three doorways deep').toBe(3);
 
-  // One click on the root crumb: out of the text descent, out of W2 instantly,
-  // out of W1 on the animated final hop, landing at the root with the exact
-  // pre-descent viewport and an empty panestate stack.
+  // One click on the root crumb: the intermediate pops are instant and the
+  // final hop animates.
   await clickChainCrumb(gw, window, 0);
   await expect.poll(async () => (await gw.focused()).gridID, { timeout: 10_000 }).toBe(rootGrid);
   const landed = await gw.focused();
@@ -111,8 +104,7 @@ test('a chain crumb click ascends all the way to that level and keeps the round 
   expect(landed.placeDepth, 'every frame popped — none orphaned').toBe(0);
   expect((await chainSegs(window)).length).toBe(1);
 
-  // Empty bar space owns no gesture: a right-click there must do nothing, and
-  // the crumb click is the ascent.
+  // Empty bar space owns no gesture, so a right-click there must not ascend.
   await gw.descendCell(cx, cy);
   await expect.poll(async () => (await gw.focused()).gridID).toBe(g1);
   const b2 = await bar(window);
@@ -121,14 +113,13 @@ test('a chain crumb click ascends all the way to that level and keeps the round 
   await window.mouse.click(emptyX, b2.top + b2.height / 2, { button: 'right' });
   await gw.waitIdle();
   expect((await gw.focused()).gridID, 'empty-bar right-click must not ascend').toBe(g1);
-  await gw.ascendViaCrumb(); // the crumb-click ascent helper
+  await gw.ascendViaCrumb();
   await expect.poll(async () => (await gw.focused()).gridID, { timeout: 10_000 }).toBe(rootGrid);
   await gw.waitIdle(); // the ascent animates; input is blocked until it settles
 
-  // The intermediate framing persisted: re-descending lands W2's grid where the
-  // jump left it, so preview, descent target, and ascent return still agree
-  // across an instant multi-level pop. Zoom round-trips exactly; the center is
-  // quantized to the stored origin, so allow the half-cell.
+  // Re-descending lands W2's grid where the jump left it. Zoom round-trips
+  // exactly; the center is quantized to the stored origin, so allow the
+  // half-cell.
   await gw.descendCell(cx, cy);
   await expect.poll(async () => (await gw.focused()).gridID).toBe(g1);
   await gw.descendCell(c1x, c1y);

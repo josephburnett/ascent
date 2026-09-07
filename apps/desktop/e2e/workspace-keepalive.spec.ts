@@ -2,12 +2,11 @@ import { test, expect } from './fixtures';
 import { tileAt } from './oracle';
 
 // One live surface per content tile, across levels, driven through a real tmux
-// session. A shell is live in the session, and entering a fresh pane tile
-// captures the layout: the captured shell pane takes over the session, the lower
-// pane detaches, and tmux state rides along, so the typed marker is still on
-// screen above. Leaving the view closes its panes, which detaches and frees the
-// surface, and the lower pane re-engages on the same session with the marker
-// still there. One tmux session and one attachment at every step.
+// session. Entering a fresh pane tile captures the layout, so the captured
+// shell pane takes over the session and the outer pane detaches, with tmux
+// state riding along. Leaving the view closes its panes and frees the surface,
+// and the outer pane re-engages on the same session. One tmux session and one
+// attachment at every step.
 
 async function shellText(window: any): Promise<string> {
   return window.evaluate(() => (window as any).__gridwellTest.shellText());
@@ -23,8 +22,7 @@ test('a captured shell takes over the live session; leaving hands it back', asyn
   const cx = Math.round(f.cx);
   const cy = Math.round(f.cy);
 
-  // Split first, since splitting a descended pane would ascend it, then put a
-  // live shell with distinctive state in the left pane.
+  // Split first: splitting a descended pane would ascend it.
   await gw.splitFocusedPaneVertical();
   const panes = (await gw.panes()).slice().sort((a: any, b: any) => a.x - b.x);
   await gw.focusPane(panes[0]);
@@ -37,12 +35,12 @@ test('a captured shell takes over the live session; leaving hands it back', asyn
     })
     .toBe('webgl');
   await window.keyboard.type('marker=keepalive-249');
-  // The marker renders only after the PTY echoes it back, so poll for that round
-  // trip instead of sleeping for it.
+  // The marker renders only after the PTY echoes it back, so poll for that
+  // round trip.
   await expect.poll(() => shellText(window), { timeout: 10_000 }).toContain('marker=keepalive-249');
 
-  // A pane tile in the right pane: descending from there captures the layout with
-  // the shell pane still live.
+  // Descending a pane tile from the right pane captures the layout with the
+  // shell pane still live.
   const right = (await gw.panes()).slice().sort((a: any, b: any) => a.x - b.x)[1];
   await gw.focusPane(right);
   const rf = await gw.focused();
@@ -56,17 +54,16 @@ test('a captured shell takes over the live session; leaving hands it back', asyn
     .poll(async () => window.evaluate(() => (window as any).__gridwellTest.workspace().depth))
     .toBe(1);
 
-  // The capture cloned the shell pane, and its copy took over the session, since
-  // there is one surface per tile. Focus it and the typed but unentered marker is
-  // on the terminal: the same tmux session, not a fresh one.
+  // The capture cloned the shell pane and its copy took over the session, since
+  // there is one surface per tile. The typed but unentered marker on the
+  // terminal is what shows it is the same tmux session.
   const innerShell = (await gw.panes()).find((p: any) => p.textFocus !== '');
   expect(innerShell, 'the captured layout carries the shell descent').toBeTruthy();
   await gw.focusPane(innerShell!);
   await expect.poll(() => shellText(window), { timeout: 15_000 }).toContain('marker=keepalive-249');
 
-  // Leave the view: its panes close, detaching and freezing, the surface frees,
-  // and the session-level shell pane re-engages on the same session, marker still
-  // on the PTY.
+  // Leaving closes the view's panes, detaching and freezing, so the surface
+  // frees and the outer shell pane re-engages on the same session.
   await gw.leaveWorkspace();
   await expect
     .poll(async () => window.evaluate(() => (window as any).__gridwellTest.workspace().depth))
@@ -76,8 +73,7 @@ test('a captured shell takes over the live session; leaving hands it back', asyn
   await gw.focusPane(outerShell!);
   await expect.poll(() => shellText(window), { timeout: 15_000 }).toContain('marker=keepalive-249');
 
-  // Teardown: ascend and delete the shell tile so tmux never hangs the harness
-  // close.
+  // Delete the shell tile so tmux never hangs the harness close.
   await gw.ascendViaCrumb();
   await expect.poll(async () => (await gw.focused()).textFocus, { timeout: 10_000 }).toBe('');
   await gw.deleteTileCell(cx, cy);

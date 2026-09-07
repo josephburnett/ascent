@@ -13,9 +13,8 @@ test('right-clicking a link in a live url view offers Copy Link Address', async 
   // `window` ensures the app finished booting, so the registry is exposed.
   await window.title();
 
-  // The link's path slug doubles as a unique, url-safe locator: it survives
-  // encodeURIComponent verbatim, so this exact view's webContents is found by
-  // matching getURL().includes(marker).
+  // The link's path slug is also the locator: it survives encodeURIComponent
+  // verbatim, so this view's webContents is found by getURL().includes(marker).
   const marker = 'gwe2ectxtarget';
   const linkURL = `https://example.com/${marker}?q=1`;
   // A full-bleed anchor so a click anywhere in the view lands on the link.
@@ -30,9 +29,8 @@ test('right-clicking a link in a live url view offers Copy Link Address', async 
       const reg = (globalThis as { __gwRegistry?: any }).__gwRegistry;
       if (!reg) throw new Error('registry not exposed (GRIDWELL_E2E not set?)');
 
-      // Place a real live url view, with the preload and context-menu handler
-      // wired by the production code, at a fixed on-screen rect on the shared
-      // partition.
+      // A real live url view, with the preload and context-menu handler the
+      // production code wires, at a fixed rect on the shared partition.
       await reg.place('e2e-ctx', 1, args.dataURL, { x: 0, y: 0, width: 800, height: 600 });
 
       // place() returns once loadURL is kicked off, and the view's getURL() is
@@ -58,10 +56,8 @@ test('right-clicking a link in a live url view offers Copy Link Address', async 
       };
 
       try {
-        // A genuine right press and release. It goes through the real preload,
-        // which does not suppress it because a plain click is not a drag, so
-        // Chromium emits `context-menu` with the link's href and the handler
-        // builds and pops the menu.
+        // The real preload does not suppress a press and release with no
+        // movement, so Chromium emits context-menu with the link's href.
         wc.focus();
         wc.sendInputEvent({ type: 'mouseDown', x: 100, y: 100, button: 'right', clickCount: 1 } as any);
         wc.sendInputEvent({ type: 'mouseUp', x: 100, y: 100, button: 'right', clickCount: 1 } as any);
@@ -76,7 +72,7 @@ test('right-clicking a link in a live url view offers Copy Link Address', async 
           .map((i: any) => i.label)
           .filter((l: string) => l);
 
-        // Exercise the real copy action and read it back off the clipboard.
+        // Run the real copy action and read it back off the clipboard.
         clipboard.writeText('');
         const copyItem = captured.items.find((i: any) => i.label === 'Copy Link Address');
         if (copyItem && typeof copyItem.click === 'function') copyItem.click();
@@ -99,11 +95,8 @@ test('right-clicking a link in a live url view offers Copy Link Address', async 
 // threshold, but is released quickly must still produce the context menu.
 // Distance alone would arm the pane-gesture path and suppress contextmenu, so
 // the classification requires both distance and a hold of at least
-// RIGHT_DRAG_TIME_MS, 200ms. A rapid press, move, and release has near-zero
-// duration and still reaches the context-menu handler.
-//
-// The test above sends a zero-movement right-click, so it never exercises the
-// suppression path at all; this one does.
+// RIGHT_DRAG_TIME_MS, 200ms. The test above sends a zero-movement right-click
+// and never reaches that suppression path.
 test('a jittery right-click (5px movement, fast release) still produces the context menu', async ({
   electronApp,
   window,
@@ -145,10 +138,8 @@ test('a jittery right-click (5px movement, fast release) still produces the cont
 
       try {
         wc.focus();
-        // A right-click with 5px of jitter: past the 4px distance threshold, but
-        // the button is released immediately, with the events fired in rapid
-        // succession so the duration is well under 200ms. The time gate blocks
-        // the drag classification and the menu fires normally.
+        // The three events fire in rapid succession, so the press duration is
+        // well under 200ms and the time gate blocks the drag classification.
         wc.sendInputEvent({ type: 'mouseDown', x: 100, y: 100, button: 'right', clickCount: 1 } as any);
         // Move 5px: past the 4px threshold, but in the same JS task, so the
         // elapsed time is near zero.

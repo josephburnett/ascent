@@ -20,16 +20,15 @@ test('boot lands on the first plugin with "/" as its URL', async ({ gw, window }
   const f = await gw.focused();
   expect(f.gridID, 'boot anchors at the FIRST configured plugin root').toBe(pls[0].rootGridID);
 
-  // Home encodes as a bare url: no anchor param, root path.
   await gw.waitIdle();
   const url = await window.evaluate(() => location.pathname + location.search);
   expect(url, 'home keeps "/" as its URL (no a= anchor)').not.toContain('a=');
 });
 
 test('a plugin anchor rides in the URL path and survives a reload (issue #193)', async ({ gw, window }) => {
-  // The anchor is leading path segments, /<plugin-id>/<grid>, not an a= query
-  // param. The pane's qualified anchor drops verbatim into the path, and a
-  // reload decodes it back to the same place.
+  // The anchor is leading path segments, /<plugin-id>/<grid>. The pane's
+  // qualified anchor drops verbatim into the path, and a reload decodes it back
+  // to the same place.
   await gw.enterPlugin('second');
   const before = await gw.focused();
   expect(before.anchor, 'anchored inside the second plugin').not.toBe('');
@@ -41,15 +40,14 @@ test('a plugin anchor rides in the URL path and survives a reload (issue #193)',
   const url = await window.evaluate(() => location.pathname + location.search);
   expect(url, 'no legacy a= anchor param').not.toContain('a=');
 
-  // Reload: the url must decode back into the same anchor. The wasm re-fetch is
-  // slow under full-suite load, so give the hook time.
+  // The wasm re-fetch is slow under full-suite load, so give the hook time.
   await window.evaluate(() => location.reload());
   await window.waitForFunction(() => (window as any).__gridwellTest !== undefined, null, {
     timeout: 45_000,
   });
-  // Boot is not done at hook-install: the anchor resolves asynchronously. The
-  // fixture's ready-wait covers the first boot, and a mid-test reload re-runs
-  // boot without it, so it needs the same wait.
+  // The anchor resolves asynchronously after the hook installs. The fixture's
+  // ready-wait covers the first boot; a mid-test reload re-runs boot and needs
+  // the same wait.
   await window.waitForFunction(
     () => {
       const t = (window as any).__gridwellTest;
@@ -78,10 +76,10 @@ test('plugins fill the + menu top row above the primitives', async ({ gw }) => {
 
   const plugins = pal.items.filter((i) => i.isPlugin);
   const primitives = pal.items.filter((i) => !i.isPlugin);
-  // One swatch per declared doorway: the node's home and the connection's far
-  // home are places and get a row of their own, in server.yaml order, and
-  // every declared entry rides directly after the row that declared it,
-  // wearing its instance's name.
+  // One swatch per declared doorway. The node's home and the connection's far
+  // home are places and get a row each, in server.yaml order, and every declared
+  // entry rides directly after the row that declared it, wearing its instance's
+  // name.
   const rows = plugins.filter((i) => !i.entry);
   expect(rows.map((i) => i.label), 'the two homes, server.yaml order').toEqual(['home', 'second']);
   expect(
@@ -90,7 +88,6 @@ test('plugins fill the + menu top row above the primitives', async ({ gw }) => {
   ).toEqual(['home', 'home · trash', 'second']);
   expect(primitives.length, 'the primitive swatches are still there').toBeGreaterThanOrEqual(5);
 
-  // Plugins come first in index order and sit strictly above the primitives.
   expect(pal.items.slice(0, plugins.length).every((i) => i.isPlugin)).toBe(true);
   const pluginRowY = Math.max(...plugins.map((i) => i.y));
   const primitiveRowY = Math.min(...primitives.map((i) => i.y));
@@ -107,7 +104,6 @@ test('clicking a plugin swatch descends; ascent returns to where the menu was', 
   expect(inside.gridID, 'portaled into the second plugin root').toBe(second.rootGridID);
   expect(inside.placeDepth, 'one frame for the return trip').toBe(1);
 
-  // Ascend: back exactly where the menu was opened.
   await gw.ascendViaCrumb();
   const back = await gw.focused();
   expect(back.gridID, 'ascent returns to the origin grid').toBe(before.gridID);
@@ -134,12 +130,10 @@ test('dragging a plugin swatch into the grid drops a dashed link', async ({ gw }
 });
 
 // One face per menu row, wherever it is drawn: the + menu swatch and the bar's
-// crumb for the grid that row roots read the same owner (door.RowGlyph /
-// door.GlyphFor). Globes are for connections; grids are for plugins, a plugin
-// that declares no glyph at all included. A unit test on either side alone
-// cannot see this — the disagreement was between the menu's draw call, which
-// defaulted an undeclared glyph to the globe, and the crumb's rule, which
-// defaulted it to the grid face.
+// crumb for the grid that row roots read the same owner (door.RowGlyph and
+// door.GlyphFor). A connection wears the globe; a plugin wears a grid face,
+// including a plugin that declares no glyph at all. A unit test on either side
+// alone cannot see the two draw paths agree.
 test('a menu row wears the same face in the bar: a globe for a connection, a grid for a plugin', async ({
   gw,
 }) => {
@@ -164,7 +158,6 @@ test('a menu row wears the same face in the bar: a globe for a connection, a gri
   expect(atHome.anchor).toBe(home.rootGridID);
   expect(atHome.glyph, "the bar wears the home swatch's face").toBe(home.glyph);
 
-  // The connection's root, one descent away.
   await gw.clickPluginSwatch('second');
   const atConn = await chainFace();
   expect(atConn.anchor).toBe(conn.rootGridID);
