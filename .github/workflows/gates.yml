@@ -1,15 +1,13 @@
 # The heavy gates, on PRs and main: the browser suite, the connection spawn,
-# direct, and partition gates, whose sshd is self-contained through dialtest,
-# and the full Electron e2e under xvfb. One retry per suite
-# (PW_FLAGS=--retries=1) is the CI face of the repo's flake discipline. Every
-# gate here is a Makefile target: the Makefile is the one recipe and this file
-# only sequences them, which test/boundary pins.
+# direct and partition gates, whose sshd is self-contained through dialtest,
+# and the full Electron e2e under xvfb. PW_FLAGS=--retries=1 gives each suite
+# one retry. Every gate here is a Makefile target and this file only sequences
+# them, which test/boundary pins.
 name: gates
-# No `paths:` filter, deliberately: a dependency or toolchain bump, or any
-# cross-cutting change, is every seam at once and must always reach these
-# gates. A filter that made them conditional on go.mod / package-lock.json
-# would let a plain router or door change through on the per-commit gate
-# alone. Keep them unconditional.
+# There is no `paths:` filter. A dependency or toolchain bump, or any
+# cross-cutting change, is every seam at once, and a filter keyed on go.mod or
+# package-lock.json would let a plain router or door change through on the
+# per-commit gate alone.
 on:
   push:
     branches: [main]
@@ -19,10 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The plugins are their own repository now: gridwell owns the door,
-      # gridwell-plugins owns the plugins. The Makefile's PLUGINS_DIR defaults
-      # to ../gridwell-plugins — beside this checkout — and `make build` /
-      # `make check` build the three plugin binaries from there.
+      # The plugins are their own repository. The Makefile's PLUGINS_DIR
+      # defaults to ../gridwell-plugins, beside this checkout, and `make
+      # build` and `make check` build the plugin binaries from there.
       - name: clone gridwell-plugins beside this checkout
         run: git clone --depth 1 https://github.com/josephburnett/gridwell-plugins.git ../gridwell-plugins
       - uses: actions/setup-go@v5
@@ -41,8 +38,8 @@ jobs:
         run: make build
       - name: connections gate
         run: make check-connections
-      # The web config drives a chromium by explicit path (the repo's
-      # offline-buildable posture); on the runner, hand it playwright's.
+      # The web config drives a chromium by explicit path, so the repo
+      # stays offline-buildable. On the runner that path is playwright's.
       - name: resolve chromium path
         run: echo "GRIDWELL_WEB_CHROMIUM=$(cd apps/desktop && node -e "console.log(require('playwright-core').chromium.executablePath())")" >> "$GITHUB_ENV"
       - name: web gate
@@ -50,34 +47,31 @@ jobs:
   electron-e2e:
     runs-on: ubuntu-latest
     env:
-      # Electron's SUID sandbox helper can't be configured on a runner
-      # (needs root-owned mode-4755); same switch the dev box uses under
-      # its user-namespace xvfb.
+      # Electron's SUID sandbox helper needs a root-owned mode-4755 binary,
+      # which a runner cannot provide. The dev box uses the same switch
+      # under its user-namespace xvfb.
       ELECTRON_DISABLE_SANDBOX: "1"
     steps:
       - uses: actions/checkout@v4
-      # The plugins are their own repository now: gridwell owns the door,
-      # gridwell-plugins owns the plugins. The Makefile's PLUGINS_DIR defaults
-      # to ../gridwell-plugins — beside this checkout — and `make build` /
-      # `make check` build the three plugin binaries from there.
+      # The plugins are their own repository. The Makefile's PLUGINS_DIR
+      # defaults to ../gridwell-plugins, beside this checkout, and `make
+      # build` and `make check` build the plugin binaries from there.
       - name: clone gridwell-plugins beside this checkout
         run: git clone --depth 1 https://github.com/josephburnett/gridwell-plugins.git ../gridwell-plugins
-      # Every live shell rides a tmux session (internal/local/tmux); pin it
-      # present rather than trust the image (it shipped preinstalled when
-      # this was added — the shell-spec failures were NOT a missing tmux).
+      # Every live shell rides a tmux session (internal/local/tmux), so it
+      # is pinned present rather than trusted to the runner image.
       - name: system deps
         run: sudo apt-get update && sudo apt-get install -y tmux
-      # The runner image leaves a /tmp/tmux-<uid> tmux refuses ("directory
-      # /tmp/tmux-1001 has unsafe permissions" — it must be user-owned mode
-      # 700). Remove it so tmux mints it correctly on first use; the ls is
-      # the evidence trail for who created it if it ever comes back badly.
+      # The runner image leaves a /tmp/tmux-<uid> that tmux refuses, since
+      # it must be user-owned mode 700. Removing it lets tmux mint it
+      # correctly on first use, and the ls records who created it.
       - name: tmux socket dir hygiene
         run: |
           ls -ldn /tmp/tmux-* 2>/dev/null || echo "no /tmp/tmux-* yet"
           sudo rm -rf "/tmp/tmux-$(id -u)"
-          # Pre-create it CORRECTLY (0700, our uid): the unsafe dir is
-          # minted during the run itself, so removal alone loses the race;
-          # tmux accepts an existing user-owned 0700 dir.
+          # The unsafe directory is minted during the run itself, so
+          # removal alone loses the race. tmux accepts an existing
+          # user-owned 0700 directory.
           mkdir -m 700 "/tmp/tmux-$(id -u)"
       - uses: actions/setup-go@v5
         with:
@@ -101,9 +95,8 @@ jobs:
         run: make check-e2e PW_FLAGS=--retries=1
         env:
           GRIDWELL_E2E_VERBOSE: "1"
-      # Failure evidence: traces + error-context for every failed spec —
-      # the shell-spec failures are runner-only, so the trace is the only
-      # way to see what the app actually did.
+      # Traces and error-context for every failed spec. A runner-only
+      # failure leaves the trace as the only way to see what the app did.
       - name: post-e2e socket dir evidence
         if: always()
         run: |
