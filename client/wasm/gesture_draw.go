@@ -12,18 +12,11 @@ import (
 	"github.com/josephburnett/gridwell/client/pane"
 )
 
-// This file holds every in-flight gesture preview the right-button state
-// machine paints — split, swap, tile-resize — plus their small canvas
-// helpers. It is pure drawing off rightDragState; the classification and
-// commit logic stay in right_button.go. The left-resize crush preview draws
-// in drawLeftResizePreview.
+// Every in-flight gesture preview the right-button state machine paints, plus
+// their canvas helpers. Pure drawing off rightDragState; classification and
+// commit stay in right_button.go.
 
-// drawRightDragPreview paints the in-flight gesture's visual hint:
-//   - Split: a horizontal or vertical line at the clamped cursor
-//     projection. Blue when active — past the start in the expected
-//     direction and within the valid range — grey otherwise.
-//   - Swap: a double-headed arrow from origin pane center to either
-//     the cursor or the destination pane center.
+// drawRightDragPreview paints the in-flight gesture's visual hint.
 func (a *App) drawRightDragPreview() {
 	rd := a.rightDrag
 	if rd == nil {
@@ -44,23 +37,15 @@ func (a *App) drawRightDragPreview() {
 	}
 }
 
-// drawPaneHotspotOverlay paints the affordance overlay for pane-management
-// gestures (split / swap / resize). Mirrors drawTileHotspotOverlay for the
-// pane level. Strictly grey and informational — the active gesture's own
-// preview paints on top.
-//
-// Layout:
-//   - Outer rectangle outline: the pane's inner content area (inset by paneBorderPx).
-//   - Inner-third rectangle outline: the center 1/3 × 1/3 swap zone.
-//   - Four cardinal split arrows, one per outer-edge band, pointing outward.
-//   - Center glyph: swap arrows — the same for every pane, URL descents included.
+// drawPaneHotspotOverlay is drawTileHotspotOverlay at the pane level: an
+// outer rectangle, an inner third for the swap zone, four split arrows and
+// the swap glyph. Strictly grey, since the active gesture's own preview
+// paints on top.
 func (a *App) drawPaneHotspotOverlay(rd *rightDragState) {
-	// Resolve the pane and its rect based on the gesture kind.
 	var paneID string
 	switch rd.kind {
 	case rightDragSplit:
-		// The host follows the cursor: highlight the pane the split would
-		// land in right now.
+		// The host follows the cursor.
 		if hp, _, ok := a.paneAtScreen(rd.curX, rd.curY); ok {
 			paneID = hp.ID
 		}
@@ -93,18 +78,15 @@ func (a *App) drawPaneHotspotOverlay(rd *rightDragState) {
 	a.cctx.Set("lineCap", "round")
 	a.cctx.Set("lineJoin", "round")
 
-	// Outer rectangle outline.
 	a.cctx.Call("strokeRect", r.X+0.5, r.Y+0.5, r.W-1, r.H-1)
 
-	// Inner-third rectangle outline (the swap zone).
 	innerX := r.X + r.W/3
 	innerY := r.Y + r.H/3
 	innerW := r.W / 3
 	innerH := r.H / 3
 	a.cctx.Call("strokeRect", innerX+0.5, innerY+0.5, innerW-1, innerH-1)
 
-	// Four cardinal arrows, one in the middle of each outer-edge band,
-	// pointing outward toward the edge (communicates "drag here to split").
+	// Outward, so the arrows read as "drag here to split".
 	w := r.W
 	h := r.H
 	arrow := math.Min(w, h) * 0.10
@@ -119,43 +101,36 @@ func (a *App) drawPaneHotspotOverlay(rd *rightDragState) {
 	drawHotspotArrow(a.cctx, r.X+w/6, r.Y+h/2, -arrow, 0)  // left
 	drawHotspotArrow(a.cctx, r.X+w-w/6, r.Y+h/2, arrow, 0) // right
 
-	// Center glyph: swap, the same on every pane. A URL descent is not
-	// special; go-live lives in the bar slot.
+	// The swap glyph is the same on every pane: a URL descent is not
+	// special, since go-live lives in the bar slot.
 	cx := r.X + r.W/2
 	cy := r.Y + r.H/2
 	drawSwapGlyph(a.cctx, cx, cy, 16, colorMuted)
 
-	// drawSwapGlyph left the line width back at 1.0, the same default
-	// endGlyph restores, so the whole overlay closes through the one bracket.
 	endGlyph(a.cctx)
 }
 
-// drawRefreshIcon draws a circular-arrow refresh icon centred at (cx, cy)
-// with the given radius. The icon is strokes only: a single arc covering
-// ~290° (leaving a gap at the top-right) with a small chevron arrowhead at
-// the open end pointing in the direction of rotation (clockwise).
-// Style: 2px line, round lineCap and lineJoin, matching drawURLBackButton.
+// drawRefreshIcon draws a circular-arrow refresh icon: one arc with a gap at
+// the top-right and a chevron arrowhead at the open end.
 func drawRefreshIcon(c js.Value, cx, cy, radius float64, color string) {
 	beginSlotGlyph(c, color)
 
-	// Arc: starts at ~20° past top (top-right gap), sweeps clockwise 290°.
-	// In canvas coords y points down, so clockwise is the positive direction.
-	const gapDeg = 70.0                                 // degrees of gap left at the top-right
-	startAngle := (-math.Pi/2 + (gapDeg/2)*math.Pi/180) // top + half-gap offset
+	// Canvas y points down, so clockwise is the positive direction.
+	const gapDeg = 70.0
+	startAngle := (-math.Pi/2 + (gapDeg/2)*math.Pi/180)
 	endAngle := startAngle + (360-gapDeg)*math.Pi/180
 
 	c.Call("beginPath")
 	c.Call("arc", cx, cy, radius, startAngle, endAngle, false)
 	c.Call("stroke")
 
-	// Chevron arrowhead at the open end (endAngle), pointing tangentially
-	// in the clockwise (forward) direction.
-	// Tangent direction at endAngle going clockwise: angle = endAngle + π/2.
+	// The arrowhead points tangentially forward, so the tangent at endAngle
+	// is endAngle + pi/2.
 	tipX := cx + math.Cos(endAngle)*radius
 	tipY := cy + math.Sin(endAngle)*radius
 	tangent := endAngle + math.Pi/2
 	const headLen = 6.0
-	const headAngle = 0.5 // ~29°
+	const headAngle = 0.5
 	c.Call("beginPath")
 	c.Call("moveTo",
 		tipX+math.Cos(tangent+math.Pi+headAngle)*headLen,
@@ -169,19 +144,10 @@ func drawRefreshIcon(c js.Value, cx, cy, radius float64, color string) {
 	endGlyph(c)
 }
 
-// drawTileHotspotOverlay paints the affordance overlay over the tile
-// while a right-button gesture is in flight (or just primed). The
-// overlay reads at a glance:
-//   - Outer ring (everything outside the inner 1/3 × 1/3 of the tile)
-//     is a single resize zone — grab anywhere out here, drag any
-//     direction. Eight outward arrows (4 cardinal + 4 diagonal) make
-//     "you can pull in any direction" explicit.
-//   - Inner 1/3 × 1/3 square is the copy/link zone — marked with the
-//     two-rectangles "copy" glyph. The glyph does not change with the ctrl
-//     modifier: the overlay describes where the zones are, and the drag
-//     ghost — solid or dashed — is what says which mode is armed.
-//
-// Strictly grey: informational, not interactive.
+// drawTileHotspotOverlay paints the tile's affordances while a right-button
+// gesture is in flight or primed: the outer ring is one resize zone, the
+// inner third the copy and link zone. The copy glyph does not change with
+// ctrl, because the ghost is what says which mode is armed.
 func (a *App) drawTileHotspotOverlay(rd *rightDragState) {
 	left, top, w, h := tileScreenRect(rd.tileNode, rd.tilePane, rd.tilePaneR)
 	if w <= 0 || h <= 0 {
@@ -196,13 +162,11 @@ func (a *App) drawTileHotspotOverlay(rd *rightDragState) {
 	a.cctx.Set("fillStyle", colorMuted)
 	a.cctx.Set("lineWidth", 1.0)
 
-	// Outer ring outline + inner-third square outline. No internal
-	// 3×3 grid lines — the outer band is one continuous "grab-and-
-	// drag" zone, not eight individual cells.
+	// No internal 3x3 grid lines: the outer band is one continuous zone, not
+	// eight cells.
 	a.cctx.Call("strokeRect", left+0.5, top+0.5, w-1, h-1)
 	a.cctx.Call("strokeRect", innerL+0.5, innerT+0.5, tw-1, th-1)
 
-	// Copy glyph: two overlapping rectangles inside the inner zone.
 	ccx := left + w/2
 	ccy := top + h/2
 	gs := math.Min(tw, th) * 0.35
@@ -212,19 +176,15 @@ func (a *App) drawTileHotspotOverlay(rd *rightDragState) {
 	a.cctx.Call("strokeRect", ccx-gs/2, ccy-gs/2, gs, gs)
 	a.cctx.Call("strokeRect", ccx-gs/2+gs*0.25, ccy-gs/2+gs*0.25, gs, gs)
 
-	// Outward arrows in all eight compass directions. Each lives in
-	// its own band/corner cell of the implicit 3×3 grid, pointing
-	// straight out from the tile.
+	// One arrow per band and corner cell of the implicit 3x3 grid.
 	arrow := math.Min(tw, th) * 0.28
 	if arrow < 8 {
 		arrow = 8
 	}
-	// Cardinal — center of each edge band.
 	drawHotspotArrow(a.cctx, left+w/2, top+th/2, 0, -arrow)
 	drawHotspotArrow(a.cctx, left+w/2, top+h-th/2, 0, arrow)
 	drawHotspotArrow(a.cctx, left+tw/2, top+h/2, -arrow, 0)
 	drawHotspotArrow(a.cctx, left+w-tw/2, top+h/2, arrow, 0)
-	// Diagonals — center of each corner cell, 45° outward.
 	d := arrow * 0.75
 	drawHotspotArrow(a.cctx, left+tw/2, top+th/2, -d, -d)
 	drawHotspotArrow(a.cctx, left+w-tw/2, top+th/2, d, -d)
@@ -232,8 +192,8 @@ func (a *App) drawTileHotspotOverlay(rd *rightDragState) {
 	drawHotspotArrow(a.cctx, left+w-tw/2, top+h-th/2, d, d)
 }
 
-// drawHotspotArrow draws a simple line+head from (cx, cy) in direction
-// (dx, dy). The head sits at the far end.
+// drawHotspotArrow draws a line from (cx, cy) in direction (dx, dy), with the
+// head at the far end.
 func drawHotspotArrow(c js.Value, cx, cy, dx, dy float64) {
 	hx := cx + dx
 	hy := cy + dy
@@ -241,7 +201,6 @@ func drawHotspotArrow(c js.Value, cx, cy, dx, dy float64) {
 	c.Call("moveTo", cx, cy)
 	c.Call("lineTo", hx, hy)
 	c.Call("stroke")
-	// Arrow head: rotate ±2.5 rad off the direction.
 	ang := math.Atan2(dy, dx)
 	const headLen = 5.0
 	c.Call("beginPath")
@@ -252,8 +211,7 @@ func drawHotspotArrow(c js.Value, cx, cy, dx, dy float64) {
 	c.Call("stroke")
 }
 
-// tileScreenRect returns the on-screen rectangle of tile n as drawn
-// in pane p. Mirrors the math used by the parent-grid renderer.
+// tileScreenRect is the on-screen rectangle of tile n as pane p draws it.
 func tileScreenRect(n *gridwellv1.Tile, p *pane.Pane, r pane.Rect) (left, top, w, h float64) {
 	ps := paneToDragdrop(p, r)
 	left, top = ps.CellToScreen(float64(n.X), float64(n.Y))
@@ -263,9 +221,8 @@ func tileScreenRect(n *gridwellv1.Tile, p *pane.Pane, r pane.Rect) (left, top, w
 	return
 }
 
-// drawTileResizePreview outlines the proposed new footprint in the
-// pane's screen coordinates. The original tile keeps painting in
-// place, so the preview is the new rectangle as a dashed blue stroke.
+// drawTileResizePreview outlines the proposed new footprint. The original
+// tile keeps painting in place, so this is a dashed stroke on top.
 func (a *App) drawTileResizePreview(rd *rightDragState) {
 	ps := paneToDragdrop(rd.tilePane, rd.tilePaneR)
 	left, top := ps.CellToScreen(float64(rd.tileNewX), float64(rd.tileNewY))
@@ -280,8 +237,7 @@ func (a *App) drawTileResizePreview(rd *rightDragState) {
 	a.cctx.Set("lineWidth", 1.0)
 }
 
-// jsArray makes a JS array from variadic float64 args. Used to set
-// dash patterns on the canvas 2D context.
+// jsArray makes a JS array for the canvas dash-pattern calls.
 func jsArray(vals ...float64) js.Value {
 	arr := make([]any, len(vals))
 	for i, v := range vals {
@@ -290,11 +246,9 @@ func jsArray(vals ...float64) js.Value {
 	return js.ValueOf(arr)
 }
 
-// drawSplitPreview draws the partition line where the split would land right
-// now: the side and host pane follow the drag, so the line lives in the pane
-// under the cursor, flipping across the grabbed border as the cursor does.
-// Blue when a release here would commit, grey while the drag is below the arm
-// threshold or outside a valid position.
+// drawSplitPreview draws the partition line where the split would land now.
+// The side and host follow the drag, so the line flips across the grabbed
+// border. Blue when a release would commit.
 func (a *App) drawSplitPreview(rd *rightDragState) {
 	host, r, ok := a.paneAtScreen(rd.curX, rd.curY)
 	if !ok {
@@ -330,9 +284,8 @@ func (a *App) drawSplitPreview(rd *rightDragState) {
 		a.cctx.Call("moveTo", pos, r.Y)
 		a.cctx.Call("lineTo", pos, r.Y+r.H)
 	}
-	// Dark casing under the line so it stays visible against the grey
-	// markdown-preview background, where the inactive grey line would
-	// otherwise blend in. Same path, stroked twice.
+	// A dark casing, so the line stays visible against the grey
+	// markdown-preview background. Same path, stroked twice.
 	a.cctx.Set("strokeStyle", "rgba(0,0,0,0.55)")
 	a.cctx.Set("lineWidth", 4.5)
 	a.cctx.Call("stroke")
@@ -342,9 +295,8 @@ func (a *App) drawSplitPreview(rd *rightDragState) {
 	a.cctx.Set("lineWidth", 1.0)
 }
 
-// drawSplitAxisHint paints the gesture identity at the grab point: two
-// opposing arrows along the split's axis, meaning "drag either way to open a
-// new pane on that side".
+// drawSplitAxisHint paints two opposing arrows along the split's axis at the
+// grab point: drag either way to open a new pane on that side.
 func (a *App) drawSplitAxisHint(r pane.Rect, rd *rightDragState) {
 	a.cctx.Set("strokeStyle", colorMuted)
 	a.cctx.Set("lineWidth", 1.0)
@@ -358,12 +310,9 @@ func (a *App) drawSplitAxisHint(r pane.Rect, rd *rightDragState) {
 	}
 }
 
-// drawSwapPreview draws the swap affordance overlay. Before any drag
-// motion (or while still inside the origin pane), an inline "swap"
-// glyph sits at the cursor as a hint: "this is a swap gesture; drag
-// to another pane." Once the cursor lands on a different pane, that
-// hint upgrades to a full double-headed arrow snapping to the
-// destination pane center.
+// drawSwapPreview draws the swap affordance: a glyph at the cursor until the
+// cursor lands on a different pane, then a double-headed arrow snapping to
+// that pane's center.
 func (a *App) drawSwapPreview(rd *rightDragState) {
 	originPane := a.tree.FindPane(rd.originPaneID)
 	if originPane == nil {
@@ -373,8 +322,7 @@ func (a *App) drawSwapPreview(rd *rightDragState) {
 	x1 := originRect.X + originRect.W/2
 	y1 := originRect.Y + originRect.H/2
 
-	// Highlight the origin pane interior so the user sees what's
-	// being moved. Faint to keep the pane content readable.
+	// Faint, so the origin pane's content stays readable.
 	a.cctx.Set("strokeStyle", colorMuted)
 	a.cctx.Set("lineWidth", 1.0)
 	a.cctx.Call("setLineDash", jsArray(4, 4))
@@ -386,8 +334,7 @@ func (a *App) drawSwapPreview(rd *rightDragState) {
 	destPane, destRect, ok := a.paneAtScreen(rd.curX, rd.curY)
 	activeTarget := ok && destPane.ID != rd.originPaneID
 	if !activeTarget {
-		// No destination yet — paint just the swap glyph at the
-		// cursor so the user sees the gesture identity.
+		// No destination yet, so just the gesture identity.
 		drawSwapGlyph(a.cctx, rd.curX, rd.curY, 18, colorMuted)
 		return
 	}
@@ -407,8 +354,7 @@ func (a *App) drawSwapPreview(rd *rightDragState) {
 	drawTriangle(a.cctx, x2, y2, angle, arrowLen)
 }
 
-// drawSwapGlyph paints a compact double-headed horizontal arrow ⇄
-// centered at (cx, cy) in the given color.
+// drawSwapGlyph paints a compact double-headed horizontal arrow.
 func drawSwapGlyph(c js.Value, cx, cy, size float64, color string) {
 	c.Set("strokeStyle", color)
 	c.Set("lineWidth", 1.5)
@@ -431,15 +377,9 @@ func drawSwapGlyph(c js.Value, cx, cy, size float64, color string) {
 	c.Set("lineWidth", 1.0)
 }
 
-// drawLeftResizePreview paints the left resize affordance; the left drag owns
-// resize and close. One armed axis is drawn per grabbed divider — a corner
-// grab paints both, so the two boundaries the drag is moving are both visible.
-// Two layers per axis:
-//   - Always: highlight the divider being dragged in grey with an
-//     orthogonal double-headed arrow.
-//   - Every corridor segment the drag has pressed past its bump gets a red
-//     border: a release closes all of them, and backing off un-reds them one
-//     by one.
+// drawLeftResizePreview paints one axis per grabbed divider, so a corner grab
+// shows both boundaries the drag moves. Every corridor segment the drag has
+// pressed past its bump gets a red border, which a release closes.
 func (a *App) drawLeftResizePreview(lr *leftResizeState) {
 	for i := range lr.axes {
 		a.drawResizeAxisPreview(&lr.axes[i])
@@ -447,10 +387,9 @@ func (a *App) drawLeftResizePreview(lr *leftResizeState) {
 }
 
 func (a *App) drawResizeAxisPreview(ax *leftResizeAxis) {
-	// Live geometry, every frame: the cascade moves ancestor ratios, so the
-	// grabbed split's container and its boundary are wherever the applied
-	// layout says they are. An arm-time copy goes stale mid-drag and closes
-	// panes on a legal mid-corridor release.
+	// Live geometry every frame, because the cascade moves ancestor ratios.
+	// An arm-time copy goes stale mid-drag and closes panes on a legal
+	// mid-corridor release.
 	root := a.tree.Root
 	rootRect := a.rootLayoutRect()
 	r, ok := pane.LocateSplit(root, rootRect, ax.targetSplit)
@@ -458,8 +397,7 @@ func (a *App) drawResizeAxisPreview(ax *leftResizeAxis) {
 		return
 	}
 	aRect, _ := pane.SplitRect(r, ax.splitDir, ax.targetSplit.Ratio)
-	// Divider hint: a thin grey band along the shared edge between
-	// aRect and bRect, plus a double-headed arrow centered on it.
+	// A grey band along the shared edge, plus a double-headed arrow.
 	a.cctx.Set("strokeStyle", colorMuted)
 	a.cctx.Set("lineWidth", 2.0)
 	a.cctx.Call("setLineDash", jsArray(4, 4))
@@ -485,10 +423,8 @@ func (a *App) drawResizeAxisPreview(ax *leftResizeAxis) {
 	}
 	a.cctx.Set("lineWidth", 1.0)
 
-	// The crush verdict: every corridor segment the drag has pressed past
-	// its live bump reds, and the release reads the identical stored
-	// crush.Red() state, so the red set and the closed set cannot
-	// diverge. Rects are live (SegmentRects), tracking the crush.
+	// The release reads the identical stored crush.Red() state, so the red
+	// set and the closed set cannot diverge.
 	red := ax.crush.Red()
 	if len(red) == 0 {
 		return
@@ -499,29 +435,23 @@ func (a *App) drawResizeAxisPreview(ax *leftResizeAxis) {
 	a.cctx.Set("lineWidth", 1.0)
 }
 
-// drawGhostNoEntryBadge paints the international "no entry" sign (red
-// disc, white ring, white diagonal slash) centered at (cx, cy). Used as
-// a ghost overlay during drags whose drop would be rejected — most
-// notably left-drag (move) of a source-grid tile into a regular grid,
-// which the server rejects in favor of right-drag (clone/link).
+// drawGhostNoEntryBadge paints the "no entry" sign over a ghost whose drop
+// would be rejected.
 func drawGhostNoEntryBadge(c js.Value, cx, cy, size float64) {
 	radius := size * 0.32
 	if radius < 14 {
 		radius = 14
 	}
 	ringW := radius * 0.18
-	// Red disc.
 	c.Set("fillStyle", colorNoEntryFill)
 	c.Call("beginPath")
 	c.Call("arc", cx, cy, radius, 0.0, 2*math.Pi, false)
 	c.Call("fill")
-	// White ring inside the red.
 	c.Set("strokeStyle", colorNoEntryStroke)
 	c.Set("lineWidth", ringW)
 	c.Call("beginPath")
 	c.Call("arc", cx, cy, radius-ringW/2-1, 0.0, 2*math.Pi, false)
 	c.Call("stroke")
-	// White diagonal slash (top-left → bottom-right).
 	slashR := radius - ringW*1.4
 	angle := math.Pi / 4
 	c.Set("lineCap", "round")
@@ -533,9 +463,9 @@ func drawGhostNoEntryBadge(c js.Value, cx, cy, size float64) {
 	c.Set("lineWidth", 1.0)
 }
 
-// drawGhostLinkBadge paints the chain-link glyph over the dragged ghost when
-// the drop would create a cross-plugin link: the in-flight ghost teaches that
-// a left-drag links, never copies.
+// drawGhostLinkBadge paints the chain-link glyph over a ghost whose drop
+// would create a cross-plugin link, so the ghost teaches that a left-drag
+// links rather than copies.
 func drawGhostLinkBadge(c js.Value, cx, cy, size float64) {
 	stroke := size * 0.10
 	if stroke < 2 {

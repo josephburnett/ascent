@@ -14,14 +14,12 @@ import (
 	"github.com/josephburnett/gridwell/client/textedit"
 )
 
-// The read-only rendered view: a singleton DOM overlay div — the textarea
-// pattern, one element positioned over the focused rendered text descent each
-// frame — whose innerHTML is markdown.RenderHTML's sanitized output (goldmark
-// for markdown, go-org for org names). The canvas paints raw source for every
-// non-focused view, and this div is the one styled surface.
+// The read-only rendered view: one DOM overlay div positioned over the
+// focused rendered text descent each frame, whose innerHTML is
+// markdown.RenderHTML's sanitized output. The canvas paints raw source for
+// every non-focused view, and this div is the one styled surface.
 
-// ensureRenderedView creates (once) the overlay div and its scoped
-// stylesheet.
+// ensureRenderedView creates the overlay div and its scoped stylesheet.
 func (a *App) ensureRenderedView() {
 	if a.overlays.renderedView.Truthy() {
 		return
@@ -41,11 +39,9 @@ func (a *App) ensureRenderedView() {
 	s.Set("zIndex", "5")
 	s.Set("padding", "6px 10px")
 
-	// Links never navigate the app page. An http(s) link opens as an
-	// ephemeral visit in a split below — the one live-link vocabulary — and
-	// everything else is inert. Task-list checkboxes are the one interactive
-	// control: clicking one toggles its source marker through the normal
-	// text-edit door.
+	// Links never navigate the app page: an http(s) link opens as an
+	// ephemeral visit below, the one live-link vocabulary, and everything
+	// else is inert. Task-list checkboxes are the one interactive control.
 	clickCb := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) == 0 {
 			return nil
@@ -71,8 +67,8 @@ func (a *App) ensureRenderedView() {
 	})
 	div.Call("addEventListener", "click", clickCb)
 
-	// Scroll writes back to the pane's TextScrollX/Y — the same fact the
-	// textarea mirrors (previews and ascent-restore read the stored scroll).
+	// Scroll writes back to the pane's TextScrollX/Y, the same fact the
+	// textarea mirrors.
 	scrollCb := js.FuncOf(func(js.Value, []js.Value) any {
 		p := a.tree.FocusedPane()
 		if p == nil || p.ContentID() == "" || p.TextMode != rpc.TextModeRendered {
@@ -89,9 +85,9 @@ func (a *App) ensureRenderedView() {
 	a.overlays.renderedView = div
 }
 
-// refreshRenderedOverlay shows/positions/fills the rendered view for the
-// focused pane, or hides it. Content is set only when the render key
-// (tile id + version + org-ness) changes, so scrolling never re-renders.
+// refreshRenderedOverlay shows, positions and fills the rendered view for the
+// focused pane, or hides it. Content is set only when the render key changes,
+// so scrolling never re-renders.
 func (a *App) refreshRenderedOverlay() {
 	a.ensureRenderedView()
 	div := a.overlays.renderedView
@@ -114,10 +110,9 @@ func (a *App) refreshRenderedOverlay() {
 	if mode == "" {
 		mode = rpc.TextModeRendered
 	}
-	// A read-only tile always shows its rendered, selectable face, whatever
-	// mode the session carried in. This display-time guard makes
-	// textedit.DescentMode's rule hold from every entry point, including a
-	// restored session.
+	// A read-only tile always shows its rendered, selectable face. This
+	// display-time guard makes textedit.DescentMode's rule hold from every
+	// entry point, a restored session included.
 	if a.tileReadOnly(t) {
 		mode = rpc.TextModeRendered
 	}
@@ -127,7 +122,7 @@ func (a *App) refreshRenderedOverlay() {
 	}
 	body, ok := a.tileBody(t)
 	if !ok {
-		hide() // canvas paints raw source until the fetch lands (issue #35 guard)
+		hide() // the canvas paints raw source until the fetch lands
 		return
 	}
 	r := paneRectFor(a, p)
@@ -138,7 +133,7 @@ func (a *App) refreshRenderedOverlay() {
 	x, y, w, h := textInnerBox(r)
 	s := div.Get("style")
 	setBoundsPx(s, x, y, w, h)
-	// Content zoom rides the base font size (the CSS is em-relative).
+	// The CSS is em-relative, so content zoom rides the base font size.
 	s.Set("fontSize", pxf(14*a.textScaleFor(p)))
 	s.Set("display", "block")
 
@@ -154,14 +149,10 @@ func (a *App) refreshRenderedOverlay() {
 }
 
 // onRenderedCheckboxClick toggles the task marker behind a clicked checkbox.
-// The input's DOM position among the overlay's checkboxes is its
-// document-order index; markdown.ToggleTask maps that index to the one source
-// byte to flip, unit-tested and parity-pinned; and the edit rides the same
-// cache entry and debounced flush a keystroke does, so there is no second
-// write path. The overlay then re-renders from the toggled source, so what
-// the checkbox shows is the document's truth rather than bare DOM state. A
-// refused toggle preventDefaults so the native flip reverts: the box must not
-// look saved when nothing was.
+// markdown.ToggleTask maps the input's document-order index to the source
+// byte, and the edit rides the same cache entry and debounced flush a
+// keystroke does. A refused toggle preventDefaults, so the native flip
+// reverts rather than looking saved.
 func (a *App) onRenderedCheckboxClick(ev, input js.Value) {
 	p := a.tree.FocusedPane()
 	if p == nil || p.ContentID() == "" {
@@ -195,8 +186,8 @@ func (a *App) onRenderedCheckboxClick(ev, input js.Value) {
 	}
 	toggled, ok := markdown.ToggleTask(body, idx)
 	if !ok {
-		// The DOM index found no matching source marker: refuse loudly
-		// rather than flip the wrong byte.
+		// No matching source marker: refuse loudly rather than flip the
+		// wrong byte.
 		ev.Call("preventDefault")
 		a.reportErr(errsurface.Error, "textedit",
 			"checkbox did not map to a task marker — nothing was changed")
@@ -204,12 +195,8 @@ func (a *App) onRenderedCheckboxClick(ev, input js.Value) {
 	}
 	a.putEditedContent(rpc.ContentID(t), toggled)
 	a.scheduleFileSave()
-	// Re-render from the toggled source: the render key won't change (same
-	// tile, same version, same length), so force it.
+	// The render key does not change on a toggle, so force the re-render.
 	a.overlays.lastRenderedKey = ""
 	a.refreshRenderedOverlay()
 	a.draw()
 }
-
-// The overlay's stylesheet lives in markdown.RenderedCSS — one stylesheet
-// shared with the rasterized grid preview, scoped per surface.

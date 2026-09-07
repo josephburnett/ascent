@@ -2,10 +2,9 @@
 
 package main
 
-// The navigation executor: one switch, one func per effect, each a direct
-// move of the body it replaces. Everything impure a descent or an ascent does
-// — every RPC, every DOM write, every js.Value — is on this side of the seam.
-// Nothing here decides anything; client/nav does.
+// The navigation executor: one switch, one func per effect. Everything impure
+// a descent or an ascent does is on this side of the seam, and nothing here
+// decides anything.
 
 import (
 	"github.com/josephburnett/gridwell/client/errsurface"
@@ -15,14 +14,13 @@ import (
 )
 
 // runNav executes a plan in order and draws. There is no redraw effect: the
-// executor draws once after a plan, always.
+// executor always draws once after a plan.
 func (a *App) runNav(plan nav.Plan) {
 	for _, e := range plan.Effects {
 		a.runNavEffect(e)
 	}
-	// The capture animation's rect is drawn for exactly as long as a level
-	// descent is pending: the machine owns that fact, so the install and the
-	// failed descent both end the animation without either remembering to.
+	// The machine owns "a level descent is pending", so the install and a
+	// failed descent both end the capture animation without remembering to.
 	if !a.nav.LevelPending() {
 		a.overlays.wsExpand = nil
 	}
@@ -73,7 +71,7 @@ func (a *App) runNavEffect(e nav.Effect) {
 		a.refreshFileOverlay()
 	case nav.EffScaleContent:
 		if p := a.tree.FindPane(e.PaneID); p != nil {
-			p.TextZoom = a.textScaleFor(p) // base × content zoom (issue #82)
+			p.TextZoom = a.textScaleFor(p) // base times content zoom
 		}
 	case nav.EffFetchGrid:
 		a.fetchGrid(a.navGridID(e))
@@ -101,26 +99,23 @@ func (a *App) runNavEffect(e nav.Effect) {
 	case nav.EffReport:
 		a.reportErr(e.Severity, e.Source, e.Message)
 	case nav.EffEnterLevel:
-		// The level axis re-enters the machine through its own gesture, so it
-		// is planned against a world gathered after the effects above it —
-		// the framing flush among them.
+		// Its own gesture, so it is planned against a world gathered after
+		// the effects above it, the framing flush among them.
 		a.runGesture(nav.Gesture{Kind: nav.GestureEnterLevel, PaneID: e.PaneID, Door: e.Tile})
 	case nav.EffLeaveLevels:
 		a.runGesture(nav.Gesture{Kind: nav.GestureLeaveLevels, Count: e.Count})
 	case nav.EffReEngage:
 		a.navReEngage(e.PaneID, e.TileID)
 	default:
-		// The vocabulary is frozen ahead of the phases that emit the rest of
-		// it. An effect with no executor is a bug in the machine, not a
-		// silent no-op: it surfaces like every other failure.
+		// An effect with no executor is a bug in the machine, not a silent
+		// no-op.
 		a.reportErr(errsurface.Error, "nav", "no executor for this navigation effect")
 	}
 }
 
-// navInstallPlace installs a pane's place, and the viewport it lands at when
-// the plan named one. A nil viewport keeps the pane's own — out of a content
-// descent with nothing to restore, where the viewport is already in the
-// landing grid's coordinates.
+// navInstallPlace installs a pane's place and the viewport the plan named. A
+// nil viewport keeps the pane's own, which is already in the landing grid's
+// coordinates.
 func (a *App) navInstallPlace(e nav.Effect) {
 	p := a.tree.FindPane(e.PaneID)
 	if p == nil {
@@ -135,9 +130,8 @@ func (a *App) navInstallPlace(e nav.Effect) {
 }
 
 // navPersistFraming resolves the row the framing owner names and writes
-// through the one framing writeback. The doorway arm mutates the row in place
-// and patches the cache; the machine projects the same write onto its own
-// copy so the ascent it calibrates matches.
+// through the one framing writeback. The machine projects the same write onto
+// its own copy, so the ascent it calibrates matches.
 func (a *App) navPersistFraming(e nav.Effect) {
 	p := a.tree.FindPane(e.PaneID)
 	if p == nil {
@@ -158,9 +152,9 @@ func (a *App) navPersistFraming(e nav.Effect) {
 	a.persistFraming(p, t, e.Owner.DoorAnchor, e.Owner.DoorPath)
 }
 
-// navSaveText posts the editor buffer and the framed window for the content
-// tile the pane is leaving. The row is re-resolved through the same cache-wide
-// walk the gatherer used, so an off-grid ephemeral visit still saves.
+// navSaveText posts the editor buffer and framed window for the tile the pane
+// is leaving. The row is re-resolved through the same cache-wide walk the
+// gatherer used, so an off-grid ephemeral visit still saves.
 func (a *App) navSaveText(e nav.Effect) {
 	p := a.tree.FindPane(e.PaneID)
 	if p == nil {
@@ -174,14 +168,13 @@ func (a *App) navSaveText(e nav.Effect) {
 }
 
 // navStartTransition hands the segments to the per-pane set. A landing
-// continuation is resumed from OnComplete, which runs whether the animation
-// finished or was cut short — a cancelled transition still lands.
+// continuation resumes from OnComplete, which runs whether the animation
+// finished or was cut short, so a cancelled transition still lands.
 func (a *App) navStartTransition(e nav.Effect) {
 	if e.Expand {
-		// The pane-tile capture animation rides the same clock as the
-		// transition beside it: the tile's screen rect at arm, growing into
-		// the level outline. render.go draws it; the machine's pending level
-		// decides how long.
+		// The capture animation rides the same clock as the transition
+		// beside it. render.go draws it; the machine's pending level decides
+		// how long.
 		if p := a.tree.FindPane(e.PaneID); p != nil {
 			dd := paneToDragdrop(p, paneRectFor(a, p))
 			x0, y0 := dd.CellToScreen(float64(e.Tile.X), float64(e.Tile.Y))
@@ -209,14 +202,14 @@ func (a *App) navCloseStream(e nav.Effect) {
 		}
 	}
 	if e.Streams == nav.StreamShell || e.Streams == nav.StreamBoth {
-		// Capture the JPEG, persist it as the frozen preview, close the
-		// socket: closeShellStream handles all three.
+		// closeShellStream captures the JPEG, persists it and closes the
+		// socket.
 		a.closeShellStream(e.PaneID, e.Freeze)
 	}
 }
 
-// navRelocatePane moves a pane to where another stands and descends it into a
-// tile: the promote gesture's landing. pane.RelocateTo is the one mover.
+// navRelocatePane is the promote gesture's landing: pane.RelocateTo is the
+// one mover.
 func (a *App) navRelocatePane(e nav.Effect) {
 	p := a.tree.FindPane(e.PaneID)
 	dest := a.tree.FindPane(e.DestPaneID)
@@ -239,9 +232,9 @@ func (a *App) navOpenStream(e nav.Effect) {
 	}
 }
 
-// navGridID resolves a grid fetch's target: the id the plan named, or — for
-// "the grid this pane's place names" — the walk only this side can do, since
-// it reads the cache and kicks its own fetches.
+// navGridID resolves a grid fetch's target: the id the plan named, or the
+// place walk only this side can do, since it reads the cache and kicks its
+// own fetches.
 func (a *App) navGridID(e nav.Effect) string {
 	if e.GridID != "" {
 		return e.GridID
@@ -253,8 +246,8 @@ func (a *App) navGridID(e nav.Effect) string {
 }
 
 // navAwait starts the async read a continuation is waiting on and feeds the
-// answer back with its token. The machine re-evaluates the guard then, so
-// nothing here re-checks whether the user moved on.
+// answer back with its token. The machine re-evaluates the guard, so nothing
+// here re-checks whether the user moved on.
 func (a *App) navAwait(e nav.Effect) {
 	tok := e.Token
 	switch e.Request.Kind {
@@ -265,34 +258,29 @@ func (a *App) navAwait(e nav.Effect) {
 	case nav.RequestGetTile:
 		id := e.Request.ID
 		go func() {
-			// Claim-free — the machine waits on its own answer — but bounded
-			// like every other client RPC: a read the network swallows would
-			// leave the continuation owed forever, and the gesture that asked
-			// stuck with nothing said.
+			// Claim-free, since the machine waits on its own answer, but
+			// bounded: a read the network swallows would leave the
+			// continuation owed forever.
 			ctx, cancel := inflight.Bounded()
 			defer cancel()
 			tile, err := a.cl.GetTile(ctx, id)
 			if err != nil {
-				// The continuation retires either way, so a leaf whose
-				// reference no longer resolves leaves nothing owed. Whether
-				// the failure is worth a notice is the step's call, so the
-				// text rides the answer rather than being surfaced here.
+				// Whether the failure is worth a notice is the step's call,
+				// so the text rides the answer rather than surfacing here.
 				a.runNav(a.nav.Resume(tok, nav.Result{Err: rpcErrText(err)}, a.navWorldCommon()))
 				return
 			}
-			// The row lands in the cache before the machine acts on it: the
-			// place it heals to and the row the renderer draws are the same
-			// answer.
+			// The row lands in the cache first, so the place it heals to and
+			// the row the renderer draws are the same answer.
 			a.c.UpdateTile(tile.GridId, tile)
 			a.runNav(a.nav.Resume(tok, nav.Result{OK: true, Tile: tile}, a.navWorldCommon()))
 		}()
 	case nav.RequestGetGrid:
 		id := e.Request.ID
 		go func() {
-			// Claim-free — the walk waits on its own answer, and a background
-			// fetch for the same grid must not turn the walk into a no-op —
-			// but bounded like every other fetch: a boot that waits forever
-			// on a dead socket is a blank screen with no explanation.
+			// Claim-free, because a background fetch for the same grid must
+			// not turn the walk into a no-op, but bounded: a boot that waits
+			// forever on a dead socket is a blank screen.
 			ctx, cancel := a.fetch.gridFetch.Context()
 			defer cancel()
 			ok := a.loadGrid(ctx, id) == nil
@@ -304,19 +292,17 @@ func (a *App) navAwait(e nav.Effect) {
 			// Claim-free, like the walk above, and bounded the same way.
 			ctx, cancel := a.fetch.contentFetch.Context()
 			defer cancel()
-			// loadTileContent stores the bytes and refreshes the overlay (in
-			// text mode that seeds the textarea from the body); what this
-			// path adds is the cursor, and it goes after the seeding.
+			// loadTileContent seeds the textarea from the body, and the
+			// cursor this path adds goes after that.
 			err := a.loadTileContent(ctx, id, func() {})
 			a.runNav(a.nav.Resume(tok, nav.Result{OK: err == nil}, a.navWorldCommon()))
 		}()
 	case nav.RequestReadLayout:
 		id := e.Request.ID
 		go func() {
-			// The bytes go straight back to the machine, which owns the codec
-			// call: a layout is not a document, so it never seeds the text
-			// overlay and is not cached as a body. Claim-free and bounded,
-			// like the GetTile above.
+			// The bytes go straight back to the machine, which owns the
+			// codec call: a layout is not a document, so it never seeds the
+			// text overlay and is not cached as a body.
 			ctx, cancel := inflight.Bounded()
 			defer cancel()
 			data, _, _, err := a.cl.ReadContent(ctx, id)
@@ -329,9 +315,9 @@ func (a *App) navAwait(e nav.Effect) {
 	case nav.RequestSearch:
 		req := e.Request
 		go func() {
-			// Claim-free and bounded: a search the network swallows resolves
-			// as "no result" on the deadline, which is the same answer the
-			// machine already handles, instead of a walk that never resumes.
+			// A search the network swallows resolves as no result on the
+			// deadline, which the machine already handles, rather than a
+			// walk that never resumes.
 			ctx, cancel := inflight.Bounded()
 			defer cancel()
 			res, err := a.cl.Search(ctx, req.Query, req.Scope, int32(req.Limit))
