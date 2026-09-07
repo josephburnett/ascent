@@ -24,10 +24,11 @@ import {
 } from './viewutil';
 
 test('SESSION_PARTITION is persistent and shared by all tiles', () => {
-  // `persist:` prefix → durable on disk (logins/storage survive restarts).
+  // The `persist:` prefix keeps it on disk, so logins and storage survive a
+  // restart.
   assert.ok(SESSION_PARTITION.startsWith('persist:'));
-  // One partition for every tile: tiles act like tabs, sharing the session.
-  // There is no per-tile keying.
+  // One partition for every tile, so tiles share the session like tabs. There
+  // is no per-tile keying.
 });
 
 test('roundBounds snaps to ints and floors size at 1', () => {
@@ -73,7 +74,7 @@ test('sanitizeUserAgent is idempotent and tolerates a missing app name', () => {
   const clean =
     'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) ' +
     'Chrome/120.0.0.0 Safari/537.36';
-  // Already clean → unchanged (also covers re-running on our own output).
+  // Already clean, so unchanged, which also covers re-running on the output.
   assert.equal(sanitizeUserAgent(clean, 'Gridwell'), clean);
   // An empty app name still strips Electron without throwing on the regex.
   assert.ok(!/Electron\//.test(sanitizeUserAgent(`${clean} Electron/28.0.0`, '')));
@@ -126,7 +127,8 @@ test('classifyRightPress requires both distance and time to classify as drag', (
   // Neither condition met: a click.
   assert.ok(!classifyRightPress(0, 0, 0, dist, time), 'zero movement, zero time → click');
 
-  // Distance exceeded but the button released fast (trackpad jitter): a click.
+  // Distance exceeded but the button released fast, which is trackpad jitter,
+  // so a click.
   assert.ok(
     !classifyRightPress(dist + 1, 0, time - 1, dist, time),
     'distance exceeded but duration < threshold → click (jitter case)',
@@ -136,13 +138,13 @@ test('classifyRightPress requires both distance and time to classify as drag', (
     'y-only distance exceeded, short hold → click',
   );
 
-  // Time exceeded but barely any movement: a click, the user just held.
+  // Time exceeded but barely any movement, so a click. The user just held.
   assert.ok(
     !classifyRightPress(0, 0, time + 100, dist, time),
     'long hold but no movement → click',
   );
 
-  // Both conditions met: a drag, the intentional pane gesture.
+  // Both conditions met, so a drag, the intentional pane gesture.
   assert.ok(
     classifyRightPress(dist + 1, 0, time, dist, time),
     'distance and time both at/above threshold → drag',
@@ -156,7 +158,7 @@ test('classifyRightPress requires both distance and time to classify as drag', (
     'diagonal 5.66px movement with sufficient hold → drag',
   );
 
-  // Exactly at the threshold distance: the comparison is strictly greater, so
+  // Exactly at the threshold distance. The comparison is strictly greater, so
   // equal is not exceeded.
   assert.ok(
     !classifyRightPress(dist, 0, time + 100, dist, time),
@@ -165,16 +167,16 @@ test('classifyRightPress requires both distance and time to classify as drag', (
 });
 
 // Unhandled, did-fail-load leaves a live url view blank with no signal. The
-// filter must ignore the two benign cases Chromium fires constantly, a
-// cancelled or superseded navigation and any subframe failure, while surfacing
-// a genuine main-frame failure.
+// filter ignores the two cases Chromium fires constantly, a cancelled or
+// superseded navigation and any subframe failure, and surfaces a main-frame
+// failure.
 test('shouldSurfaceFailLoad ignores aborted navigations and subframe failures', () => {
-  // ERR_ABORTED (-3, Chromium's net error) on the main frame: the page or user
-  // cancelled it, so it is not a failure.
+  // ERR_ABORTED (-3) on the main frame. The page or user cancelled it, so it is
+  // not a failure.
   assert.ok(!shouldSurfaceFailLoad(-3, true));
-  // A real error code but on a subframe (ad iframe, tracking pixel): benign.
+  // A real error code on a subframe, such as an ad iframe or tracking pixel.
   assert.ok(!shouldSurfaceFailLoad(-105, false));
-  // ERR_ABORTED on a subframe: still benign; either condition alone disqualifies.
+  // ERR_ABORTED on a subframe. Either condition alone disqualifies.
   assert.ok(!shouldSurfaceFailLoad(-3, false));
   // A genuine main-frame failure, such as ERR_CONNECTION_REFUSED (-102) or the
   // unreachable port the e2e drives, must surface.
@@ -197,8 +199,8 @@ test('renderProcessGoneMessage includes the url when known, omits it cleanly whe
     renderProcessGoneMessage('https://example.com/', 'crashed'),
     'page crashed (crashed): https://example.com/',
   );
-  // getURL() after a crash can come back empty; the message must not end in a
-  // dangling "page crashed: " with nothing after it.
+  // getURL() after a crash can come back empty, and the message must not end in
+  // a dangling "page crashed: " with nothing after it.
   const noURL = renderProcessGoneMessage('', 'crashed');
   assert.equal(noURL, 'page crashed (crashed)');
   assert.ok(!noURL.endsWith(': '));
@@ -206,9 +208,8 @@ test('renderProcessGoneMessage includes the url when known, omits it cleanly whe
 
 // The renderer's console, where the wasm client logs every surfaced notice, is
 // invisible in the app's own stdout and stderr unless forwarded. The filter
-// forwards only warnings (level 2) and errors (level 3), keeping info and
-// verbose chatter out, with a [renderer:<level>] prefix so lines are
-// attributable.
+// forwards warnings (level 2) and errors (level 3) with a [renderer:<level>]
+// prefix, and keeps info and verbose chatter out.
 test('rendererLogLine forwards warnings and errors only, with a level prefix', () => {
   assert.equal(rendererLogLine(0, 'verbose chatter'), null);
   assert.equal(rendererLogLine(1, 'info chatter'), null);
@@ -218,12 +219,13 @@ test('rendererLogLine forwards warnings and errors only, with a level prefix', (
 
 test('serializeHistory strips pageState, caps around the active index, rebases', () => {
   const mk = (n: number) => ({ url: `https://x/${n}`, title: `t${n}`, pageState: 'BIG' });
-  // Single entry: nothing worth persisting, a plain loadURL restores it.
+  // A single entry is not worth persisting; a plain loadURL restores it.
   assert.equal(serializeHistory([mk(1)], 0), '');
   // Two entries round-trip, pageState gone.
   const two = JSON.parse(serializeHistory([mk(1), mk(2)], 1));
   assert.deepEqual(two, { index: 1, entries: [{ url: 'https://x/1', title: 't1' }, { url: 'https://x/2', title: 't2' }] });
-  // 60 entries, active at the end, cap 50: keep the last 50, index rebased.
+  // 60 entries, active at the end, cap 50, so the last 50 are kept and the
+  // index is rebased.
   const many = Array.from({ length: 60 }, (_, i) => mk(i));
   const capped = JSON.parse(serializeHistory(many, 59, 50));
   assert.equal(capped.entries.length, 50);
@@ -248,11 +250,13 @@ test('parseHistory validates and clamps; garbage falls back to null', () => {
 test('classifyRightPress: a fast flick past the far threshold is a drag (#119)', () => {
   const dist = 4;
   const time = 200;
-  // 30px in 50ms: an unambiguous drag even though the time gate fails.
+  // 30px in 50ms is a drag even though the time gate fails.
   assert.equal(classifyRightPress(0, -30, 50, dist, time), true);
-  // 10px in 50ms: past 4px but inside the far threshold and too fast, a click.
+  // 10px in 50ms is past 4px but inside the far threshold and too fast, so a
+  // click.
   assert.equal(classifyRightPress(10, 0, 50, dist, time), false);
-  // Exactly at the far boundary stays a click; the comparison is strictly greater.
+  // Exactly at the far boundary stays a click, because the comparison is
+  // strictly greater.
   assert.equal(classifyRightPress(24, 0, 50, dist, time), false);
 });
 
@@ -270,8 +274,8 @@ test('zoomChordKey matches the wasm chord set', () => {
 });
 
 // 'openExternal' is the one permission that hands a navigation to the OS, where
-// xdg-open sends an unhandled protocol to the default browser. Deny it;
-// everything else keeps Electron's default grant.
+// xdg-open sends an unhandled protocol to the default browser. Everything else
+// keeps Electron's default grant.
 test('allowPermission denies exactly openExternal', () => {
   assert.equal(allowPermission('openExternal'), false);
   assert.equal(allowPermission('notifications'), true);
@@ -279,8 +283,8 @@ test('allowPermission denies exactly openExternal', () => {
   assert.equal(allowPermission('media'), true);
 });
 
-// Only web urls open below. A non-web protocol opens nowhere: forwarding it
-// would re-trigger the external-protocol path.
+// Only web urls open below. Forwarding a non-web protocol would re-enter the
+// external-protocol path, so it opens nowhere.
 test('openBelowUrl forwards web urls and drops everything else', () => {
   assert.equal(openBelowUrl('https://example.com/x'), 'https://example.com/x');
   assert.equal(openBelowUrl('HTTP://example.com'), 'HTTP://example.com');
@@ -290,7 +294,7 @@ test('openBelowUrl forwards web urls and drops everything else', () => {
   assert.equal(openBelowUrl(''), null);
 });
 
-// The revive tie-break: url_string is user-editable through the content door
+// The revive tie-break. url_string is user-editable through the content door
 // while url_history is written only by the freeze, so they can disagree.
 // Restoring the stack would navigate to the page the user just typed over, so
 // the address wins.
@@ -302,7 +306,7 @@ test('reviveNavigation: the edited address beats a stale back-stack', () => {
       { url: 'https://b.example/', title: 'b' },
     ],
   });
-  // Agreeing: the stack restores.
+  // They agree, so the stack restores.
   assert.deepEqual(reviveNavigation('https://b.example/', history), {
     kind: 'restore',
     history: { index: 1, entries: [
@@ -310,10 +314,11 @@ test('reviveNavigation: the edited address beats a stale back-stack', () => {
       { url: 'https://b.example/', title: 'b' },
     ] },
   });
-  // The user edited the address: plain-load it, never the stale stack.
+  // The user edited the address, so it is plain-loaded and the stale stack is
+  // dropped.
   assert.deepEqual(reviveNavigation('https://c.example/', history), { kind: 'load' });
-  // Absent or invalid history: a plain load; a corrupt blob must never break
-  // revive.
+  // Absent or invalid history gives a plain load, because a corrupt blob must
+  // never break revive.
   assert.deepEqual(reviveNavigation('https://c.example/', ''), { kind: 'load' });
   assert.deepEqual(reviveNavigation('https://c.example/', '{broken'), { kind: 'load' });
 });

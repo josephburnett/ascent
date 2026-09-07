@@ -1,13 +1,13 @@
 import { defineConfig } from '@playwright/test';
 
-// Browser-mode e2e (`make check-web`): the same wasm client `make check-e2e`
-// exercises under Electron, but served by `gridwell serve` and loaded in a plain
-// Chromium page, with no Electron shell and no window.gridwell bridge. This is
-// the only gate that sees the degraded phone and tablet client: caps gating,
-// no-live affordances, and the touch gesture layer.
+// Browser-mode e2e (`make check-web`). The same wasm client `make check-e2e`
+// exercises under Electron, served by `gridwell serve` and loaded in a plain
+// Chromium page with no Electron shell and no window.gridwell bridge. It is the
+// only gate that sees the degraded phone and tablet client: caps gating, no-live
+// affordances, and the touch gesture layer.
 //
 // It uses the system chromium through executablePath rather than a Playwright
-// browser download, keeping the build fully offline. Override with
+// browser download, so the build stays offline. Override with
 // GRIDWELL_WEB_CHROMIUM if the binary lives elsewhere.
 export default defineConfig({
   testDir: './e2e-web',

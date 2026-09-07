@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { decideFocus, isPressInput, FOCUS_SETTLE_MS, GuardInput, GuardAction } from './focusguard';
 
-// A base world: an unfocused pane whose view just grabbed OS focus with no
-// press behind it — the steal shape. Each case overrides only what it is about.
+// An unfocused pane whose view just grabbed OS focus with no press behind it,
+// which is the steal shape. Each case overrides only what it is about.
 function input(over: Partial<GuardInput> = {}): GuardInput {
   return {
     phase: 'focus-event',
@@ -24,9 +24,8 @@ const TABLE: { name: string; in: GuardInput; want: GuardAction }[] = [
   },
   {
     name: '2. a grab on an unfocused pane decides nothing yet',
-    // The measured reason: at the focus
-    // event the press that may explain it has not been dispatched. Bouncing
-    // here reports a steal for the user's own first click.
+    // At the focus event the press that may explain it has not been dispatched,
+    // so bouncing here would report a steal for the user's own first click.
     in: input(),
     want: { kind: 'wait', settleMs: FOCUS_SETTLE_MS },
   },
@@ -52,8 +51,8 @@ const TABLE: { name: string; in: GuardInput; want: GuardAction }[] = [
   },
   {
     name: '7. a press landed between the grab and the settle',
-    // The user's click: Chromium focused the widget while routing the press
-    // and forwarded the press afterwards, so the press arrives second.
+    // The user's click. Chromium focused the widget while routing the press and
+    // forwarded the press afterwards, so the press arrives second.
     in: input({ phase: 'settle', pressesAtFocus: 0, pressesNow: 1 }),
     want: { kind: 'allow' },
   },
@@ -64,9 +63,9 @@ const TABLE: { name: string; in: GuardInput; want: GuardAction }[] = [
   },
   {
     name: '9. an older press, already consumed by an earlier focus, is not intent',
-    // The count is equal and non-zero: this view was clicked before, but not
-    // for this focus. A guard keyed on "a click happened recently" would let a
-    // page steal focus in the shadow of an earlier click; the count cannot.
+    // The count is equal and non-zero, so this view was clicked before but not
+    // for this focus. A guard keyed on how recently a click happened would let
+    // a page steal focus in the shadow of an earlier click.
     in: input({ phase: 'settle', pressesAtFocus: 7, pressesNow: 7 }),
     want: { kind: 'bounce', settleMs: FOCUS_SETTLE_MS },
   },
@@ -84,9 +83,7 @@ for (const c of TABLE) {
 }
 
 test('decideFocus reads no clock: the same world always decides the same way', () => {
-  // The guard used to compare Date.now() against a 1500 ms grace, which made
-  // its verdict depend on when it was asked. Nothing in GuardInput is a time,
-  // so asking twice cannot disagree.
+  // Nothing in GuardInput is a time, so asking twice cannot disagree.
   for (const c of TABLE) {
     assert.deepEqual(decideFocus(c.in), decideFocus(c.in), c.name);
   }
@@ -105,6 +102,6 @@ test('isPressInput counts presses only, never the registry own wheel injection',
 });
 
 test('FOCUS_SETTLE_MS pins the production settle', () => {
-  // The one surviving constant. Its measurement is quoted in focusguard.ts.
+  // focusguard.ts says what the constant is worth.
   assert.equal(FOCUS_SETTLE_MS, 120);
 });
