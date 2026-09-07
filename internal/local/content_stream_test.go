@@ -12,10 +12,8 @@ import (
 )
 
 // The content-stream seam tests drive home as the namespace.Namespace value
-// the router holds. The property under test — commit at close, and a broken
-// stream committing nothing — lives in the stream lifecycle, which is the
-// recv and send contract: a recv that fails must leave the old value
-// byte-for-byte intact.
+// the router holds. The property under test lives in the stream lifecycle: a
+// recv that fails must leave the old value byte-for-byte intact.
 
 func homeNamespace(t *testing.T) (namespace.Namespace, string) {
 	t.Helper()
@@ -109,11 +107,9 @@ func TestContentStreamRoundTrip(t *testing.T) {
 	}
 }
 
-// TestWriteContentBrokenStreamCommitsNothing is the commit-at-close seam
-// test: a stream that dies mid-write must leave the old value byte-for-byte
-// intact, so partial delivery is never visible. Content is a value; a torn
-// write would be corruption. The break is a recv that fails instead of
-// reaching io.EOF.
+// A stream that dies mid-write must leave the old value byte-for-byte intact,
+// so partial delivery is never visible. The break is a recv that fails instead
+// of reaching io.EOF.
 func TestWriteContentBrokenStreamCommitsNothing(t *testing.T) {
 	c, root := homeNamespace(t)
 	tile := grpcCreateText(t, c, root, []byte("the old value"))

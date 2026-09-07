@@ -215,10 +215,8 @@ func TestShellSessionAlive_WithShellHost(t *testing.T) {
 	}
 }
 
-// TestCreateWell_InteriorVsExit: a well CreateTile with no child_grid_id
-// allocates an interior child grid; with a qualified child_grid_id it stores
-// a cross-plugin exit well pointing at that grid, with no interior grid and
-// the reference verbatim. alt_text is the exit well's label.
+// A well CreateTile with no child_grid_id allocates an interior child grid;
+// with a qualified one it stores an exit well holding the reference verbatim.
 func TestCreateWell_InteriorVsExit(t *testing.T) {
 	p := openPlugin(t)
 	ctx := context.Background()
@@ -272,10 +270,9 @@ func TestReadContent_ReturnsBody(t *testing.T) {
 	}
 }
 
-// TestGetTileAndRename: GetTile reads a tile's metadata, and the versioned
-// SetTile rename arm stamps a user-owned label on a shell tile and returns
-// it. A text tile is refused: its name derives from its first line, so a
-// rename there would be clobbered by the next edit.
+// The versioned SetTile rename arm stamps a user-owned label and returns it. A
+// text tile is refused: its name derives from its first line, so a rename
+// there would be clobbered by the next edit.
 func TestGetTileAndRename(t *testing.T) {
 	p := openPlugin(t)
 	ctx := context.Background()
@@ -340,10 +337,9 @@ func TestWellFramingNoVersionBump(t *testing.T) {
 	}
 }
 
-// TestInfoRootFramingSeedAndWriteback pins the menu-to-plugin-root seam:
-// SetFraming persists the framing and Info returns it, so the client can
-// restore the left-off viewport on entry without an extra round-trip. It is
-// framing only, so a root write must not bump a content version.
+// SetFraming persists the framing and Info returns it, so the client restores
+// the left-off viewport on entry with no extra round-trip. A root write must
+// not bump a content version.
 func TestInfoRootFramingSeedAndWriteback(t *testing.T) {
 	p := openPlugin(t)
 	ctx := context.Background()
@@ -386,10 +382,8 @@ func TestInfoRootFramingSeedAndWriteback(t *testing.T) {
 		t.Errorf("Info.RootViewZoom = %v, want 1.75", info1.RootViewZoom)
 	}
 
-	// A root framing write must not change the root grid's own version.
-	// schema_version reflects the DB format, not a content edit, and the
-	// SetFraming call above must not have errored with a version
-	// conflict.
+	// A root framing write must not change the root grid's own version;
+	// schema_version reflects the DB format, not a content edit.
 	if info1.SchemaVersion != info0.SchemaVersion {
 		t.Errorf("schema_version changed after the root framing write: %d → %d", info0.SchemaVersion, info1.SchemaVersion)
 	}
@@ -441,12 +435,10 @@ func TestCleanupScratchSweepsEphemeralTiles(t *testing.T) {
 	}
 }
 
-// TestCleanupScratchSparesWorkspaceEphemerals: a scratch tile referenced by
-// a pane tile's layout blob is part of a durable arrangement, alive on
-// purpose across restarts because its tmux session is, so the boot sweep
-// must not reap it. An unreferenced scratch tile still sweeps, and once the
-// pane tile is deleted the reference dies with the blob and the next sweep
-// reclaims it. Self-healing, with no second bookkeeping copy.
+// A scratch tile referenced by a pane tile's layout blob is part of a durable
+// arrangement, so the boot sweep must not reap it. An unreferenced one still
+// sweeps, and once the pane tile is deleted the reference dies with the blob
+// and the next sweep reclaims it.
 func TestCleanupScratchSparesWorkspaceEphemerals(t *testing.T) {
 	p := openPlugin(t)
 	ctx := context.Background()
@@ -510,9 +502,7 @@ func TestCleanupScratchSparesWorkspaceEphemerals(t *testing.T) {
 		t.Errorf("post-trash sweep = (%d, %v), want (0, nil) — a trashed workspace keeps its ephemerals", swept, err)
 	}
 	// The second delete destroys the pane tile, the reference dies with the
-	// blob, and the next sweep reclaims the formerly-owned ephemeral. The
-	// server-level delete reap usually gets there first; the sweep is the
-	// net.
+	// blob, and the next sweep reclaims the ephemeral.
 	if _, err := p.GetTile(ctx, &gridwellv1.GetTileRequest{TileId: pt.Tile.Id}); err != nil {
 		t.Fatal(err)
 	}
@@ -537,10 +527,9 @@ func scratchGrid(t *testing.T, p *local.Plugin) string {
 	return info.ScratchGridId
 }
 
-// Home's trashcan is a declared menu entry, and an entry is a doorway, so it
-// remembers the view it was left at exactly as home's own root does. Both
-// read one column set, and the handshake is where they meet: frame the trash
-// grid, ask again, and the entry carries it while the root stays put.
+// The trashcan is a declared menu entry, and an entry is a doorway, so it
+// remembers the view it was left at exactly as home's own root does: frame the
+// trash grid, ask again, and the entry carries it while the root stays put.
 func TestTheTrashcanEntryRemembersItsFraming(t *testing.T) {
 	p := openPlugin(t)
 	ctx := context.Background()

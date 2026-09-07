@@ -5,13 +5,11 @@ import (
 	"github.com/josephburnett/gridwell/internal/pluginmeta"
 )
 
-// OpenVerified is the one door the home's store is opened through: verify
-// the DB's stored identity against the configured id and kind
-// (pluginmeta.Verify), open the store, and inject the verified config id
-// (store.SetPluginID) so every identity read — the boot scratch sweep's
-// WorkspaceEphemeralRefs comparison included — speaks the id that qualified
-// references actually carry. Fusing verify, open, and inject into one call
-// makes the forgotten-injection state unrepresentable.
+// OpenVerified is the one door the home's store is opened through: verify the
+// DB's stored identity against the configured id and kind, open the store, and
+// inject the verified config id, so every identity read speaks the id that
+// qualified references carry. Fusing the three makes the forgotten-injection
+// state unrepresentable.
 func OpenVerified(dbPath, uuid, kind string) (*store.Store, error) {
 	if _, err := pluginmeta.Verify(dbPath, uuid, kind); err != nil {
 		return nil, err
