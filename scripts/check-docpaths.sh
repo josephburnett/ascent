@@ -23,6 +23,18 @@ cd "$(dirname "$0")/.."
 allow=scripts/docpaths-allow.txt
 skip_files=()
 
+# allowed compares the two fields LITERALLY. Matching an exemption as a
+# regex silently failed to exempt any path containing a glob character —
+# `apps/desktop/out/*.dmg` reads as "out, some slashes, any char, dmg" —
+# and a gate that cannot be exempted is a gate people route around.
+allowed() {
+  while read -r af ap _; do
+    case "$af" in \#* | '') continue ;; esac
+    if [ "$af" = "$1" ] && [ "$ap" = "$2" ]; then return 0; fi
+  done <"$allow"
+  return 1
+}
+
 files=$(git ls-files '*.md' '*.go' '*.ts' 'go.mod' '*/go.mod' 'go.work' \
   '.github/workflows/*.yml' | grep -v '/node_modules/')
 bad=0
@@ -34,7 +46,7 @@ for f in $files; do
       | sed -E 's/^[^A-Za-z]//' | sed -E 's#/\.\.\.$##; s#[.,;:)*]+$##; s#\.[A-Z][A-Za-z0-9]*$##; s#/$##' | LC_ALL=C sort -u); do
     [ -z "$p" ] && continue
     if [ -e "$p" ]; then continue; fi
-    if grep -qE "^$f $p( |$)" "$allow" 2>/dev/null; then continue; fi
+    if allowed "$f" "$p"; then continue; fi
     echo "$f: path does not exist: $p"
     bad=1
   done
