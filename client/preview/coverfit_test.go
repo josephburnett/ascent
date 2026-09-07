@@ -8,27 +8,27 @@ import (
 func almost(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 
 func TestContainDstRectLetterboxesOneAxis(t *testing.T) {
-	// Wide image (200x100, AR 2) into a square dest: full width, bars
-	// above/below. dw=100, dh=50, centered vertically.
+	// A 200x100 image in a square destination fills the width and gets bars
+	// above and below.
 	dx, dy, dw, dh, ok := ContainDstRect(200, 100, 10, 20, 100, 100)
 	if !ok || !almost(dx, 10) || !almost(dy, 45) || !almost(dw, 100) || !almost(dh, 50) {
 		t.Errorf("wide image: (%v,%v,%v,%v) ok=%v", dx, dy, dw, dh, ok)
 	}
-	// Tall image (100x200) into a square dest: full height, bars left/right.
+	// A 100x200 image fills the height and gets bars left and right.
 	dx, dy, dw, dh, _ = ContainDstRect(100, 200, 10, 20, 100, 100)
 	if !almost(dx, 35) || !almost(dy, 20) || !almost(dw, 50) || !almost(dh, 100) {
 		t.Errorf("tall image: (%v,%v,%v,%v)", dx, dy, dw, dh)
 	}
-	// Matching aspect: fills the dest exactly, no bars.
+	// A matching aspect fills the destination with no bars.
 	dx, dy, dw, dh, _ = ContainDstRect(400, 300, 0, 0, 100, 75)
 	if !almost(dx, 0) || !almost(dy, 0) || !almost(dw, 100) || !almost(dh, 75) {
 		t.Errorf("matched aspect: (%v,%v,%v,%v)", dx, dy, dw, dh)
 	}
 }
 
-// TestContainDstRectProperties: for arbitrary shapes, the image rect keeps
-// the source aspect, stays inside the destination, is centered, and touches
-// the destination on at least one full axis (bars never on both).
+// TestContainDstRectProperties pins that for any shape the image rect keeps the
+// source aspect, stays inside the destination, is centered, and fills at least
+// one axis, so bars never appear on both.
 func TestContainDstRectProperties(t *testing.T) {
 	shapes := []struct{ iw, ih, w, h float64 }{
 		{1920, 1080, 64, 64}, {300, 900, 128, 64}, {50, 50, 640, 480},
@@ -63,8 +63,8 @@ func TestContainDstRectDegenerate(t *testing.T) {
 	}
 }
 
-// TestStandinDstRect: the snapshot goes back exactly where the live canvas
-// was — top-left of the box, intrinsic CSS size, no scaling, no centering.
+// TestStandinDstRect pins the snapshot to where the live canvas was: the top
+// left of the box at intrinsic CSS size, with no scaling and no centering.
 // Contain-fitting it would shift terminal pixels on every overlay park.
 func TestStandinDstRect(t *testing.T) {
 	// A 2528×1432 device-pixel snapshot at dpr 2 is a 1264×716 CSS canvas.
@@ -72,11 +72,12 @@ func TestStandinDstRect(t *testing.T) {
 	if !ok || !almost(dx, 10) || !almost(dy, 20) || !almost(dw, 1264) || !almost(dh, 716) {
 		t.Errorf("dpr 2: (%v,%v,%v,%v) ok=%v", dx, dy, dw, dh, ok)
 	}
-	// dpr 1 (and a degenerate dpr falls back to 1): intrinsic size verbatim.
+	// At dpr 1, and for a degenerate dpr that falls back to 1, the size is the
+	// intrinsic one.
 	if _, _, dw, dh, _ := StandinDstRect(1264, 716, 0, 0, 0); !almost(dw, 1264) || !almost(dh, 716) {
 		t.Errorf("dpr fallback: (%v,%v)", dw, dh)
 	}
-	// A degenerate image is not ok — the caller falls back.
+	// A degenerate image is not ok and the caller falls back.
 	if _, _, _, _, ok := StandinDstRect(0, 716, 1, 0, 0); ok {
 		t.Error("degenerate image should not be ok")
 	}
