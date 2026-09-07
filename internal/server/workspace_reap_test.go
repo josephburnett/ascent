@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -33,9 +34,7 @@ func TestDeletePaneTileReapsItsEphemerals(t *testing.T) {
 	hs := serveWeb(t, srv)
 	cl := rpc.NewClient(hs.Client(), hs.URL, connect.WithProtoJSON())
 
-	pt, err := cl.CreatePane(ctx, &rpc.CreatePaneRequest{
-		GridID: root, X: 0, Y: 0, W: 2, H: 2, Label: "ops",
-	})
+	pt, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindPane, X: 0, Y: 0, W: 2, H: 2, AltText: "ops"}})
 	if err != nil {
 		t.Fatalf("CreatePane: %v", err)
 	}
@@ -44,17 +43,15 @@ func TestDeletePaneTileReapsItsEphemerals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scratch := g.Grid.ScratchGridID
+	scratch := g.Grid.ScratchGridId
 	if scratch == "" {
 		t.Fatal("no scratch grid advertised")
 	}
-	eph, err := cl.CreateShell(ctx, &rpc.CreateShellRequest{GridID: scratch, X: 0, Y: 0, W: 1, H: 1})
+	eph, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: scratch, Tile: &gridwellv1.Tile{Kind: rpc.KindShell, X: 0, Y: 0, W: 1, H: 1}})
 	if err != nil {
 		t.Fatalf("CreateShell (scratch): %v", err)
 	}
-	txt, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 3, Y: 3, W: 1, H: 1, Data: []byte("# viewed"),
-	})
+	txt, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 3, Y: 3, W: 1, H: 1}}, []byte("# viewed"))
 	if err != nil {
 		t.Fatalf("CreateText: %v", err)
 	}
@@ -65,58 +62,58 @@ func TestDeletePaneTileReapsItsEphemerals(t *testing.T) {
 	layout := fmt.Sprintf(`{"v":1,"root":{"split":{"dir":"v","ratio":0.5,`+
 		`"a":{"pane":{"id":"p1","anchor":%q,"cx":0.5,"cy":0.5,"zoom":1,"text_focus":%q}},`+
 		`"b":{"pane":{"id":"p2","anchor":%q,"cx":0.5,"cy":0.5,"zoom":1,"text_focus":%q}}}},"focus":"p1"}`,
-		root, eph.ID, root, txt.ID)
-	if _, err := cl.WriteContent(ctx, pt.ID, pt.Version, []byte(layout)); err != nil {
+		root, eph.Id, root, txt.Id)
+	if _, err := cl.WriteContent(ctx, pt.Id, pt.Version, []byte(layout)); err != nil {
 		t.Fatalf("SetPaneLayout: %v", err)
 	}
 
-	if err := cl.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: pt.ID}); err != nil {
+	if err := cl.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: pt.Id}); err != nil {
 		t.Fatalf("DeleteTile(pane): %v", err)
 	}
 
 	// The first delete PARKS the workspace in the local plugin's trash
 	// Its ephemerals stay alive so a restore comes back whole.
-	if _, err := cl.GetTile(ctx, eph.ID); err != nil {
+	if _, err := cl.GetTile(ctx, eph.Id); err != nil {
 		t.Fatalf("a trashed workspace must keep its ephemeral shell: %v", err)
 	}
-	if _, err := cl.GetTile(ctx, pt.ID); err != nil {
+	if _, err := cl.GetTile(ctx, pt.Id); err != nil {
 		t.Fatalf("trashed pane tile must still read: %v", err)
 	}
 	// The second delete (inside the trash) DESTROYS — and only then does
 	// the router reap what the arrangement owned.
-	if err := cl.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: pt.ID}); err != nil {
+	if err := cl.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: pt.Id}); err != nil {
 		t.Fatalf("DeleteTile(pane, in trash): %v", err)
 	}
-	if _, err := cl.GetTile(ctx, eph.ID); err == nil {
+	if _, err := cl.GetTile(ctx, eph.Id); err == nil {
 		t.Error("ephemeral scratch tile survived the pane-tile destroy — its shell would leak until the boot sweep")
 	}
-	if _, err := cl.GetTile(ctx, txt.ID); err != nil {
+	if _, err := cl.GetTile(ctx, txt.Id); err != nil {
 		t.Errorf("viewed content was deleted with the workspace: %v", err)
 	}
 
 	// A pane tile with an UNREADABLE blob must still delete without touching
 	// anything (never guess at what to reap), mirroring the read-only latch.
-	pt2, err := cl.CreatePane(ctx, &rpc.CreatePaneRequest{GridID: root, X: 5, Y: 5, W: 1, H: 1})
+	pt2, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindPane, X: 5, Y: 5, W: 1, H: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	eph2, err := cl.CreateShell(ctx, &rpc.CreateShellRequest{GridID: scratch, X: 0, Y: 0, W: 1, H: 1})
+	eph2, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: scratch, Tile: &gridwellv1.Tile{Kind: rpc.KindShell, X: 0, Y: 0, W: 1, H: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cl.WriteContent(ctx, pt2.ID, pt2.Version, []byte(`{"v":999,"root":{}}`)); err != nil {
+	if _, err := cl.WriteContent(ctx, pt2.Id, pt2.Version, []byte(`{"v":999,"root":{}}`)); err != nil {
 		t.Fatalf("SetPaneLayout (future version): %v", err)
 	}
-	if err := cl.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: pt2.ID}); err != nil {
+	if err := cl.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: pt2.Id}); err != nil {
 		t.Fatalf("DeleteTile(pane, unreadable blob): %v", err)
 	}
-	if _, err := cl.GetTile(ctx, pt2.ID); err != nil {
+	if _, err := cl.GetTile(ctx, pt2.Id); err != nil {
 		t.Fatal(err)
 	}
-	if err := cl.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: pt2.ID}); err != nil {
+	if err := cl.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: pt2.Id}); err != nil {
 		t.Fatalf("DeleteTile(pane, unreadable blob, in trash): %v", err)
 	}
-	if _, err := cl.GetTile(ctx, eph2.ID); err != nil {
+	if _, err := cl.GetTile(ctx, eph2.Id); err != nil {
 		t.Errorf("unreadable blob must reap NOTHING (never guess), but the scratch tile is gone: %v", err)
 	}
 }

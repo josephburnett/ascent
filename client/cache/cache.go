@@ -8,6 +8,7 @@ package cache
 
 import (
 	"bytes"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"maps"
 	"sort"
 	"sync"
@@ -51,8 +52,8 @@ type contentEntry struct {
 
 // Grid is a cached grid plus its tiles indexed by id for cheap upsert.
 type Grid struct {
-	Meta  rpc.Grid
-	Tiles map[string]rpc.Tile
+	Meta  *gridwellv1.Grid
+	Tiles map[string]*gridwellv1.Tile
 }
 
 // HostContent reports the grid's declared host_content: every row in it
@@ -218,20 +219,20 @@ func (c *Cache) TileContent(tileID string) ([]byte, bool) {
 // Subscribe event (reconcileContent): a refetch and an event are the same
 // fact arriving on two paths and must age cached bodies identically, or one
 // path silently advances the version past the bytes.
-func (c *Cache) PutGrid(g rpc.Grid, tiles []rpc.Tile) {
+func (c *Cache) PutGrid(g *gridwellv1.Grid, tiles []*gridwellv1.Tile) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	old := c.grids[g.ID]
-	gr := &Grid{Meta: g, Tiles: map[string]rpc.Tile{}}
+	old := c.grids[g.Id]
+	gr := &Grid{Meta: g, Tiles: map[string]*gridwellv1.Tile{}}
 	for _, n := range tiles {
 		if old != nil {
-			if cur, ok := old.Tiles[n.ID]; ok {
+			if cur, ok := old.Tiles[n.Id]; ok {
 				c.reconcileContent(cur, n)
 			}
 		}
-		gr.Tiles[n.ID] = n
+		gr.Tiles[n.Id] = n
 	}
-	c.grids[g.ID] = gr
+	c.grids[g.Id] = gr
 }
 
 // reconcileContent ages the cached body when a fresher row for the same tile
@@ -248,25 +249,28 @@ func (c *Cache) PutGrid(g rpc.Grid, tiles []rpc.Tile) {
 // Non-text tiles: version is not the content key (a pane tile's layout blob
 // is framing-class and never bumps version), so a changed blob id is the
 // staleness signal instead.
-func (c *Cache) reconcileContent(cur, n rpc.Tile) {
-	e, ok := c.content[n.ID]
+func (c *Cache) reconcileContent(cur, n *gridwellv1.Tile) {
+	e, ok := c.content[n.Id]
 	if !ok {
 		return
 	}
 	if n.Kind == rpc.KindText {
 		if !e.dirty && n.Version > e.base {
-			delete(c.content, n.ID)
+			delete(c.content, n.Id)
 		}
 		return
 	}
-	if n.BlobID != cur.BlobID {
-		delete(c.content, n.ID)
+	if n.BlobId != cur.BlobId {
+		delete(c.content, n.Id)
 	}
 }
 
-// Grid returns a snapshot of a cached grid, or (nil, false) if absent.
-// The returned grid is a deep enough copy that the caller can iterate it
-// without holding the cache lock.
+// Grid returns a snapshot of a cached grid, or (nil, false) if absent. The
+// map is a copy, so the caller can iterate it without holding the cache
+// lock; the rows in it are the cached rows themselves. Treat them as
+// read-only: a caller that wants to change one clones it and hands the clone
+// back through Apply or UpdateTile, so the version interlock still decides
+// whether the change lands.
 func (c *Cache) Grid(id string) (*Grid, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -274,7 +278,7 @@ func (c *Cache) Grid(id string) (*Grid, bool) {
 	if !ok {
 		return nil, false
 	}
-	out := &Grid{Meta: g.Meta, Tiles: make(map[string]rpc.Tile, len(g.Tiles))}
+	out := &Grid{Meta: g.Meta, Tiles: make(map[string]*gridwellv1.Tile, len(g.Tiles))}
 	maps.Copy(out.Tiles, g.Tiles)
 	return out, true
 }
@@ -350,15 +354,15 @@ func (c *Cache) KnownGridIDs() []string { return c.ResyncSet(EverySource) }
 // bump version but do change the framing columns, and a patch of the cached
 // row (a url tile's in-page navigation, a content zoom) carries the version
 // it read.
-func (c *Cache) putTileLocked(g *Grid, n rpc.Tile) bool {
-	cur, exists := g.Tiles[n.ID]
+func (c *Cache) putTileLocked(g *Grid, n *gridwellv1.Tile) bool {
+	cur, exists := g.Tiles[n.Id]
 	if exists && n.Version < cur.Version {
 		return false
 	}
 	if exists {
 		c.reconcileContent(cur, n)
 	}
-	g.Tiles[n.ID] = n
+	g.Tiles[n.Id] = n
 	return true
 }
 
@@ -372,14 +376,14 @@ func (c *Cache) putTileLocked(g *Grid, n rpc.Tile) bool {
 // It is putTileLocked, same as an event: a response and an echo are the same
 // fact arriving on two paths, and the map's rules cannot be a property of the
 // path. There is no unguarded door, so no caller can take one by accident.
-func (c *Cache) UpdateTile(gridID string, t rpc.Tile) {
+func (c *Cache) UpdateTile(gridID string, t *gridwellv1.Tile) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	g, ok := c.grids[gridID]
 	if !ok {
 		return
 	}
-	if _, ok := g.Tiles[t.ID]; !ok {
+	if _, ok := g.Tiles[t.Id]; !ok {
 		return
 	}
 	c.putTileLocked(g, t)
@@ -391,16 +395,16 @@ func (c *Cache) UpdateTile(gridID string, t rpc.Tile) {
 // Unknown grids are not auto-fetched here; that's a UI policy decision the
 // renderer makes when an event references a grid the user is currently
 // looking at.
-func (c *Cache) Apply(ev rpc.Event) bool {
+func (c *Cache) Apply(ev *gridwellv1.Event) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	switch ev.Kind {
-	case rpc.EventTileChanged:
-		if ev.TileChanged == nil {
+	switch p := ev.Payload.(type) {
+	case *gridwellv1.Event_TileChanged:
+		n := p.TileChanged.GetTile()
+		if n == nil {
 			return false
 		}
-		n := ev.TileChanged.Tile
-		g, ok := c.grids[n.GridID]
+		g, ok := c.grids[n.GridId]
 		if !ok {
 			return false
 		}
@@ -408,15 +412,16 @@ func (c *Cache) Apply(ev rpc.Event) bool {
 		// event may insert a tile the cache has not seen; that is the one way
 		// this path differs from UpdateTile.
 		return c.putTileLocked(g, n)
-	case rpc.EventTileRemoved:
-		if ev.TileRemoved == nil {
+	case *gridwellv1.Event_TileRemoved:
+		r := p.TileRemoved
+		if r == nil {
 			return false
 		}
-		g, ok := c.grids[ev.TileRemoved.GridID]
+		g, ok := c.grids[r.GridId]
 		if !ok {
 			return false
 		}
-		_, present := g.Tiles[ev.TileRemoved.TileID]
+		_, present := g.Tiles[r.TileId]
 		// Drop the removed tile's clean cached body so a delete doesn't
 		// strand content in the map forever, but spare a dirty one. A
 		// cross-grid move emits TileRemoved(src) then TileChanged(dst) for
@@ -424,15 +429,15 @@ func (c *Cache) Apply(ev rpc.Event) bool {
 		// the hop. Even for a genuine delete, discarding the user's unsaved
 		// words silently is data loss: the flush sweep surfaces the orphan
 		// instead.
-		if e, ok := c.content[ev.TileRemoved.TileID]; !ok || !e.dirty {
-			delete(c.content, ev.TileRemoved.TileID)
+		if e, ok := c.content[r.TileId]; !ok || !e.dirty {
+			delete(c.content, r.TileId)
 		}
-		delete(g.Tiles, ev.TileRemoved.TileID)
+		delete(g.Tiles, r.TileId)
 		return present
-	case rpc.EventGridChanged:
+	case *gridwellv1.Event_GridChanged:
 		// We can't update without a new GetGrid; signal redraw so the
 		// caller can decide whether to refetch.
-		return ev.GridChanged != nil
+		return p.GridChanged != nil
 	}
 	return false
 }

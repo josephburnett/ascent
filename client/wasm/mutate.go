@@ -5,10 +5,10 @@ package main
 import (
 	"context"
 	"errors"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 
 	"connectrpc.com/connect"
 
-	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/clientsync"
 	"github.com/josephburnett/gridwell/client/errsurface"
 	"github.com/josephburnett/gridwell/client/inflight"
@@ -34,7 +34,7 @@ import (
 // tileCall is the closure shape a tile-producing mutation takes. Callers wrap
 // the matching a.cl method (CreateText, PlaceTile, …) so the dispatcher
 // doesn't need to know the request type.
-type tileCall func(ctx context.Context) (*rpc.Tile, error)
+type tileCall func(ctx context.Context) (*gridwellv1.Tile, error)
 
 // write is one non-content mutation and everything the dispatcher needs in
 // order to react to it. Policy — which reaction table, whether the write
@@ -241,8 +241,8 @@ func (a *App) doOnUnload(w write) error {
 // appears or the failure notice says it did not — and a refetch on success so
 // the cache catches up to the server's authoritative row. onSuccess, which
 // may be nil, fires with the response tile.
-func (a *App) postTileMutate(label string, gid string, call tileCall, onSuccess func(rpc.Tile)) {
-	var tile *rpc.Tile
+func (a *App) postTileMutate(label string, gid string, call tileCall, onSuccess func(*gridwellv1.Tile)) {
+	var tile *gridwellv1.Tile
 	// The gesture is not over while the row is still being made: the descent,
 	// the visit, or the placement it leads to happens in onSuccess. Counting
 	// it in flight is what lets a caller — the e2e's idle signal — tell "the
@@ -260,7 +260,7 @@ func (a *App) postTileMutate(label string, gid string, call tileCall, onSuccess 
 		},
 		then: func() {
 			if onSuccess != nil && tile != nil {
-				onSuccess(*tile)
+				onSuccess(tile)
 			}
 		},
 	})
@@ -332,7 +332,7 @@ func (a *App) putEditedContent(cid string, data []byte) {
 // Bounded like every other client RPC, and doubly needed here: text saves for
 // one document run on a serial queue, so a WriteContent the network swallows
 // would block every later save of that document behind it, forever.
-func (a *App) postWriteContent(gid, tileID string, version int64, newContent []byte) (rpc.Tile, bool) {
+func (a *App) postWriteContent(gid, tileID string, version int64, newContent []byte) (*gridwellv1.Tile, bool) {
 	ctx, cancel := inflight.Bounded()
 	defer cancel()
 	tile, err := a.cl.WriteContent(ctx, tileID, version, newContent)
@@ -369,7 +369,7 @@ func (a *App) postWriteContent(gid, tileID string, version int64, newContent []b
 				"unsaved changes kept — server unreachable, will retry")
 		}
 		a.recordContent(tileID)
-		return rpc.Tile{}, false
+		return nil, false
 	}
 	// Advance the cached tile and the save basis to the response row now,
 	// not when the event echo lands. Text saves are serialized per tile and
@@ -379,10 +379,10 @@ func (a *App) postWriteContent(gid, tileID string, version int64, newContent []b
 	// save routed through a leaf link the response row lives in the target's
 	// foreign grid, and writing it under the link's grid would plant a
 	// foreign tile row in the wrong grid map.
-	a.c.UpdateTile(tile.GridID, *tile)
-	a.c.PutSavedContent(tile.ID, newContent, tile.Version)
-	a.recordContent(tile.ID)
-	return *tile, true
+	a.c.UpdateTile(tile.GridId, tile)
+	a.c.PutSavedContent(tile.Id, newContent, tile.Version)
+	a.recordContent(tile.Id)
+	return tile, true
 }
 
 // enqueueTextSave posts a content write through the document's serial queue.
@@ -410,7 +410,7 @@ func (a *App) enqueueTextSave(gid, tileID, cid string, rowVersion int64, data []
 // goes through here (the debounced sweep and outbox drain via
 // enqueueTextSave, the ascent flush directly), so no path can spell the claim
 // differently.
-func (a *App) saveClaimedContent(gid, cid string, rowOwnsContent bool, rowVersion int64, data []byte) (rpc.Tile, bool) {
+func (a *App) saveClaimedContent(gid, cid string, rowOwnsContent bool, rowVersion int64, data []byte) (*gridwellv1.Tile, bool) {
 	basis, haveBasis := a.c.SaveBasis(cid)
 	return a.postWriteContent(gid, cid, textedit.SaveClaim(rowOwnsContent, rowVersion, basis, haveBasis), data)
 }

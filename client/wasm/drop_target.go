@@ -3,6 +3,7 @@
 package main
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/dragdrop"
 	"github.com/josephburnett/gridwell/client/pane"
@@ -160,11 +161,11 @@ func (a *App) dropTargetAt(sx, sy float64, excludeTileID string) (*dropTarget, b
 	// itself) is the tested dragdrop.PromoteToWell.
 	cellX, cellY := cellAtScreen(p, r, sx, sy)
 	if n := a.tileAtCell(p, cellX, cellY); n != nil &&
-		dragdrop.PromoteToWell(rpc.IsWellKind(n.Kind), n.ChildGridID, n.ID, excludeTileID) {
+		dragdrop.PromoteToWell(rpc.IsWellKind(n.Kind), n.ChildGridId, n.Id, excludeTileID) {
 		cp := wellPreviewFor(ps, n)
 		return &dropTarget{
 			pane:     p,
-			gridID:   n.ChildGridID,
+			gridID:   n.ChildGridId,
 			cellSize: cp.CellPx,
 			originX:  cp.OriginX,
 			originY:  cp.OriginY,
@@ -184,7 +185,7 @@ func (a *App) dropTargetAt(sx, sy float64, excludeTileID string) (*dropTarget, b
 // tileCopy returns a copy of *n owned by the caller. The cache may rewrite
 // its tile map underneath, so a caller retaining a tile across event
 // boundaries holds its own copy.
-func tileCopy(n *rpc.Tile) *rpc.Tile {
+func tileCopy(n *gridwellv1.Tile) *gridwellv1.Tile {
 	c := *n
 	return &c
 }
@@ -243,11 +244,11 @@ func (t *dropTarget) cellAtCursor(sx, sy, cellOffsetX, cellOffsetY float64) (int
 // well's child preview, or nil if no tile is there. Used at mousedown
 // to decide whether a click on a well is starting a "pull out" gesture
 // on a specific child tile.
-func (a *App) childTileAtScreen(p *pane.Pane, r pane.Rect, well *rpc.Tile, sx, sy float64) *rpc.Tile {
-	if !rpc.IsWellKind(well.Kind) || well.ChildGridID == "" {
+func (a *App) childTileAtScreen(p *pane.Pane, r pane.Rect, well *gridwellv1.Tile, sx, sy float64) *gridwellv1.Tile {
+	if !rpc.IsWellKind(well.Kind) || well.ChildGridId == "" {
 		return nil
 	}
-	g, ok := a.c.Grid(well.ChildGridID)
+	g, ok := a.c.Grid(well.ChildGridId)
 	if !ok {
 		return nil
 	}
@@ -258,7 +259,7 @@ func (a *App) childTileAtScreen(p *pane.Pane, r pane.Rect, well *rpc.Tile, sx, s
 	cellX, cellY := dragdrop.FloorCellAt(cp.OriginX, cp.OriginY, cp.CellPx, sx, sy)
 	for _, n := range g.Tiles {
 		if dragdrop.TileContainsCell(n.X, n.Y, n.W, n.H, cellX, cellY) {
-			return tileCopy(&n)
+			return tileCopy(n)
 		}
 	}
 	return nil
@@ -270,7 +271,7 @@ func (a *App) childTileAtScreen(p *pane.Pane, r pane.Rect, well *rpc.Tile, sx, s
 // (EffectiveCenter) — so the drop target, the pull-out-of-well hit test, and
 // the renderer place a never-visited well's preview at the same pixels
 // instead of each remembering the fallback for itself.
-func wellPreviewFor(ps dragdrop.Pane, n *rpc.Tile) dragdrop.ChildPreview {
+func wellPreviewFor(ps dragdrop.Pane, n *gridwellv1.Tile) dragdrop.ChildPreview {
 	cx, cy := zoomtrans.EffectiveCenter(wellOf(n))
 	return dragdrop.ChildPreviewFor(ps, struct {
 		X, Y, W, H     int64
@@ -282,4 +283,4 @@ func wellPreviewFor(ps dragdrop.Pane, n *rpc.Tile) dragdrop.ChildPreview {
 // wellOf forwards to zoomtrans.WellOf, the one derivation of "this row read
 // as a doorway". It keeps a local name because the renderer reads it at many
 // call sites.
-func wellOf(n *rpc.Tile) zoomtrans.Well { return zoomtrans.WellOf(n) }
+func wellOf(n *gridwellv1.Tile) zoomtrans.Well { return zoomtrans.WellOf(n) }

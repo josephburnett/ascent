@@ -1,6 +1,7 @@
 package cache
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"slices"
 	"testing"
 
@@ -31,7 +32,7 @@ func seedSources(t *testing.T) *Cache {
 		farPl + "/4",   // a far node's plugin, one hop deeper still
 		fsPl + "/12",   // a second grid of the local plugin
 	} {
-		c.PutGrid(rpc.Grid{ID: id}, nil)
+		c.PutGrid(&gridwellv1.Grid{Id: id}, nil)
 	}
 	return c
 }

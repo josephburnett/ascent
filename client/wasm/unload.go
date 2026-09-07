@@ -20,6 +20,7 @@ package main
 //     presentation; the destination is user state.
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"syscall/js"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -81,14 +82,14 @@ func (a *App) flushURLStateOnUnload() {
 		url := v.lastURL
 		if url == "" {
 			if ct := a.cachedTileByID(v.tileID); ct != nil {
-				url = ct.URLString
+				url = ct.UrlString
 			}
 		}
 		if url == "" {
 			continue
 		}
-		if path, body := rpc.SetURLStateBeacon(&rpc.SetURLStateRequest{
-			TileID: v.tileID, URL: url, Title: v.lastTitle,
+		if path, body := rpc.SetTileBeacon(&gridwellv1.SetTileRequest{TileId: v.tileID,
+			Tile: &gridwellv1.Tile{Kind: rpc.KindURL, UrlString: url, AltText: v.lastTitle},
 		}); body != nil {
 			a.sendBeacon(path, body, rpc.BeaconJSONType)
 		}

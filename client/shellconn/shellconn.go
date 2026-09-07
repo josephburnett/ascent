@@ -45,7 +45,7 @@ const (
 )
 
 // DecideAutoLive maps a descent's facts to its liveness action. webContent
-// comes from rpc.Tile.WebContent(), which classifies a url tile and a
+// comes from rpc.WebContent, which classifies a url tile and a
 // serves_page tile alike, and the caller feeds it in so this package never
 // re-derives it. hasPreview and the aliveness pair are the same facts
 // DecideShellRefreshVisible reads, so the two agree about what a dead session

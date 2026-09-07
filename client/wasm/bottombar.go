@@ -3,6 +3,7 @@
 package main
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"syscall/js"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -257,7 +258,7 @@ func (a *App) barSlotMode(p *pane.Pane) barslot.Mode {
 	}
 	if in.ShellDescent && !in.ShellLive {
 		if t, ok := a.descendedGridTile(p); ok {
-			in.ShellRefreshVisible = a.shellRefreshButtonVisible(&t)
+			in.ShellRefreshVisible = a.shellRefreshButtonVisible(t)
 		}
 	}
 	return barslot.Decide(in)
@@ -267,10 +268,10 @@ func (a *App) barSlotMode(p *pane.Pane) barslot.Mode {
 // the pane's own grid, with no scratch-grid fallback: the slot's go-live and
 // refresh actions name a tile the grid holds, so an ephemeral visit — which
 // has no row there — has nothing to open and the slot does nothing.
-func (a *App) descendedGridTile(p *pane.Pane) (rpc.Tile, bool) {
+func (a *App) descendedGridTile(p *pane.Pane) (*gridwellv1.Tile, bool) {
 	g, ok := a.c.Grid(a.gridIDForPane(p))
 	if !ok {
-		return rpc.Tile{}, false
+		return nil, false
 	}
 	t, ok := g.Tiles[p.ContentID()]
 	return t, ok
@@ -315,7 +316,7 @@ func (a *App) barSlotClick(button int) {
 		a.bridgeGoBack(p.ID)
 	case barslot.ModeURLGoLive:
 		if t, ok := a.descendedGridTile(p); ok {
-			a.openURLStream(p, t.ID)
+			a.openURLStream(p, t.Id)
 		}
 	case barslot.ModeURLOpenTab:
 		// A browser host cannot place a live view, so the next-best descent
@@ -327,7 +328,7 @@ func (a *App) barSlotClick(button int) {
 		// Refresh either creates a fresh tmux session, when there is no
 		// snapshot yet, or attaches to the existing one.
 		if t, ok := a.descendedGridTile(p); ok {
-			a.openShellStream(p, t.ID)
+			a.openShellStream(p, t.Id)
 		}
 	case barslot.ModePlus:
 		a.menu.Toggle(p.ID)
@@ -348,9 +349,9 @@ func (a *App) openURLInNewTab(p *pane.Pane) {
 	if !ok {
 		return
 	}
-	url := a.webAddress(&t)
+	url := a.webAddress(t)
 	if url == "" {
-		if ct := a.cachedTileByID(a.contentKey(t.ID)); ct != nil {
+		if ct := a.cachedTileByID(a.contentKey(t.Id)); ct != nil {
 			url = a.webAddress(ct)
 		}
 	}
@@ -405,7 +406,7 @@ func (a *App) drawChainCrumb(cr pane.Crumb, s wsbar.Segment, top float64) {
 
 // chainCrumbTile resolves a tile crumb's row from the cache, kicking a
 // fetch of its containing grid on a miss.
-func (a *App) chainCrumbTile(cr pane.Crumb) *rpc.Tile {
+func (a *App) chainCrumbTile(cr pane.Crumb) *gridwellv1.Tile {
 	gid := a.gridIDForPathFrom(cr.ParentAnchor, cr.ParentPath)
 	if gid == "" {
 		return nil
@@ -421,7 +422,7 @@ func (a *App) chainCrumbTile(cr pane.Crumb) *rpc.Tile {
 		// resolve it by id and the crumb shows its live face.
 		return a.findTileByID(cr.TileID)
 	}
-	return &t
+	return t
 }
 
 // bottomBarClick consumes a click in the bar's band, always acting on the
@@ -499,7 +500,7 @@ func (a *App) bottomBarClick(sx, sy float64, button int) bool {
 	// which does nothing because this is where you are, and a drop.
 	if seg.Index == len(chain)-1 {
 		if p := a.tree.FocusedPane(); p != nil {
-			if t, ok := a.descendedTile(p); ok && t.Kind == rpc.KindURL && a.certainlyEphemeral(p, &t) {
+			if t, ok := a.descendedTile(p); ok && t.Kind == rpc.KindURL && a.certainlyEphemeral(p, t) {
 				a.startPromoteDrag(p, t, seg, bx, top, sx, sy)
 				return true
 			}
@@ -517,7 +518,7 @@ func (a *App) bottomBarClick(sx, sy float64, button int) bool {
 // startPromoteDrag arms the promote drag from the bar's current crumb:
 // a template-shaped drag (the drop creates a tile) whose item carries the
 // origin pane, ghosting the visit's own url tile at the crumb's square.
-func (a *App) startPromoteDrag(p *pane.Pane, t rpc.Tile, seg wsbar.Segment, bx, top, sx, sy float64) {
+func (a *App) startPromoteDrag(p *pane.Pane, t *gridwellv1.Tile, seg wsbar.Segment, bx, top, sx, sy float64) {
 	square := min(seg.W, wsbar.RowH)
 	ghost := t
 	ghost.W, ghost.H = 1, 1
@@ -607,7 +608,7 @@ func (a *App) openRenameInput() {
 		}
 		w = grown
 	}
-	tileID := target.ID
+	tileID := target.Id
 	a.openNameInputAt(target.AltText, w-24, func(st js.Value) {
 		st.Set("left", pxf(x))
 		st.Set("top", pxf(top+4))

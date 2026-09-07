@@ -1,6 +1,7 @@
 package nav
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"testing"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -12,7 +13,7 @@ import (
 // somewhere else" is one rule, spelled once, and every path gets it.
 
 func TestPaneClosedBeforeTheDescentLands(t *testing.T) {
-	text := rpc.Tile{ID: "t1", Kind: rpc.KindText, GridID: "g1", W: 3, H: 2}
+	text := &gridwellv1.Tile{Id: "t1", Kind: rpc.KindText, GridId: "g1", W: 3, H: 2}
 	w := baseWorld(gridPane("pane1", "g1"))
 	w.Door = &DoorWorld{}
 	m := New()
@@ -40,10 +41,10 @@ func TestPaneClosedBeforeTheAscentLands(t *testing.T) {
 }
 
 func TestSecondDescentMidAnimationLandsTheFirst(t *testing.T) {
-	well := rpc.Tile{ID: "w1", Kind: rpc.KindWell, GridID: "g1",
-		X: 2, Y: 3, W: 4, H: 4, ChildGridID: "gc"}
-	inner := rpc.Tile{ID: "w2", Kind: rpc.KindWell, GridID: "gc",
-		X: 0, Y: 0, W: 2, H: 2, ChildGridID: "gcc"}
+	well := &gridwellv1.Tile{Id: "w1", Kind: rpc.KindWell, GridId: "g1",
+		X: 2, Y: 3, W: 4, H: 4, ChildGridId: "gc"}
+	inner := &gridwellv1.Tile{Id: "w2", Kind: rpc.KindWell, GridId: "gc",
+		X: 0, Y: 0, W: 2, H: 2, ChildGridId: "gcc"}
 	m := New()
 
 	w := baseWorld(gridPane("pane1", "g1"))
@@ -60,7 +61,7 @@ func TestSecondDescentMidAnimationLandsTheFirst(t *testing.T) {
 	if !sameKinds(kinds(first), []EffectKind{EffCancelTransition}) {
 		t.Fatalf("effects = %v, want the cancel alone", kinds(first))
 	}
-	if first.Next == nil || first.Next.Door.ID != "w2" {
+	if first.Next == nil || first.Next.Door.Id != "w2" {
 		t.Fatalf("no continuation gesture for the displaced descent: %+v", first.Next)
 	}
 
@@ -102,8 +103,8 @@ func TestSecondAscentMidAnimationLandsTheFirst(t *testing.T) {
 }
 
 func TestShellProbe(t *testing.T) {
-	shell := rpc.Tile{ID: "s1", Kind: rpc.KindShell, GridID: "g1", W: 3, H: 2,
-		PreviewBlobID: 7}
+	shell := &gridwellv1.Tile{Id: "s1", Kind: rpc.KindShell, GridId: "g1", W: 3, H: 2,
+		PreviewBlobId: 7}
 
 	probe := func(m *Machine) (Effect, World) {
 		t.Helper()
@@ -174,7 +175,7 @@ func TestUnknownTokenPlansNothing(t *testing.T) {
 }
 
 func TestForgetRetiresAPaneContinuations(t *testing.T) {
-	text := rpc.Tile{ID: "t1", Kind: rpc.KindText, GridID: "g1", W: 3, H: 2}
+	text := &gridwellv1.Tile{Id: "t1", Kind: rpc.KindText, GridId: "g1", W: 3, H: 2}
 	w := baseWorld(gridPane("pane1", "g1"), gridPane("pane2", "g1"))
 	w.Door = &DoorWorld{}
 	m := New()

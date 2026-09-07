@@ -143,8 +143,6 @@ fmt-check:
 
 # proto-check regenerates the wire code with local buf plugins and fails when
 # the generated set differs from the git index or carries untracked files.
-# GENERATED covers both halves, api/gen and api/rpc/wire_gen.go, which come
-# from the same proto.
 #
 # That catches a proto edit without `buf generate`, a hand-edit to generated
 # code, and a partial `git add` of the generated set, which would leave every
@@ -152,7 +150,7 @@ fmt-check:
 # invariant is worktree equals index, so staged but uncommitted generated
 # files pass and the usual edit, regen, add, check, commit loop is
 # unaffected.
-GENERATED := api/gen api/rpc/wire_gen.go
+GENERATED := api/gen
 
 proto-check:
 	@command -v buf >/dev/null || { echo "buf not found — install buf (+protoc-gen-go, -connect-go, -go-grpc) to run proto-check"; exit 1; }

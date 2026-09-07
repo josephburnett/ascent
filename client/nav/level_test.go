@@ -1,6 +1,7 @@
 package nav
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"testing"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -11,13 +12,13 @@ import (
 // into, and the way back out.
 
 // paneTile is a never-arranged pane tile in g1; arranged() gives it a blob.
-func paneTile() rpc.Tile {
-	return rpc.Tile{ID: "pt1", Kind: rpc.KindPane, GridID: "g1",
+func paneTile() *gridwellv1.Tile {
+	return &gridwellv1.Tile{Id: "pt1", Kind: rpc.KindPane, GridId: "g1",
 		X: 2, Y: 3, W: 4, H: 4, AltText: "plan"}
 }
 
-func arranged(t rpc.Tile) rpc.Tile {
-	t.BlobID = 7
+func arranged(t *gridwellv1.Tile) *gridwellv1.Tile {
+	t.BlobId = 7
 	return t
 }
 
@@ -31,12 +32,12 @@ func layoutBytes(t *testing.T) []byte {
 	return data
 }
 
-func enterGesture(paneID string, door rpc.Tile) Gesture {
+func enterGesture(paneID string, door *gridwellv1.Tile) Gesture {
 	return Gesture{Kind: GestureEnterLevel, PaneID: paneID, Door: door}
 }
 
 // enter plans a descent into door and returns the two arms.
-func enter(t *testing.T, m *Machine, door rpc.Tile) (anim, fetch Effect, w World) {
+func enter(t *testing.T, m *Machine, door *gridwellv1.Tile) (anim, fetch Effect, w World) {
 	t.Helper()
 	w = baseWorld(gridPane("pane1", "g1"))
 	plan := m.Do(enterGesture("pane1", door), w)
@@ -84,7 +85,7 @@ func TestEnterLevelArmsJoin(t *testing.T) {
 		if fetch.Request.Kind != RequestGetTile || fetch.Request.ID != "pt1" {
 			t.Fatalf("await = %+v, want the tile row", fetch.Request)
 		}
-		plan := m.Resume(fetch.Token, Result{OK: true, Tile: &row}, w)
+		plan := m.Resume(fetch.Token, Result{OK: true, Tile: row}, w)
 		body := only(t, plan, EffAwait)
 		if body.Request.Kind != RequestReadLayout || body.Request.ID != "pt1" {
 			t.Fatalf("await = %+v, want the layout blob", body.Request)
@@ -160,7 +161,7 @@ func TestEnterLevelArmsJoin(t *testing.T) {
 		// The pane's transition is dropped rather than landed, so its arm never
 		// arrives: nothing may be left waiting on it.
 		m.Forget("pane1")
-		if plan := m.Resume(fetch.Token, Result{OK: true, Tile: &row}, w); len(plan.Effects) != 0 {
+		if plan := m.Resume(fetch.Token, Result{OK: true, Tile: row}, w); len(plan.Effects) != 0 {
 			t.Fatalf("a forgotten pane's fetch arm acted: %v", kinds(plan))
 		}
 		if m.LevelPending() {
@@ -177,16 +178,16 @@ func TestEnterLevelRows(t *testing.T) {
 		m := New()
 		_, fetch, w := enter(t, m, paneTile())
 		link := paneTile()
-		link.LinkTargetID = "u2/pt9"
-		plan := m.Resume(fetch.Token, Result{OK: true, Tile: &link}, w)
+		link.LinkTargetId = "u2/pt9"
+		plan := m.Resume(fetch.Token, Result{OK: true, Tile: link}, w)
 		e := only(t, plan, EffAwait)
 		if e.Request.Kind != RequestGetTile || e.Request.ID != "u2/pt9" {
 			t.Fatalf("await = %+v, want the link's target row", e.Request)
 		}
 		// And the target is taken as read: a link to a link stops there.
 		target := link
-		target.ID = "u2/pt9"
-		plan = m.Resume(e.Token, Result{OK: true, Tile: &target}, w)
+		target.Id = "u2/pt9"
+		plan = m.Resume(e.Token, Result{OK: true, Tile: target}, w)
 		if len(plan.Effects) != 0 {
 			t.Fatalf("followed a second hop: %v", kinds(plan))
 		}
@@ -196,7 +197,7 @@ func TestEnterLevelRows(t *testing.T) {
 		m := New()
 		anim, fetch, w := enter(t, m, paneTile())
 		row := paneTile()
-		if plan := m.Resume(fetch.Token, Result{OK: true, Tile: &row}, w); len(plan.Effects) != 0 {
+		if plan := m.Resume(fetch.Token, Result{OK: true, Tile: row}, w); len(plan.Effects) != 0 {
 			t.Fatalf("a never-arranged tile read a blob: %v", kinds(plan))
 		}
 		plan := m.Land(anim.Land, w)
@@ -216,7 +217,7 @@ func TestEnterLevelRows(t *testing.T) {
 		m := New()
 		anim, fetch, w := enter(t, m, arranged(paneTile()))
 		row := arranged(paneTile())
-		body := only(t, m.Resume(fetch.Token, Result{OK: true, Tile: &row}, w), EffAwait)
+		body := only(t, m.Resume(fetch.Token, Result{OK: true, Tile: row}, w), EffAwait)
 		plan := m.Resume(body.Token, Result{OK: true, Data: []byte("{}")}, w)
 		if !sameKinds(kinds(plan), []EffectKind{EffReport}) {
 			t.Fatalf("effects = %v, want the notice while the zoom runs", kinds(plan))
@@ -238,7 +239,7 @@ func TestEnterLevelRows(t *testing.T) {
 		plan := m.Do(enterGesture("pane1", paneTile()), w)
 		fetch := plan.Effects[1]
 		row := paneTile()
-		m.Resume(fetch.Token, Result{OK: true, Tile: &row}, w)
+		m.Resume(fetch.Token, Result{OK: true, Tile: row}, w)
 		e := only(t, m.Land(plan.Effects[0].Land, w), EffInstallLevel)
 		if e.IDPrefix != "w2:" {
 			t.Fatalf("id prefix = %q, want the second level's", e.IDPrefix)
@@ -264,7 +265,7 @@ func TestBootLevel(t *testing.T) {
 		m := New()
 		fetch, w := boot(t, m)
 		row := arranged(paneTile())
-		body := only(t, m.Resume(fetch.Token, Result{OK: true, Tile: &row}, w), EffAwait)
+		body := only(t, m.Resume(fetch.Token, Result{OK: true, Tile: row}, w), EffAwait)
 		plan := m.Resume(body.Token, Result{OK: true, Data: layoutBytes(t)}, w)
 		// No barrier, so no origin place to put back: the swap alone.
 		if !sameKinds(kinds(plan), installKinds[1:]) {
@@ -280,7 +281,7 @@ func TestBootLevel(t *testing.T) {
 		m := New()
 		fetch, w := boot(t, m)
 		row := paneTile()
-		e := only(t, m.Resume(fetch.Token, Result{OK: true, Tile: &row}, w), EffInstallLevel)
+		e := only(t, m.Resume(fetch.Token, Result{OK: true, Tile: row}, w), EffInstallLevel)
 		if e.Capture {
 			t.Fatalf("a boot restore captured a window it never had")
 		}
@@ -293,8 +294,8 @@ func TestBootLevel(t *testing.T) {
 	t.Run("?w= naming something else says so", func(t *testing.T) {
 		m := New()
 		fetch, w := boot(t, m)
-		row := rpc.Tile{ID: "pt1", Kind: rpc.KindText, GridID: "g1"}
-		plan := m.Resume(fetch.Token, Result{OK: true, Tile: &row}, w)
+		row := &gridwellv1.Tile{Id: "pt1", Kind: rpc.KindText, GridId: "g1"}
+		plan := m.Resume(fetch.Token, Result{OK: true, Tile: row}, w)
 		if !sameKinds(kinds(plan), []EffectKind{EffReport}) {
 			t.Fatalf("effects = %v, want the notice alone", kinds(plan))
 		}
@@ -341,7 +342,7 @@ func TestLeaveLevels(t *testing.T) {
 		}
 		// The landing reads the tree the pop installed.
 		after := baseWorld(gridPane("pane1", "g1"))
-		after.Level = &LevelWorld{Tile: &rpc.Tile{ID: "pt1", GridID: "g1", X: 2, Y: 3, W: 4, H: 4}}
+		after.Level = &LevelWorld{Tile: &gridwellv1.Tile{Id: "pt1", GridId: "g1", X: 2, Y: 3, W: 4, H: 4}}
 		land := m.Do(*plan.Next, after)
 		if !sameKinds(kinds(land), []EffectKind{EffStartTransition, EffRefreshOverlay,
 			EffScheduleURLUpdate}) {
@@ -391,8 +392,8 @@ func TestLeaveLevels(t *testing.T) {
 		if aw.Request.Kind != RequestGetTile || aw.Request.ID != "pt1" {
 			t.Fatalf("await = %+v, want the pane tile's row", aw.Request)
 		}
-		row := rpc.Tile{ID: "pt1", GridID: "g9", X: 2, Y: 3, W: 4, H: 4}
-		plan = m.Resume(aw.Token, Result{OK: true, Tile: &row}, after)
+		row := &gridwellv1.Tile{Id: "pt1", GridId: "g9", X: 2, Y: 3, W: 4, H: 4}
+		plan = m.Resume(aw.Token, Result{OK: true, Tile: row}, after)
 		if !sameKinds(kinds(plan), []EffectKind{EffInstallPlace, EffFetchGrid,
 			EffScheduleURLUpdate}) {
 			t.Fatalf("effects = %v, want the re-centre", kinds(plan))
@@ -410,8 +411,8 @@ func TestLeaveLevels(t *testing.T) {
 		aw := only(t, m.Do(*plan.Next, after), EffAwait)
 		// The user descended while the row was in flight: they win.
 		moved := baseWorld(wellPane("pane1"))
-		row := rpc.Tile{ID: "pt1", GridID: "g9", X: 2, Y: 3, W: 4, H: 4}
-		if plan := m.Resume(aw.Token, Result{OK: true, Tile: &row}, moved); len(plan.Effects) != 0 {
+		row := &gridwellv1.Tile{Id: "pt1", GridId: "g9", X: 2, Y: 3, W: 4, H: 4}
+		if plan := m.Resume(aw.Token, Result{OK: true, Tile: row}, moved); len(plan.Effects) != 0 {
 			t.Fatalf("re-centred a pane the user had already moved: %v", kinds(plan))
 		}
 	})
@@ -437,9 +438,9 @@ func TestLeaveLevels(t *testing.T) {
 }
 
 func TestFollowLinkTarget(t *testing.T) {
-	link := rpc.Tile{ID: "r1", Kind: rpc.KindURL, GridID: "g1", LinkTargetID: "u2/r9"}
-	target := rpc.Tile{ID: "u2/r9", Kind: rpc.KindURL, GridID: "u2/1",
-		URLString: "https://example.test/"}
+	link := &gridwellv1.Tile{Id: "r1", Kind: rpc.KindURL, GridId: "g1", LinkTargetId: "u2/r9"}
+	target := &gridwellv1.Tile{Id: "u2/r9", Kind: rpc.KindURL, GridId: "u2/1",
+		UrlString: "https://example.test/"}
 	descended := baseWorld(contentPane("pane1", "r1"))
 
 	t.Run("the view places on the row that owns the content", func(t *testing.T) {
@@ -449,8 +450,8 @@ func TestFollowLinkTarget(t *testing.T) {
 		if aw.Request.ID != "u2/r9" {
 			t.Fatalf("await = %+v, want the link's target", aw.Request)
 		}
-		e := only(t, m.Resume(aw.Token, Result{OK: true, Tile: &target}, descended), EffPlaceURLView)
-		if e.PaneID != "pane1" || e.Tile.URLString != target.URLString {
+		e := only(t, m.Resume(aw.Token, Result{OK: true, Tile: target}, descended), EffPlaceURLView)
+		if e.PaneID != "pane1" || e.Tile.UrlString != target.UrlString {
 			t.Fatalf("placed %+v, want the target row by value", e)
 		}
 	})
@@ -460,7 +461,7 @@ func TestFollowLinkTarget(t *testing.T) {
 		aw := only(t, m.Do(Gesture{Kind: GestureFollowLink, PaneID: "pane1", Door: link},
 			descended), EffAwait)
 		elsewhere := baseWorld(contentPane("pane1", "other"))
-		if plan := m.Resume(aw.Token, Result{OK: true, Tile: &target}, elsewhere); len(plan.Effects) != 0 {
+		if plan := m.Resume(aw.Token, Result{OK: true, Tile: target}, elsewhere); len(plan.Effects) != 0 {
 			t.Fatalf("placed a view over a pane that moved on: %v", kinds(plan))
 		}
 	})

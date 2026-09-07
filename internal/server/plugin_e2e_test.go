@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +33,7 @@ func TestFileWellLifecycleE2E(t *testing.T) {
 	//    the UI's right-drag gesture. It is a plain well in the local store
 	//    whose child grid lives in the fs plugin.
 	well := mountByClone(t, cl, fsPluginUUID, root, 0, 0)
-	child := well.ChildGridID
+	child := well.ChildGridId
 	if !strings.HasPrefix(child, fsPluginUUID+"/") {
 		t.Fatalf("child_grid_id = %q, want %q prefix", child, fsPluginUUID)
 	}
@@ -44,7 +45,7 @@ func TestFileWellLifecycleE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetGrid child: %v", err)
 	}
-	byName := map[string]rpc.Tile{}
+	byName := map[string]*gridwellv1.Tile{}
 	for _, tile := range g.Tiles {
 		byName[tile.AltText] = tile
 	}
@@ -59,14 +60,14 @@ func TestFileWellLifecycleE2E(t *testing.T) {
 	if sub.Kind != rpc.KindWell {
 		t.Errorf("subdir kind = %q, want well", sub.Kind)
 	}
-	if !strings.HasPrefix(sub.ChildGridID, fsPluginUUID+"/") {
-		t.Errorf("subdir child_grid_id = %q, want %q prefix", sub.ChildGridID, fsPluginUUID)
+	if !strings.HasPrefix(sub.ChildGridId, fsPluginUUID+"/") {
+		t.Errorf("subdir child_grid_id = %q, want %q prefix", sub.ChildGridId, fsPluginUUID)
 	}
 
 	// 2b. The file tile's descent body routes to the plugin — and since the
 	// content-types program, a .txt file's body is the FILE
 	// ITSELF, verbatim, not a metadata summary.
-	body, media, _, err := cl.ReadContent(ctx, alpha.ID)
+	body, media, _, err := cl.ReadContent(ctx, alpha.Id)
 	if err != nil {
 		t.Fatalf("ReadContent: %v", err)
 	}
@@ -75,9 +76,9 @@ func TestFileWellLifecycleE2E(t *testing.T) {
 	}
 
 	// 3. Move alpha.txt and confirm the new position survives a re-descent.
-	moved, err := cl.PlaceTile(ctx, &rpc.PlaceTileRequest{
-		TileID: alpha.ID,
-		GridID: child,
+	moved, err := cl.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+		TileId: alpha.Id,
+		GridId: child,
 		X:      5, Y: 6, W: alpha.W, H: alpha.H,
 	})
 	if err != nil {
@@ -90,17 +91,17 @@ func TestFileWellLifecycleE2E(t *testing.T) {
 	// by its row id from here on. The address the client was holding still
 	// resolves to the same tile — nothing the user has is invalidated — and
 	// from here the id never changes again.
-	if held, err := cl.GetTile(ctx, alpha.ID); err != nil || held.ID != moved.ID {
-		t.Errorf("the pre-mint address stopped resolving: %+v (%v), want %s", held, err, moved.ID)
+	if held, err := cl.GetTile(ctx, alpha.Id); err != nil || held.Id != moved.Id {
+		t.Errorf("the pre-mint address stopped resolving: %+v (%v), want %s", held, err, moved.Id)
 	}
-	again, err := cl.PlaceTile(ctx, &rpc.PlaceTileRequest{TileID: moved.ID, GridID: child, X: 5, Y: 6, W: alpha.W, H: alpha.H})
+	again, err := cl.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{TileId: moved.Id, GridId: child, X: 5, Y: 6, W: alpha.W, H: alpha.H})
 	if err != nil {
 		t.Fatalf("second move: %v", err)
 	}
-	if again.ID != moved.ID {
-		t.Errorf("move changed id %s→%s (must never re-row)", moved.ID, again.ID)
+	if again.Id != moved.Id {
+		t.Errorf("move changed id %s→%s (must never re-row)", moved.Id, again.Id)
 	}
-	alpha.ID = moved.ID
+	alpha.Id = moved.Id
 	g2, err := cl.GetGrid(ctx, child)
 	if err != nil {
 		t.Fatalf("GetGrid after move: %v", err)
@@ -112,8 +113,8 @@ func TestFileWellLifecycleE2E(t *testing.T) {
 	}
 
 	// 4. Delete alpha.txt: the file is removed from disk and swept from the grid.
-	if err := cl.DeleteTile(ctx, &rpc.DeleteTileRequest{
-		TileID: alpha.ID,
+	if err := cl.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{
+		TileId: alpha.Id,
 	}); err != nil {
 		t.Fatalf("DeleteTile: %v", err)
 	}

@@ -10,6 +10,7 @@ package main
 import (
 	"context"
 	"fmt"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"maps"
 	"strconv"
 	"syscall/js"
@@ -82,7 +83,7 @@ type App struct {
 
 	// plugins is the plugin list from the Handshake, used for health tints,
 	// plugin glyphs, and the e2e launcher hook. Order is config order.
-	plugins []rpc.PluginInfo
+	plugins []*gridwellv1.PluginInfo
 
 	// home is the qualified grid id "/" means: the home grid the handshake
 	// names (rpc.HomeGrid, the one derivation). Every "empty anchor means
@@ -670,7 +671,7 @@ const traceDurMs = 2000.0
 // ghost smoothly resizes when the cursor crosses pane boundaries or
 // enters/leaves a well's child preview.
 type ghost struct {
-	tile              rpc.Tile
+	tile              *gridwellv1.Tile
 	paneID            string
 	screenX           float64
 	screenY           float64
@@ -750,7 +751,7 @@ type dragState struct {
 	// path; the left-button move-commit refuses it, so a stray non-right
 	// release cannot silently turn a copy or a link into a move.
 	intent        dragdrop.Intent
-	snapshotTile  rpc.Tile
+	snapshotTile  *gridwellv1.Tile
 	originScreenX float64
 	originScreenY float64
 
@@ -890,7 +891,7 @@ func (a *App) bootstrap() {
 	// nothing but the empty landing page, which carries the notice
 	// explaining itself.
 	backoff := time.Second
-	var plugins rpc.PluginList
+	var plugins *gridwellv1.HandshakeResponse
 	for {
 		// Bounded, so the backoff loop is what it says it is: an unbounded
 		// handshake the network swallows never returns, so there is no next
@@ -999,7 +1000,7 @@ func (a *App) loadGrid(ctx context.Context, id string) error {
 	}
 	a.resolveErr("grid:" + id)
 	delete(a.fetch.gridLoadFailed, id)
-	if resp.Grid.ID != id {
+	if resp.Grid.Id != id {
 		// The cache keys by the answered name and every frame resolves by the
 		// asked one, so a server that answers under a different id strands the
 		// pane on "loading" with nothing but 200s on the wire — for days, once.
@@ -1009,7 +1010,7 @@ func (a *App) loadGrid(ctx context.Context, id string) error {
 		// and silence.
 		a.fetch.gridLoadFailed[id] = true
 		a.reportErr(errsurface.Error, "grid:"+id,
-			"asked for grid "+id+", was answered "+resp.Grid.ID+" — the view of "+id+" cannot load")
+			"asked for grid "+id+", was answered "+resp.Grid.Id+" — the view of "+id+" cannot load")
 	}
 	a.c.PutGrid(resp.Grid, resp.Tiles)
 	return nil
@@ -1089,7 +1090,7 @@ func (a *App) fetchTileByID(tileID string) {
 			}
 			return
 		}
-		a.fetchGrid(tile.GridID)
+		a.fetchGrid(tile.GridId)
 	}()
 }
 
@@ -1301,18 +1302,18 @@ func (a *App) startSSE() {
 			// browser image resources for the life of the page. The
 			// rendered-markdown preview holds the same pair — a blob URL
 			// and a decoded raster — and is released beside it.
-			if ev.Kind == rpc.EventTileRemoved && ev.TileRemoved != nil {
-				a.views.urlPreview.Drop(ev.TileRemoved.TileID)
-				a.dropRenderedPreview(ev.TileRemoved.TileID)
+			if r := ev.GetTileRemoved(); r != nil {
+				a.views.urlPreview.Drop(r.TileId)
+				a.dropRenderedPreview(r.TileId)
 			}
 			// GridChanged: refetch the affected grid. The event is the one
 			// per-grid signal that something changed, so it is also what
 			// clears a verdict latch for that grid. It is unconditional: a
 			// grid nothing is looking at now is one the next descent, preview,
 			// or crumb would otherwise read stale from the cache.
-			if ev.Kind == rpc.EventGridChanged && ev.GridChanged != nil {
-				delete(a.fetch.gridLoadFailed, ev.GridChanged.GridID)
-				a.fetchGrid(ev.GridChanged.GridID)
+			if g := ev.GetGridChanged(); g != nil {
+				delete(a.fetch.gridLoadFailed, g.GridId)
+				a.fetchGrid(g.GridId)
 			}
 			// PluginHealth: a plugin's own event stream, not this client's
 			// connection to the server, went dark or recovered. See
@@ -1321,8 +1322,8 @@ func (a *App) startSSE() {
 			// plugin, keyed by uuid, so one plugin's outage neither
 			// coalesces with nor clears another's, or the top-level "events"
 			// disconnect notice above.
-			if ev.Kind == rpc.EventPluginHealth && ev.PluginHealth != nil {
-				a.reportPluginHealth(*ev.PluginHealth)
+			if h := ev.GetPluginHealth(); h != nil {
+				a.reportPluginHealth(h)
 			}
 		}
 		stream.Close()
@@ -1434,7 +1435,7 @@ func (a *App) gridIDForPathFrom(anchor string, p []string) string {
 			if !ok {
 				return "", true, false
 			}
-			return w.ChildGridID, true, true
+			return w.ChildGridId, true, true
 		})
 }
 
@@ -1499,8 +1500,8 @@ func (a *App) resolveErr(source string) {
 // any prior notice for it. Keyed per plugin uuid, so it neither coalesces
 // with nor is cleared by an unrelated plugin's outage or the top-level event
 // stream notice ("events").
-func (a *App) reportPluginHealth(h rpc.PluginHealth) {
-	source := "plugin:" + h.PluginUUID
+func (a *App) reportPluginHealth(h *gridwellv1.EventPluginHealth) {
+	source := "plugin:" + h.PluginUuid
 	if h.Healthy {
 		// A recovered plugin is a healed gap for its tiles: the server-side
 		// fan-in resumed with no backlog, so this client missed that
@@ -1509,11 +1510,11 @@ func (a *App) reportPluginHealth(h rpc.PluginHealth) {
 		// the event names, because the ids the client already holds say
 		// which grids that is (cache.ServedBy).
 		a.resolveErr(source)
-		a.retryKick(true, h.PluginUUID)
+		a.retryKick(true, h.PluginUuid)
 		return
 	}
-	label := h.PluginUUID
-	if pl, ok := a.pluginByUUID(h.PluginUUID); ok && pl.Label != "" {
+	label := h.PluginUuid
+	if pl, ok := a.pluginByUUID(h.PluginUuid); ok && pl.Label != "" {
 		label = pl.Label
 	}
 	a.reportErr(errsurface.Error, source, label+": live updates stopped — "+h.Detail)
@@ -1522,5 +1523,5 @@ func (a *App) reportPluginHealth(h rpc.PluginHealth) {
 	// stale and worn as the bar's cached chip. Nothing on screen says so until
 	// the client re-reads, so the down transition resyncs exactly as the up
 	// one does — same scope, same cure, off the same join.
-	a.retryKick(true, h.PluginUUID)
+	a.retryKick(true, h.PluginUuid)
 }

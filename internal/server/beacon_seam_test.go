@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -54,14 +55,12 @@ func TestWriteContentBeaconSeam(t *testing.T) {
 	cl, hs, root := beaconTestServer(t)
 	ctx := context.Background()
 
-	tile, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 2, H: 2, Data: []byte("before"),
-	})
+	tile, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 2, H: 2}}, []byte("before"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	path, body := rpc.WriteContentBeacon(tile.ID, tile.Version, []byte("survived the tab close"))
+	path, body := rpc.WriteContentBeacon(tile.Id, tile.Version, []byte("survived the tab close"))
 	if path == "" || body == nil {
 		t.Fatal("WriteContentBeacon returned empty")
 	}
@@ -70,7 +69,7 @@ func TestWriteContentBeaconSeam(t *testing.T) {
 		t.Fatalf("beacon POST = %d, want 200", res.StatusCode)
 	}
 
-	data, _, _, err := cl.ReadContent(ctx, tile.ID)
+	data, _, _, err := cl.ReadContent(ctx, tile.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,9 +81,9 @@ func TestWriteContentBeaconSeam(t *testing.T) {
 	// a beacon must never force-write over a foreign edit. (The store's
 	// answer, not the transport's: the POST itself still returns 200 with
 	// the error in the stream, which is why the pin asserts CONTENT.)
-	path, body = rpc.WriteContentBeacon(tile.ID, tile.Version, []byte("stale stomp"))
+	path, body = rpc.WriteContentBeacon(tile.Id, tile.Version, []byte("stale stomp"))
 	postBeacon(t, hs, path, rpc.BeaconStreamType, body)
-	data, _, _, err = cl.ReadContent(ctx, tile.ID)
+	data, _, _, err = cl.ReadContent(ctx, tile.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +93,7 @@ func TestWriteContentBeaconSeam(t *testing.T) {
 
 	// Oversized data refuses at build time (the browser would truncate or
 	// reject it) so the caller falls back to the async path.
-	if p, b := rpc.WriteContentBeacon(tile.ID, 1, bytes.Repeat([]byte("x"), 128*1024)); p != "" || b != nil {
+	if p, b := rpc.WriteContentBeacon(tile.Id, 1, bytes.Repeat([]byte("x"), 128*1024)); p != "" || b != nil {
 		t.Error("oversized WriteContentBeacon should return empty for async fallback")
 	}
 }
@@ -103,31 +102,34 @@ func TestSetURLStateBeaconSeam(t *testing.T) {
 	cl, hs, root := beaconTestServer(t)
 	ctx := context.Background()
 
-	tile, err := cl.CreateURL(ctx, &rpc.CreateURLRequest{GridID: root, X: 3, Y: 0, W: 2, H: 2})
+	tile, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: 3, Y: 0, W: 2, H: 2}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tile, err = cl.WriteContent(ctx, tile.ID, tile.Version, []byte("https://start.example"))
+	tile, err = cl.WriteContent(ctx, tile.Id, tile.Version, []byte("https://start.example"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	path, body := rpc.SetURLStateBeacon(&rpc.SetURLStateRequest{
-		TileID: tile.ID,
-		URL:    "https://deep.example/page/40", Title: "page 40",
-		History: `["https://start.example","https://deep.example/page/40"]`,
+	path, body := rpc.SetTileBeacon(&gridwellv1.SetTileRequest{
+		TileId: tile.Id,
+		Tile: &gridwellv1.Tile{Kind: rpc.KindURL,
+			UrlString:  "https://deep.example/page/40",
+			AltText:    "page 40",
+			UrlHistory: `["https://start.example","https://deep.example/page/40"]`,
+		},
 	})
 	res := postBeacon(t, hs, path, rpc.BeaconJSONType, body)
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("url-state beacon = %d, want 200", res.StatusCode)
 	}
 
-	after, err := cl.GetTile(ctx, tile.ID)
+	after, err := cl.GetTile(ctx, tile.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.URLString != "https://deep.example/page/40" || after.URLHistory == "" {
+	if after.UrlString != "https://deep.example/page/40" || after.UrlHistory == "" {
 		t.Fatalf("url state after beacon = (%q, %q) — the trail did not land",
-			after.URLString, after.URLHistory)
+			after.UrlString, after.UrlHistory)
 	}
 }

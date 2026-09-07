@@ -1,5 +1,5 @@
 // Package pluginhealth decides how a launcher tile should draw and behave for
-// a given rpc.PluginInfo: enterable, waiting (asked, no answer yet), broken
+// a given gridwellv1.PluginInfo: enterable, waiting (asked, no answer yet), broken
 // (anything that failed), or no-door (answered, and it is not a place). It is
 // the one place that decision is made, so client/wasm's launcher rendering and
 // click handling are both thin reads of it; the wasm file contributes only
@@ -18,6 +18,7 @@
 package pluginhealth
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/errsurface"
 )
@@ -52,11 +53,11 @@ const (
 // connection with no root has not answered yet; anything else with no root
 // has answered and is not a place. This is the ONE classification: no caller
 // asks a second question about the row afterwards.
-func Classify(pl rpc.PluginInfo) Status {
+func Classify(pl *gridwellv1.PluginInfo) Status {
 	if pl.InfoError != "" {
 		return Broken
 	}
-	if pl.RootGridID == "" {
+	if pl.RootGridId == "" {
 		if pl.Kind == rpc.PluginKindConnection {
 			return Waiting
 		}
@@ -72,15 +73,15 @@ func Classify(pl rpc.PluginInfo) Status {
 // rows too — the local plugin list cannot classify those, and Classify is
 // only consulted when it can. It belongs beside Classify because both answer
 // "is this enterable", from the two kinds of fact that can say no.
-func UnrootedLink(t *rpc.Tile) bool {
-	return t.Reference && rpc.IsWellKind(t.Kind) && t.ChildGridID == ""
+func UnrootedLink(t *gridwellv1.Tile) bool {
+	return t.Reference && rpc.IsWellKind(t.Kind) && t.ChildGridId == ""
 }
 
 // BrokenReason is the debugging detail behind a Broken status: what the server
 // recorded. Broken is exactly "InfoError is set", so the recorded text is
 // always there and there is no second reason to invent. Only the click report
 // reads it — the tint does not, since every Broken row looks the same.
-func BrokenReason(pl rpc.PluginInfo) string { return pl.InfoError }
+func BrokenReason(pl *gridwellv1.PluginInfo) string { return pl.InfoError }
 
 // ClickNotice returns the errsurface.Surface.Report arguments for clicking a
 // non-enterable launcher tile: severity, a per-plugin source key (so a second
@@ -99,12 +100,12 @@ func BrokenReason(pl rpc.PluginInfo) string { return pl.InfoError }
 // Severity follows the status, not the reason: Broken is Error (something the
 // user expected to work did not, and BrokenReason says what), Waiting is Info
 // (nothing has gone wrong yet).
-func ClickNotice(pl rpc.PluginInfo) (sev errsurface.Severity, source, message string, ok bool) {
+func ClickNotice(pl *gridwellv1.PluginInfo) (sev errsurface.Severity, source, message string, ok bool) {
 	switch Classify(pl) {
 	case Broken:
-		return errsurface.Error, "launcher:" + pl.UUID, pl.Label + ": " + BrokenReason(pl), true
+		return errsurface.Error, "launcher:" + pl.Uuid, pl.Label + ": " + BrokenReason(pl), true
 	case Waiting:
-		return errsurface.Info, "launcher:" + pl.UUID, "loading " + pl.Label + " — it will open once the connection answers", true
+		return errsurface.Info, "launcher:" + pl.Uuid, "loading " + pl.Label + " — it will open once the connection answers", true
 	default:
 		return 0, "", "", false
 	}

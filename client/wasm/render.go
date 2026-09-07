@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"math"
 	"strconv"
 	"syscall/js"
@@ -237,7 +238,7 @@ func strokeTileFrame(c js.Value, x, y, w, h float64, color string, dashed, selec
 //
 // The selection ring sits outside the footprint and survives the veil: a
 // dead link is still a tile you can select and delete, which is the point.
-func (a *App) drawDeadLinkFace(n *rpc.Tile, x, y, w, h float64) {
+func (a *App) drawDeadLinkFace(n *gridwellv1.Tile, x, y, w, h float64) {
 	if !a.deadLink(n) {
 		return
 	}
@@ -295,7 +296,7 @@ const (
 type primitive struct {
 	kind  templateKind
 	name  string
-	ghost rpc.Tile
+	ghost *gridwellv1.Tile
 	glyph func(a *App, x, y, w, h float64)
 	// create fires this kind's create RPC into gridID — the drop target's
 	// grid, which is an open well's child grid when the cursor promoted into
@@ -327,33 +328,33 @@ func init() {
 	primitives = []primitive{
 		{
 			kind: tplWell, name: "well",
-			ghost:  rpc.Tile{Kind: rpc.KindWell, W: 1, H: 1},
+			ghost:  &gridwellv1.Tile{Kind: rpc.KindWell, W: 1, H: 1},
 			glyph:  func(a *App, x, y, w, h float64) { drawWellGlyph(a.cctx, x, y, w, h, colorFocusBorder) },
 			create: func(a *App, gid string, cellX, cellY int64) { a.createWellAtCell(gid, cellX, cellY) },
 		},
 		{
 			kind: tplMarkdown, name: "markdown",
-			ghost:  rpc.Tile{Kind: rpc.KindText, W: 1, H: 1},
+			ghost:  &gridwellv1.Tile{Kind: rpc.KindText, W: 1, H: 1},
 			glyph:  func(a *App, x, y, w, h float64) { drawDocumentGlyph(a.cctx, x, y, w, h, colorMarkdownLine) },
 			create: func(a *App, gid string, cellX, cellY int64) { a.createTextAtCell(gid, []byte{}, cellX, cellY) },
 		},
 		{
 			kind: tplURL, name: "url",
-			ghost:  rpc.Tile{Kind: rpc.KindURL, W: 1, H: 1},
+			ghost:  &gridwellv1.Tile{Kind: rpc.KindURL, W: 1, H: 1},
 			glyph:  func(a *App, x, y, w, h float64) { drawGlobeGlyph(a.cctx, x, y, w, h, colorURLLine) },
 			create: func(a *App, gid string, cellX, cellY int64) { a.createURLAtCell(gid, cellX, cellY) },
 			click:  func(a *App, p *pane.Pane) { a.visitURLFromMenu(p) },
 		},
 		{
 			kind: tplShell, name: "shell",
-			ghost:  rpc.Tile{Kind: rpc.KindShell, W: 1, H: 1, AltText: "shell"},
+			ghost:  &gridwellv1.Tile{Kind: rpc.KindShell, W: 1, H: 1, AltText: "shell"},
 			glyph:  func(a *App, x, y, w, h float64) { drawShellGlyph(a.cctx, x, y, w, h, colorShellBorder) },
 			create: func(a *App, gid string, cellX, cellY int64) { a.createShellAtCell(gid, cellX, cellY) },
 			click:  func(a *App, p *pane.Pane) { a.visitShellFromMenu(p) },
 		},
 		{
 			kind: tplPane, name: "pane",
-			ghost:  rpc.Tile{Kind: rpc.KindPane, W: 1, H: 1, AltText: "workspace"},
+			ghost:  &gridwellv1.Tile{Kind: rpc.KindPane, W: 1, H: 1, AltText: "workspace"},
 			glyph:  func(a *App, x, y, w, h float64) { drawPaneGlyph(a.cctx, x, y, w, h, colorPaneTileBorder) },
 			create: func(a *App, gid string, cellX, cellY int64) { a.createPaneAtCell(gid, cellX, cellY) },
 		},
@@ -381,13 +382,13 @@ func primitiveFor(k templateKind) (primitive, bool) {
 // of plugin / primitive carries meaning.
 type paletteItem struct {
 	isPlugin  bool
-	plugin    rpc.PluginInfo // when isPlugin (also set for a root ENTRY's owner)
-	primitive templateKind   // when !isPlugin
+	plugin    *gridwellv1.PluginInfo // when isPlugin (also set for a root ENTRY's owner)
+	primitive templateKind           // when !isPlugin
 	// entry is the declared menu entry this pseudo-plugin swatch came from —
 	// the home's trashcan, one of a plugin's collections. Set only alongside
 	// isPlugin; it names the entry so a test can tell a declared collection
 	// from a node's own row.
-	entry *rpc.MenuEntry
+	entry *gridwellv1.MenuEntry
 	// promotePane, when set, marks a promote drag: the item is the ephemeral
 	// url visit shown in that pane, dragged off the bar's current crumb, and
 	// the drop creates a persistent url tile with its address and relocates
@@ -730,19 +731,19 @@ func (a *App) drawPane(p *pane.Pane, r pane.Rect) {
 				// focused off the pane's grid, in the scratch grid — renders.
 				if file, ok := a.descendedTile(p); ok {
 					switch {
-					case file.TextDocument():
+					case rpc.TextDocument(file):
 						ix, iy, iw, ih := textInnerBox(r)
 						a.cctx.Set("fillStyle", colorFileInnerBg)
 						a.cctx.Call("fillRect", ix, iy, iw, ih)
-						a.drawMarkdownInPane(p, &file, ix, iy, iw, ih)
-					case file.WebContent():
+						a.drawMarkdownInPane(p, file, ix, iy, iw, ih)
+					case rpc.WebContent(file):
 						// url tiles and serves_page tiles take the same web-content
 						// descent: a preview when frozen, a native view when live.
 						ix, iy, iw, ih := paneContentBox(r)
-						a.drawURLTileInPane(&file, ix, iy, iw, ih)
+						a.drawURLTileInPane(file, ix, iy, iw, ih)
 					case file.Kind == rpc.KindShell:
 						ix, iy, iw, ih := paneContentBox(r)
-						a.drawShellTileInPane(p, &file, ix, iy, iw, ih)
+						a.drawShellTileInPane(p, file, ix, iy, iw, ih)
 					default:
 						ix, iy, iw, ih := textInnerBox(r)
 						a.cctx.Set("fillStyle", colorFileInnerBg)
@@ -752,7 +753,7 @@ func (a *App) drawPane(p *pane.Pane, r pane.Rect) {
 			} else {
 				inHost := g.HostContent()
 				for _, n := range g.Tiles {
-					if dragdrop.HiddenMatch(a.ghostHiddenTile(), a.ghostHiddenPane(), p.ID, n.ID) {
+					if dragdrop.HiddenMatch(a.ghostHiddenTile(), a.ghostHiddenPane(), p.ID, n.Id) {
 						continue
 					}
 					left, top := pscreen.CellToScreen(float64(n.X), float64(n.Y))
@@ -762,11 +763,11 @@ func (a *App) drawPane(p *pane.Pane, r pane.Rect) {
 						continue
 					}
 					nn := n
-					outside := tileOutside(&nn, inHost)
-					dashed := !inHost && isLinkTile(&nn)
-					a.drawNodeWithPreview(&nn, left, top, w, h, cellSize, n.ID == selected, outside, dashed, p.ID)
-					a.drawPluginHealthTint(&nn, left, top, w, h)
-					a.drawDeadLinkFace(&nn, left, top, w, h)
+					outside := tileOutside(nn, inHost)
+					dashed := !inHost && isLinkTile(nn)
+					a.drawNodeWithPreview(nn, left, top, w, h, cellSize, n.Id == selected, outside, dashed, p.ID)
+					a.drawPluginHealthTint(nn, left, top, w, h)
+					a.drawDeadLinkFace(nn, left, top, w, h)
 				}
 				// Ascent trace: the fading "you just came from here" outline on
 				// the tile this pane most recently ascended out of. Drawn after
@@ -790,7 +791,7 @@ func (a *App) drawPane(p *pane.Pane, r pane.Rect) {
 					}
 					w := float64(gn.W) * gcs
 					h := float64(gn.H) * gcs
-					a.drawGhostTile(&gn, a.ghost.screenX, a.ghost.screenY, w, h, gcs, r,
+					a.drawGhostTile(gn, a.ghost.screenX, a.ghost.screenY, w, h, gcs, r,
 						a.ghost.displayedFragmentation)
 				}
 			}
@@ -962,10 +963,10 @@ func drawGridLinesIn(c js.Value, color string, clipX, clipY, clipW, clipH, cellS
 // paintPaneID names the pane whose contents are being painted, so the
 // child-preview hide scopes to the drag's source pane only. It is "" for
 // contexts with no pane, such as ghosts and bar crumbs.
-func (a *App) drawNodeWithPreview(n *rpc.Tile, x, y, w, h, parentCellSize float64, selected, outside, dashed bool, paintPaneID string) {
+func (a *App) drawNodeWithPreview(n *gridwellv1.Tile, x, y, w, h, parentCellSize float64, selected, outside, dashed bool, paintPaneID string) {
 	switch n.Kind {
 	case rpc.KindText:
-		if !n.TextDocument() {
+		if !rpc.TextDocument(n) {
 			// A page tile's grid face is its content's image — an fs
 			// thumbnail of the file — in the text family's border: it is a
 			// file, and only its presentation is web content.
@@ -997,9 +998,9 @@ func (a *App) drawNodeWithPreview(n *rpc.Tile, x, y, w, h, parentCellSize float6
 	// children via the flat drawNode — no further fetches. Off-screen
 	// culling in drawPane bounds how many top-level wells trigger a
 	// fetch on first descent.
-	child, haveChild := a.c.Grid(n.ChildGridID)
+	child, haveChild := a.c.Grid(n.ChildGridId)
 	if !haveChild {
-		a.fetchGrid(n.ChildGridID)
+		a.fetchGrid(n.ChildGridId)
 	}
 	// Background matches the surrounding pane so there's no color jump
 	// when the well's outline crosses the screen edges during descent.
@@ -1019,7 +1020,7 @@ func (a *App) drawNodeWithPreview(n *rpc.Tile, x, y, w, h, parentCellSize float6
 		// A cross-plugin well with no preview loaded yet shows the plugin's
 		// identity glyph — the same drawing as its menu swatch and drag
 		// ghost, so it reads identically before, during, and after the drop.
-		a.drawPluginGlyph(a.pluginGlyph(n.ChildGridID), x, y, w, h)
+		a.drawPluginGlyph(a.pluginGlyph(n.ChildGridId), x, y, w, h)
 	} else {
 		withClip(a.cctx, x, y, w, h, func() {
 			// Child grid lines inside the well, aligned so the child point the
@@ -1065,8 +1066,8 @@ func (a *App) drawNodeWithPreview(n *rpc.Tile, x, y, w, h, parentCellSize float6
 // stale buffer. Unknown is read-only too: no caret over content whose grid
 // has not said it takes writes, since the alternative is typing the server
 // then refuses.
-func (a *App) tileReadOnly(n *rpc.Tile) bool {
-	writable, _ := a.gridWritable(n.GridID)
+func (a *App) tileReadOnly(n *gridwellv1.Tile) bool {
+	writable, _ := a.gridWritable(n.GridId)
 	return n.Kind == rpc.KindText && !writable
 }
 
@@ -1079,7 +1080,7 @@ func (a *App) tileReadOnly(n *rpc.Tile) bool {
 //   - the tile is itself an exit well (its child grid lives in another
 //     plugin) anywhere — outside regardless of where the well sits
 //   - the tile is a shell tile (bash runs outside Gridwell's data world)
-func tileOutside(n *rpc.Tile, parentHostContent bool) bool {
+func tileOutside(n *gridwellv1.Tile, parentHostContent bool) bool {
 	if parentHostContent {
 		return true
 	}
@@ -1108,7 +1109,7 @@ func tileOutside(n *rpc.Tile, parentHostContent bool) bool {
 // that misses a same-plugin mount. The one tile built client-side before any
 // round trip, the launcher swatch, stamps Reference itself
 // (rpc.PluginWellTile, pinned by TestPluginWellTile).
-func isLinkTile(n *rpc.Tile) bool {
+func isLinkTile(n *gridwellv1.Tile) bool {
 	return n.Reference
 }
 
@@ -1123,7 +1124,7 @@ func clearTileDash(c js.Value) { c.Call("setLineDash", jsArray()) }
 // files, the kernel Name for processes, "files" or "processes" for the roots,
 // "info" for the synthetic info tile, the first non-empty line for text
 // content. The client has no opinion of its own here.
-func tileBannerLabel(n *rpc.Tile) string {
+func tileBannerLabel(n *gridwellv1.Tile) string {
 	return n.AltText
 }
 
@@ -1153,14 +1154,14 @@ func bannerGeom(h, ih float64) (fontPx, bannerH float64, shown bool) {
 // label can't bleed past the cell. When outside is true, the text uses
 // the red exit color; otherwise the tile-kind color (green for text, blue
 // for wells) so the banner echoes the tile's own color grammar.
-func (a *App) drawTileBannerLabel(n *rpc.Tile, x, y, w, h float64, outside bool) {
+func (a *App) drawTileBannerLabel(n *gridwellv1.Tile, x, y, w, h float64, outside bool) {
 	a.drawTileBannerLabelIn(n, x, y, w, h, bannerTextColor(n, outside))
 }
 
 // drawTileBannerLabelIn is drawTileBannerLabel with the text color named
 // rather than derived: one banner geometry, so a tile drawn in another state
 // — a dead link's grey — cannot end up with the label somewhere else.
-func (a *App) drawTileBannerLabelIn(n *rpc.Tile, x, y, w, h float64, textColor string) {
+func (a *App) drawTileBannerLabelIn(n *gridwellv1.Tile, x, y, w, h float64, textColor string) {
 	label := tileBannerLabel(n)
 	if label == "" {
 		return
@@ -1197,7 +1198,7 @@ func (a *App) drawTileBannerLabelIn(n *rpc.Tile, x, y, w, h float64, textColor s
 // cross-plugin (exit) well is blue like every well (it's dashed, not
 // recolored); read-only host content is brown; everything else follows its
 // kind color.
-func bannerTextColor(n *rpc.Tile, outside bool) string {
+func bannerTextColor(n *gridwellv1.Tile, outside bool) string {
 	if n.Kind == rpc.KindShell {
 		return colorShellBorder
 	}
@@ -1279,11 +1280,11 @@ func (a *App) loadTileContent(ctx context.Context, tileID string, then func()) e
 // which is routable by tile id; blob ids are not routable. Content is keyed by
 // ContentID, so a leaf link resolves to its target and renders the one shared
 // copy of the bytes.
-func (a *App) tileBody(n *rpc.Tile) ([]byte, bool) {
-	if b, ok := a.c.TileContent(n.ContentID()); ok {
+func (a *App) tileBody(n *gridwellv1.Tile) ([]byte, bool) {
+	if b, ok := a.c.TileContent(rpc.ContentID(n)); ok {
 		return b, true
 	}
-	a.fetchTileContent(n.ContentID())
+	a.fetchTileContent(rpc.ContentID(n))
 	return nil, false
 }
 
@@ -1311,7 +1312,7 @@ func (a *App) drawChildPreview(child *cache.Grid,
 	// use 2px; previews glide down with the cell scale.
 	borderPx := previewBorderPxFor(previewCell)
 	for _, n := range child.Tiles {
-		if hiddenTileID != "" && n.ID == hiddenTileID {
+		if hiddenTileID != "" && n.Id == hiddenTileID {
 			continue
 		}
 		nodeScreenX := centerScreenX + (float64(n.X)-centerCellX)*previewCell
@@ -1328,7 +1329,7 @@ func (a *App) drawChildPreview(child *cache.Grid,
 		// do not overlay their frozen JPEGs here, so a well's interior
 		// reads uniformly — one visual grammar for looking one level
 		// down.
-		drawNode(c, &nn, nodeScreenX, nodeScreenY, nodeScreenW, nodeScreenH, false, tileOutside(&nn, childInHost), borderPx, false)
+		drawNode(c, nn, nodeScreenX, nodeScreenY, nodeScreenW, nodeScreenH, false, tileOutside(nn, childInHost), borderPx, false)
 	}
 }
 
@@ -1336,7 +1337,7 @@ func (a *App) drawChildPreview(child *cache.Grid,
 // `selected` highlights the tile with a dedicated outline color. This is
 // the "flat" renderer used for nested previews (no recursion) and for
 // non-well tiles; the parent-grid renderer is drawNodeWithPreview.
-func drawNode(c js.Value, n *rpc.Tile, x, y, w, h float64, selected bool, outside bool, borderPx float64, dashed bool) {
+func drawNode(c js.Value, n *gridwellv1.Tile, x, y, w, h float64, selected bool, outside bool, borderPx float64, dashed bool) {
 	// Fill and per-kind outline color in one pass; strokeTileBorder draws
 	// the inset border for every kind that has one. borderPx lets the caller
 	// scale the outline down for distant previews. dashed marks a link, a
@@ -1383,7 +1384,7 @@ func drawNode(c js.Value, n *rpc.Tile, x, y, w, h float64, selected bool, outsid
 // fades into a trashcan glyph while the size lerp shrinks it toward
 // the hole. Drag back out and frag returns to 0 — the trashcan fades
 // out and the original tile fades back in at full size.
-func (a *App) drawGhostTile(n *rpc.Tile, x, y, w, h, parentCellSize float64, r pane.Rect, frag float64) {
+func (a *App) drawGhostTile(n *gridwellv1.Tile, x, y, w, h, parentCellSize float64, r pane.Rect, frag float64) {
 	// The ghost is a free-floating render of one tile; treat its own
 	// kind+source_key as the outside signal. No parent grid is in play here
 	// (the ghost is flying over the canvas).
@@ -1453,7 +1454,7 @@ func (a *App) borderInputFor(p *pane.Pane, g *cache.Grid, gridOK bool, focused b
 		if tile, ok := a.descendedTile(p); ok {
 			in.TileKnown = true
 			in.TileKind = tile.Kind
-			in.Ephemeral = a.certainlyEphemeral(p, &tile)
+			in.Ephemeral = a.certainlyEphemeral(p, tile)
 		}
 	}
 	if gridOK && g.HostContent() {
@@ -1485,7 +1486,7 @@ var paneBorderColors = pane.BorderColors{
 // every tile whose footprint lies entirely outside the visible viewport.
 // Each marker is positioned where the ray from the viewport center to the
 // tile's center crosses the pane's inset rectangle, and points outward.
-func (a *App) drawEdgeIndicators(nodes map[string]rpc.Tile, ps dragdrop.Pane, r pane.Rect) {
+func (a *App) drawEdgeIndicators(nodes map[string]*gridwellv1.Tile, ps dragdrop.Pane, r pane.Rect) {
 	cellSize := ps.CellPx * ps.Zoom
 	const inset = 12.0
 	innerL := r.X + inset

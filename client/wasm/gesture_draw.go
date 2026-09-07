@@ -3,10 +3,10 @@
 package main
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"math"
 	"syscall/js"
 
-	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/cache"
 	"github.com/josephburnett/gridwell/client/gesture"
 	"github.com/josephburnett/gridwell/client/pane"
@@ -183,7 +183,7 @@ func drawRefreshIcon(c js.Value, cx, cy, radius float64, color string) {
 //
 // Strictly grey: informational, not interactive.
 func (a *App) drawTileHotspotOverlay(rd *rightDragState) {
-	left, top, w, h := tileScreenRect(&rd.tileNode, rd.tilePane, rd.tilePaneR)
+	left, top, w, h := tileScreenRect(rd.tileNode, rd.tilePane, rd.tilePaneR)
 	if w <= 0 || h <= 0 {
 		return
 	}
@@ -254,7 +254,7 @@ func drawHotspotArrow(c js.Value, cx, cy, dx, dy float64) {
 
 // tileScreenRect returns the on-screen rectangle of tile n as drawn
 // in pane p. Mirrors the math used by the parent-grid renderer.
-func tileScreenRect(n *rpc.Tile, p *pane.Pane, r pane.Rect) (left, top, w, h float64) {
+func tileScreenRect(n *gridwellv1.Tile, p *pane.Pane, r pane.Rect) (left, top, w, h float64) {
 	ps := paneToDragdrop(p, r)
 	left, top = ps.CellToScreen(float64(n.X), float64(n.Y))
 	cellSize := cellPx * p.Zoom

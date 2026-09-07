@@ -11,10 +11,10 @@ cd "$(dirname "$0")/.."
 mode=total
 if [ "$1" = "--files" ]; then mode=files; shift; fi
 if [ $# -gt 0 ]; then
-  files=$(find "$@" -type f \( -name '*.go' -o -name '*.ts' \) | grep -vE 'node_modules|/gen/|/dist/|/out/|_test\.go|\.test\.ts|\.spec\.ts|\.d\.ts|wire_gen' | sort)
+  files=$(find "$@" -type f \( -name '*.go' -o -name '*.ts' \) | grep -vE 'node_modules|/gen/|/dist/|/out/|_test\.go|\.test\.ts|\.spec\.ts|\.d\.ts' | sort)
 else
   files=$(find . -path ./.git -prune -o -type f \( -name '*.go' -o -name '*.ts' \) -print \
-    | grep -vE 'node_modules|/gen/|/dist/|/out/|_test\.go|\.test\.ts|\.spec\.ts|\.d\.ts|/e2e/|e2e-web|playwright|/harness/|wire_gen|plugintest|servertest|dialtest|shellsvctest|test/boundary' \
+    | grep -vE 'node_modules|/gen/|/dist/|/out/|_test\.go|\.test\.ts|\.spec\.ts|\.d\.ts|/e2e/|e2e-web|playwright|/harness/|plugintest|servertest|dialtest|shellsvctest|test/boundary' \
     | sort)
 fi
 awk -v mode="$mode" '

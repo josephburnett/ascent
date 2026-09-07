@@ -13,6 +13,7 @@ package pluginhost_test
 import (
 	"context"
 	"database/sql"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -80,13 +81,13 @@ func pluginProcNodeAt(t *testing.T, memPath string) *rpc.Client {
 }
 
 // tileNamed returns the tile whose label is the given pid, or the zero tile.
-func tileNamed(tiles []rpc.Tile, label string) rpc.Tile {
+func tileNamed(tiles []*gridwellv1.Tile, label string) *gridwellv1.Tile {
 	for _, tile := range tiles {
 		if tile.AltText == label {
 			return tile
 		}
 	}
-	return rpc.Tile{}
+	return &gridwellv1.Tile{}
 }
 
 // TestProcPluginSweepAndPlacement: place a child, kill another; the
@@ -106,14 +107,14 @@ func TestProcPluginSweepAndPlacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	child := tileNamed(g.Tiles, surviving)
-	if child.ID == "" {
+	if child.Id == "" {
 		t.Fatalf("child %s not found among %v", surviving, g.Tiles)
 	}
-	if tileNamed(g.Tiles, dying).ID == "" {
+	if tileNamed(g.Tiles, dying).Id == "" {
 		t.Fatalf("child %s not found among %v", dying, g.Tiles)
 	}
-	if _, err := v2.PlaceTile(ctx, &rpc.PlaceTileRequest{
-		TileID: child.ID, GridID: rootGrid, X: 5, Y: 5, W: 1, H: 1,
+	if _, err := v2.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+		TileId: child.Id, GridId: rootGrid, X: 5, Y: 5, W: 1, H: 1,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -123,11 +124,11 @@ func TestProcPluginSweepAndPlacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tileNamed(g.Tiles, dying).ID != "" {
+	if tileNamed(g.Tiles, dying).Id != "" {
 		t.Fatal("dead child still listed")
 	}
 	back := tileNamed(g.Tiles, surviving)
-	if back.ID == "" {
+	if back.Id == "" {
 		t.Fatal("living child swept")
 	}
 	if back.X != 5 || back.Y != 5 {
@@ -135,8 +136,8 @@ func TestProcPluginSweepAndPlacement(t *testing.T) {
 	}
 	// The placement minted the row, so the tile is named by it now; the
 	// address the client held before still resolves to the same tile.
-	if held, err := v2.GetTile(ctx, child.ID); err != nil || held.ID != back.ID {
-		t.Fatalf("the pre-mint address stopped resolving: %+v (%v), want %s", held, err, back.ID)
+	if held, err := v2.GetTile(ctx, child.Id); err != nil || held.Id != back.Id {
+		t.Fatalf("the pre-mint address stopped resolving: %+v (%v), want %s", held, err, back.Id)
 	}
 }
 

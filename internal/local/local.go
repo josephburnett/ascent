@@ -554,6 +554,9 @@ func (p *Plugin) Subscribe(ctx context.Context, _ *gridwellv1.SubscribeRequest, 
 			if !ok {
 				return nil
 			}
+			// The hub hands the same event value to every listener, and
+			// there is no wire between them. Nothing downstream writes into
+			// it: qualification clones (server.qualifyTiles).
 			if err := send(ev); err != nil {
 				return err
 			}

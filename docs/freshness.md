@@ -175,7 +175,7 @@ clearing with no user gesture.
 9. `qualifyEvent` prepends the node id. The connection segment is already on
    the id, because the cache's own ids are `<conn>/<remote-id>`.
 10. `router.Subscribe`'s loop sends it. `App.startSSE` sees
-    `rpc.EventGridChanged`, deletes `a.gridLoadFailed[gridID]` — the event is
+    a `GridChanged`, deletes `a.gridLoadFailed[gridID]` — the event is
     the one per-grid signal that something changed, so it is also what clears
     a verdict latch — and calls `App.fetchGrid(gridID)`. It does this
     unconditionally, for grids nobody is looking at too.
@@ -231,7 +231,7 @@ connection are NOT dead — `client/deadref` answers from the node's
 declaration, and a declared connection that will not answer is health, not
 deadness.
 
-**On the client.** `App.startSSE` routes `rpc.EventPluginHealth` to
+**On the client.** `App.startSSE` routes a `PluginHealth` event to
 `App.reportPluginHealth`. Unhealthy posts a sticky notice keyed
 `plugin:<node>/<conn>` ("live updates stopped — …") and then calls
 `retryKick(true, h.PluginUUID)`. The down direction resyncs exactly as the up

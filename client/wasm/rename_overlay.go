@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"strings"
 	"syscall/js"
 
@@ -37,14 +38,14 @@ import (
 //   - inside a well's grid: the containing well (the last path segment),
 //     resolved from the parent grid — renaming the room names its door.
 //   - a declared doorway: nothing, since a declaration is config-owned.
-func (a *App) renameTarget(p *pane.Pane) (rpc.Tile, bool) {
+func (a *App) renameTarget(p *pane.Pane) (*gridwellv1.Tile, bool) {
 	if p == nil {
-		return rpc.Tile{}, false
+		return nil, false
 	}
 	if p.ContentID() != "" {
 		t, ok := a.descendedTile(p)
-		if !ok || t.Kind == rpc.KindText || a.possiblyEphemeral(p, &t) {
-			return rpc.Tile{}, false
+		if !ok || t.Kind == rpc.KindText || a.possiblyEphemeral(p, t) {
+			return nil, false
 		}
 		return t, true
 	}
@@ -56,16 +57,16 @@ func (a *App) renameTarget(p *pane.Pane) (rpc.Tile, bool) {
 		if t, kind := a.doorFind(p); kind == door.Well {
 			return t, true
 		}
-		return rpc.Tile{}, false
+		return nil, false
 	}
 	parentGridID := a.gridIDForPathFrom(p.Anchor(), p.Path()[:len(p.Path())-1])
 	g, ok := a.c.Grid(parentGridID)
 	if !ok {
-		return rpc.Tile{}, false
+		return nil, false
 	}
 	t, ok := g.Tiles[p.Path()[len(p.Path())-1]]
 	if !ok || !rpc.IsWellKind(t.Kind) {
-		return rpc.Tile{}, false
+		return nil, false
 	}
 	return t, true
 }
@@ -93,7 +94,7 @@ func (a *App) bubbleLabel(p *pane.Pane) (label string, editable, muted bool) {
 	}
 	if p.ContentID() != "" {
 		if t, ok := a.descendedTile(p); ok {
-			if a.certainlyEphemeral(p, &t) {
+			if a.certainlyEphemeral(p, t) {
 				return "ephemeral", false, true
 			}
 			if t.AltText != "" {
@@ -116,7 +117,7 @@ func (a *App) bubbleLabel(p *pane.Pane) (label string, editable, muted bool) {
 	// An uncached parent: the plugin's config-owned label.
 	want := uuidOf(a.gridIDForPane(p))
 	for _, pl := range a.allPlugins() {
-		if pl.UUID == want && pl.Label != "" {
+		if pl.Uuid == want && pl.Label != "" {
 			return pl.Label, false, true
 		}
 	}
@@ -126,8 +127,8 @@ func (a *App) bubbleLabel(p *pane.Pane) (label string, editable, muted bool) {
 // doorFind resolves the tile the focused pane's current level was entered
 // through (the DOOR — client/door), assembling the inputs from the caches:
 // the level below's grid when there is one, and the plugin declarations.
-func (a *App) doorFind(p *pane.Pane) (rpc.Tile, door.Kind) {
-	var parent map[string]rpc.Tile
+func (a *App) doorFind(p *pane.Pane) (*gridwellv1.Tile, door.Kind) {
+	var parent map[string]*gridwellv1.Tile
 	if p.Depth() > 1 {
 		anchor, path := p.AnchorPathAt(p.Depth() - 2)
 		if gid := a.gridIDForPathFrom(anchor, path); gid != "" {
@@ -227,8 +228,8 @@ func (a *App) openNameInputAt(value string, width float64, position func(st js.V
 // commitRename posts the user-owned name and patches the cache so the pill
 // (and any banner) reflects it immediately; the TileChanged event confirms.
 func (a *App) commitRename(tileID, alt string) {
-	a.commitRenameRetained(tileID, alt, func(t *rpc.Tile) {
-		a.c.UpdateTile(t.GridID, *t)
+	a.commitRenameRetained(tileID, alt, func(t *gridwellv1.Tile) {
+		a.c.UpdateTile(t.GridId, t)
 	})
 }
 
@@ -237,8 +238,8 @@ func (a *App) commitRename(tileID, alt string) {
 // input element is gone by the time the RPC fails, so the closure parked in
 // the outbox is the only copy of what the user typed, and it lands on the
 // retry kick. A server verdict surfaces and stands.
-func (a *App) commitRenameRetained(tileID, alt string, apply func(*rpc.Tile)) {
-	var tile *rpc.Tile
+func (a *App) commitRenameRetained(tileID, alt string, apply func(*gridwellv1.Tile)) {
+	var tile *gridwellv1.Tile
 	a.post(write{
 		label: "Rename", gid: a.gridIDOfTile(tileID), id: tileID,
 		source: "rename", failText: "rename",
@@ -263,7 +264,7 @@ func (a *App) commitRenameRetained(tileID, alt string, apply func(*rpc.Tile)) {
 // A conflict surfaces rather than re-claiming. Captures do not bump the row,
 // so a conflict here means a genuine concurrent content edit, and silently
 // re-claiming over it would overwrite it.
-func (a *App) postRename(ctx context.Context, tileID, alt string) (*rpc.Tile, error) {
+func (a *App) postRename(ctx context.Context, tileID, alt string) (*gridwellv1.Tile, error) {
 	version := int64(0)
 	if t := a.cachedTileByID(tileID); t != nil {
 		version = t.Version
@@ -277,7 +278,7 @@ func (a *App) postRename(ctx context.Context, tileID, alt string) (*rpc.Tile, er
 // client never loaded has nothing to reconcile.
 func (a *App) gridIDOfTile(tileID string) string {
 	if t := a.cachedTileByID(tileID); t != nil {
-		return t.GridID
+		return t.GridId
 	}
 	return ""
 }

@@ -15,6 +15,7 @@ package main
 // machine reads them; no call site switches on a kind.
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/door"
 	"github.com/josephburnett/gridwell/client/errsurface"
@@ -48,8 +49,8 @@ func (a *App) runGesture(g nav.Gesture) {
 }
 
 // descend takes pane p through the doorway tile: the descent verb.
-func (a *App) descend(p *pane.Pane, tile *rpc.Tile) {
-	a.runGesture(nav.Gesture{Kind: nav.GestureDescend, PaneID: p.ID, Door: *tile})
+func (a *App) descend(p *pane.Pane, tile *gridwellv1.Tile) {
+	a.runGesture(nav.Gesture{Kind: nav.GestureDescend, PaneID: p.ID, Door: tile})
 }
 
 // ascend leaves n levels of pane p's place: the ascent verb, for one level or
@@ -80,7 +81,7 @@ func (a *App) navWorld(g nav.Gesture) nav.World {
 	w := a.navWorldCommon()
 	switch g.Kind {
 	case nav.GestureDescend:
-		w.Door = a.navWorldForDescend(&g.Door)
+		w.Door = a.navWorldForDescend(g.Door)
 	case nav.GestureAscend:
 		w.Leave = a.navWorldForAscend(g.PaneID)
 	case nav.GestureRestore:
@@ -107,7 +108,7 @@ func (a *App) navWorldForLevel(paneID, tileID string) *nav.LevelWorld {
 		return lw
 	}
 	if t, ok := g.Tiles[tileID]; ok {
-		lw.Tile = &t
+		lw.Tile = t
 	}
 	return lw
 }
@@ -135,11 +136,11 @@ func (a *App) navWorldForRestore() nav.World {
 		rows := make(map[string]nav.RestoreTile, len(g.Tiles))
 		for id, t := range g.Tiles {
 			rows[id] = nav.RestoreTile{
-				ChildGridID:  t.ChildGridID,
+				ChildGridID:  t.ChildGridId,
 				IsWell:       rpc.IsWellKind(t.Kind),
 				IsContent:    rpc.IsContentDescentKind(t.Kind),
-				TextDocument: t.TextDocument(),
-				ReadOnly:     a.tileReadOnly(&t),
+				TextDocument: rpc.TextDocument(t),
+				ReadOnly:     a.tileReadOnly(t),
 				TextY:        t.TextY,
 				TextMode:     t.TextMode,
 			}
@@ -157,8 +158,8 @@ func (a *App) navWorldForRestore() nav.World {
 	// pane's.
 	if p := a.tree.FocusedPane(); p != nil {
 		for _, pd := range door.Places(a.allPlugins()) {
-			if cx, cy, zoom, ok := a.persistedGridView(p, pd.Plugin.RootGridID, nil); ok {
-				rw.RootViews[pd.Plugin.RootGridID] = nav.Viewport{Cx: cx, Cy: cy, Zoom: zoom}
+			if cx, cy, zoom, ok := a.persistedGridView(p, pd.Plugin.RootGridId, nil); ok {
+				rw.RootViews[pd.Plugin.RootGridId] = nav.Viewport{Cx: cx, Cy: cy, Zoom: zoom}
 			}
 		}
 	}
@@ -218,14 +219,14 @@ func (a *App) navWorldCommon() nav.World {
 
 // navWorldForDescend resolves the doorway half: the declarations only the
 // shim can read, each through the predicate that owns it.
-func (a *App) navWorldForDescend(tile *rpc.Tile) *nav.DoorWorld {
+func (a *App) navWorldForDescend(tile *gridwellv1.Tile) *nav.DoorWorld {
 	d := &nav.DoorWorld{
 		DeadLink: a.deadLink(tile),
 		IsLink:   isLinkTile(tile),
 		ReadOnly: a.tileReadOnly(tile),
 	}
-	if tile.ChildGridID != "" {
-		_, d.ChildGridCached = a.c.Grid(tile.ChildGridID)
+	if tile.ChildGridId != "" {
+		_, d.ChildGridCached = a.c.Grid(tile.ChildGridId)
 		return d
 	}
 	if !rpc.IsWellKind(tile.Kind) {
@@ -236,9 +237,9 @@ func (a *App) navWorldForDescend(tile *rpc.Tile) *nav.DoorWorld {
 	// itself on a menu row (chained for a connection, "i9sm6ff/ltvv2f9") and
 	// node-qualified on a link tile, so try both shapes or a connection's
 	// dial status never surfaces.
-	pl, ok := a.pluginByUUID(tile.ID)
+	pl, ok := a.pluginByUUID(tile.Id)
 	if !ok {
-		pl, ok = a.pluginByUUID(rpc.LocalOf(tile.ID))
+		pl, ok = a.pluginByUUID(rpc.LocalOf(tile.Id))
 	}
 	if !ok {
 		return d
@@ -262,14 +263,14 @@ func (a *App) navWorldForAscend(paneID string) *nav.LeaveWorld {
 	switch {
 	case own.Content:
 		if file, ok := a.descendedTile(p); ok {
-			lw.DescendedTile = &file
+			lw.DescendedTile = file
 		}
 	case own.TileID != "":
 		lw.DoorGridID = a.gridIDForPathFrom(own.DoorAnchor, own.DoorPath)
 		if g, ok := a.c.Grid(lw.DoorGridID); ok {
 			lw.DoorGridCached = true
 			if t, ok := g.Tiles[own.TileID]; ok {
-				lw.DoorTile = &t
+				lw.DoorTile = t
 			}
 		}
 	}

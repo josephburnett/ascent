@@ -3,6 +3,7 @@
 package main
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"math"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -192,13 +193,13 @@ func (a *App) drawPaletteItem(item paletteItem, x, y, w, h float64, hovered bool
 		a.cctx.Call("fillRect", x, y, w, h)
 		strokeTileFrame(a.cctx, x, y, w, h, colorFocusBorder, true /* dashed */, false /* selected */)
 		a.drawPluginGlyph(door.RowGlyph(item.plugin), x, y, w, h)
-		a.drawTileBannerLabel(&n, x, y, w, h, false)
+		a.drawTileBannerLabel(n, x, y, w, h, false)
 		// A broken or waiting plugin gets the same health tint its link
 		// tiles do; the click guard explains on click.
-		a.drawPluginHealthTint(&n, x, y, w, h)
+		a.drawPluginHealthTint(n, x, y, w, h)
 	} else {
-		outside := tileOutside(&n, false)
-		drawNode(a.cctx, &n, x, y, w, h, false, outside, tileBorderPx, false)
+		outside := tileOutside(n, false)
+		drawNode(a.cctx, n, x, y, w, h, false, outside, tileBorderPx, false)
 		if pr, ok := primitiveFor(item.primitive); ok {
 			pr.glyph(a, x, y, w, h)
 		}
@@ -238,7 +239,7 @@ func (a *App) drawPluginGlyph(glyph string, x, y, w, h float64) {
 // status, if any, is pluginhealth.Classify's decision, and this function only
 // maps it to pixels. Only this node's own plugins have local health; a remote
 // node's plugin tiles surface their state through descent errors instead.
-func (a *App) drawPluginHealthTint(n *rpc.Tile, x, y, w, h float64) {
+func (a *App) drawPluginHealthTint(n *gridwellv1.Tile, x, y, w, h float64) {
 	// A link with no target is not enterable wherever it lives: a broken or
 	// waiting plugin link, one to a remote plugin included, whose health
 	// the local plugin list cannot know. Dim it; the descent guard explains
@@ -250,7 +251,7 @@ func (a *App) drawPluginHealthTint(n *rpc.Tile, x, y, w, h float64) {
 		color := colorLauncherWaitingTint
 		// The local plugin list knows more: a failure of any kind gets the
 		// alarm tint, waiting the neutral one.
-		if pl, ok := a.pluginByUUID(rpc.LocalOf(n.ID)); ok {
+		if pl, ok := a.pluginByUUID(rpc.LocalOf(n.Id)); ok {
 			if pluginhealth.Classify(pl) == pluginhealth.Broken {
 				color = colorLauncherBrokenTint
 			}

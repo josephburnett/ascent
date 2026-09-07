@@ -1,6 +1,9 @@
 package nav
 
 import (
+	"google.golang.org/protobuf/proto"
+
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/anim"
 	"github.com/josephburnett/gridwell/client/pane"
@@ -158,7 +161,7 @@ func (m *Machine) ascendOnce(p PaneView, w World, pl *planner, animate bool) {
 // the caller then lands instantly. It is the one place an ascent saves
 // anything: content buffers and text framing, grid framing onto the doorway
 // or the root grid, live-stream teardown, and the ephemeral delete.
-func (m *Machine) leaveFrame(p PaneView, w World, pl *planner) (doorID string, doorTile *rpc.Tile) {
+func (m *Machine) leaveFrame(p PaneView, w World, pl *planner) (doorID string, doorTile *gridwellv1.Tile) {
 	lw := w.Leave
 	own := p.Stack.FramingTarget()
 	if own.Content {
@@ -175,15 +178,15 @@ func (m *Machine) leaveFrame(p PaneView, w World, pl *planner) (doorID string, d
 		}
 		// The buffer and framing save: posts the editor buffer, when dirty,
 		// and the framed window back through the dispatcher.
-		pl.add(Effect{Kind: EffSaveText, PaneID: p.ID, TileID: file.ID})
+		pl.add(Effect{Kind: EffSaveText, PaneID: p.ID, TileID: file.Id})
 		// Ascending out of an ephemeral tile deletes it — gray means gone. No
 		// freeze, which is pointless for a tile about to die, and then the row
 		// goes away; for a shell the plugin kills its tmux session too. The
 		// answer must be a KNOWN yes, and no other pane may still show it,
 		// since a split clones the visit.
-		eph, known := scratch.Ephemeral(p.Scratch, file.GridID)
-		ephemeral := eph && known && !w.otherPaneShows(p.ID, file.ID)
-		if file.WebContent() {
+		eph, known := scratch.Ephemeral(p.Scratch, file.GridId)
+		ephemeral := eph && known && !w.otherPaneShows(p.ID, file.Id)
+		if rpc.WebContent(file) {
 			pl.add(Effect{Kind: EffCloseStream, PaneID: p.ID,
 				Streams: StreamURL, Freeze: !ephemeral})
 		}
@@ -194,7 +197,7 @@ func (m *Machine) leaveFrame(p PaneView, w World, pl *planner) (doorID string, d
 				Streams: StreamShell, Freeze: !ephemeral})
 		}
 		if ephemeral {
-			pl.add(Effect{Kind: EffDeleteEphemeral, GridID: file.GridID, TileID: file.ID})
+			pl.add(Effect{Kind: EffDeleteEphemeral, GridID: file.GridId, TileID: file.Id})
 		}
 		return own.TileID, file
 	}
@@ -224,9 +227,9 @@ func (m *Machine) leaveFrame(p PaneView, w World, pl *planner) (doorID string, d
 	// user's actual position rather than snapping back to the stored origin —
 	// which is why the row handed back below already carries the write.
 	pl.add(Effect{Kind: EffPersistFraming, PaneID: p.ID, Owner: own, Door: true})
-	t := *lw.DoorTile
-	settleFraming(&t, p, w.CellPx)
-	return own.TileID, &t
+	t := proto.CloneOf(lw.DoorTile)
+	settleFraming(t, p, w.CellPx)
+	return own.TileID, t
 }
 
 // settleFraming applies to a doorway row the framing the PersistFraming
@@ -238,7 +241,7 @@ func (m *Machine) leaveFrame(p PaneView, w World, pl *planner) (doorID string, d
 // The no-op guard is rpc.Framing.SameAs, the one "did the user actually
 // move?" rule: below it the executor writes nothing and the row keeps values
 // that describe the same picture anyway.
-func settleFraming(door *rpc.Tile, p PaneView, cellPx float64) {
+func settleFraming(door *gridwellv1.Tile, p PaneView, cellPx float64) {
 	foot := zoomtrans.Well{W: door.W, H: door.H}
 	next := rpc.Framing{Cx: p.Cx, Cy: p.Cy,
 		Zoom: zoomtrans.IntrinsicFromLive(p.Zoom,

@@ -1,6 +1,7 @@
 package pluginhealth
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"strings"
 	"testing"
 
@@ -15,26 +16,26 @@ import (
 func TestClassifyTable(t *testing.T) {
 	cases := []struct {
 		name string
-		pl   rpc.PluginInfo
+		pl   *gridwellv1.PluginInfo
 		want Status
 	}{
-		{"rooted plugin", rpc.PluginInfo{Label: "Home", RootGridID: "u/1"}, Enterable},
-		{"rooted connection", rpc.ConnectionRow(rpc.ConnectionInfo{UUID: "c1", RootGridID: "c1/1"}), Enterable},
-		{"info failed", rpc.PluginInfo{Label: "Files", InfoError: "plugin not responding: connection refused"}, Broken},
+		{"rooted plugin", &gridwellv1.PluginInfo{Label: "Home", RootGridId: "u/1"}, Enterable},
+		{"rooted connection", rpc.ConnectionRow(&gridwellv1.ConnectionInfo{Uuid: "c1", RootGridId: "c1/1"}), Enterable},
+		{"info failed", &gridwellv1.PluginInfo{Label: "Files", InfoError: "plugin not responding: connection refused"}, Broken},
 		// A plugin contributes doorways; it is not one. Answering with menu
 		// entries and no root of its own is the ordinary healthy shape, and
 		// answering with neither is a plugin that contributes nothing —
 		// still healthy, still nothing to report.
-		{"answered, entries and no root", rpc.PluginInfo{Label: "Mail",
-			MenuEntries: []rpc.MenuEntry{{ID: "feed", Label: "Feed", GridID: "u/2"}}}, NoDoor},
-		{"answered, nothing declared", rpc.PluginInfo{Label: "Files"}, NoDoor},
-		{"connection not answered yet", rpc.ConnectionRow(rpc.ConnectionInfo{UUID: "c1", Label: "rtb"}), Waiting},
-		{"connection that failed to dial", rpc.ConnectionRow(rpc.ConnectionInfo{UUID: "c1", Label: "rtb",
+		{"answered, entries and no root", &gridwellv1.PluginInfo{Label: "Mail",
+			MenuEntries: []*gridwellv1.MenuEntry{{Id: "feed", Label: "Feed", GridId: "u/2"}}}, NoDoor},
+		{"answered, nothing declared", &gridwellv1.PluginInfo{Label: "Files"}, NoDoor},
+		{"connection not answered yet", rpc.ConnectionRow(&gridwellv1.ConnectionInfo{Uuid: "c1", Label: "rtb"}), Waiting},
+		{"connection that failed to dial", rpc.ConnectionRow(&gridwellv1.ConnectionInfo{Uuid: "c1", Label: "rtb",
 			StatusDetail: "dial tcp 127.0.0.1:1: connection refused"}), Broken},
 		// A rooted row with a recorded error is broken: the error is the
 		// newer fact, and descending into a namespace that just failed would
 		// hang rather than say so.
-		{"rooted but errored", rpc.PluginInfo{Label: "Files", RootGridID: "u/1", InfoError: "boom"}, Broken},
+		{"rooted but errored", &gridwellv1.PluginInfo{Label: "Files", RootGridId: "u/1", InfoError: "boom"}, Broken},
 	}
 	for _, c := range cases {
 		if got := Classify(c.pl); got != c.want {
@@ -47,8 +48,8 @@ func TestClassifyTable(t *testing.T) {
 // reason the click report carries. Every kind of failure collapses into the
 // one status, and the row's own text is what distinguishes them.
 func TestBrokenIsOneStatusWithTheReasonInTheText(t *testing.T) {
-	failed := rpc.PluginInfo{UUID: "u1", Label: "Files", InfoError: "plugin not responding: boom"}
-	dialed := rpc.ConnectionRow(rpc.ConnectionInfo{UUID: "u2", Label: "Files",
+	failed := &gridwellv1.PluginInfo{Uuid: "u1", Label: "Files", InfoError: "plugin not responding: boom"}
+	dialed := rpc.ConnectionRow(&gridwellv1.ConnectionInfo{Uuid: "u2", Label: "Files",
 		StatusDetail: "dial tcp 127.0.0.1:1: connection refused"})
 	if Classify(failed) != Broken || Classify(dialed) != Broken {
 		t.Fatalf("both failures must be Broken: %v %v", Classify(failed), Classify(dialed))
@@ -73,15 +74,15 @@ func TestBrokenIsOneStatusWithTheReasonInTheText(t *testing.T) {
 // report: it is not an error, so a click on it — there is no swatch to click,
 // but the guard is asked anyway — says nothing.
 func TestClickNotice_NoDoor_NotOk(t *testing.T) {
-	pl := rpc.PluginInfo{UUID: "u1", Label: "Mail",
-		MenuEntries: []rpc.MenuEntry{{ID: "feed", Label: "Feed", GridID: "u1/2"}}}
+	pl := &gridwellv1.PluginInfo{Uuid: "u1", Label: "Mail",
+		MenuEntries: []*gridwellv1.MenuEntry{{Id: "feed", Label: "Feed", GridId: "u1/2"}}}
 	if _, _, _, ok := ClickNotice(pl); ok {
 		t.Error("a plugin with no doorway of its own must report nothing")
 	}
 }
 
 func TestClickNotice_Enterable_NotOk(t *testing.T) {
-	pl := rpc.PluginInfo{Label: "Home", RootGridID: "u/1"}
+	pl := &gridwellv1.PluginInfo{Label: "Home", RootGridId: "u/1"}
 	_, _, _, ok := ClickNotice(pl)
 	if ok {
 		t.Error("ClickNotice for an enterable plugin must return ok=false (caller should descend)")
@@ -89,7 +90,7 @@ func TestClickNotice_Enterable_NotOk(t *testing.T) {
 }
 
 func TestClickNotice_KeyedByUUID(t *testing.T) {
-	pl := rpc.PluginInfo{UUID: "uux1", Label: "Files", InfoError: "plugin not responding: boom"}
+	pl := &gridwellv1.PluginInfo{Uuid: "uux1", Label: "Files", InfoError: "plugin not responding: boom"}
 	_, source, _, ok := ClickNotice(pl)
 	if !ok {
 		t.Fatal("ClickNotice for a broken plugin must return ok=true")
@@ -104,7 +105,7 @@ func TestClickNotice_KeyedByUUID(t *testing.T) {
 // same plugin produce the same source key, so they update one row rather
 // than scrolling the strip.
 func TestClickNotice_SourceKeyedByLabelCoalesces(t *testing.T) {
-	pl := rpc.PluginInfo{Label: "Files", InfoError: "boom"}
+	pl := &gridwellv1.PluginInfo{Label: "Files", InfoError: "boom"}
 	_, s1, _, _ := ClickNotice(pl)
 	_, s2, _, _ := ClickNotice(pl)
 	if s1 != s2 {
@@ -118,11 +119,11 @@ func TestClickNotice_SourceKeyedByLabelCoalesces(t *testing.T) {
 // its declared kind, so an unsegmented uuid reads the same as a chained one:
 // this case is built through rpc.ConnectionRow, the one minter.
 func TestClickNotice_PendingConnection(t *testing.T) {
-	pl := rpc.ConnectionRow(rpc.ConnectionInfo{UUID: "conn1", Label: "rtb"})
+	pl := rpc.ConnectionRow(&gridwellv1.ConnectionInfo{Uuid: "conn1", Label: "rtb"})
 	if _, _, msg, _ := ClickNotice(pl); !strings.Contains(msg, "loading rtb") {
 		t.Fatalf("an unsegmented connection uuid must still read as loading: %q", msg)
 	}
-	pl = rpc.ConnectionRow(rpc.ConnectionInfo{UUID: "sshx/conn1", Label: "rtb"})
+	pl = rpc.ConnectionRow(&gridwellv1.ConnectionInfo{Uuid: "sshx/conn1", Label: "rtb"})
 	sev, source, msg, ok := ClickNotice(pl)
 	if !ok || source != "launcher:sshx/conn1" {
 		t.Fatalf("notice = %v %q %q %v (keyed by UUID — labels can collide)", sev, source, msg, ok)
@@ -148,16 +149,16 @@ func TestClickNotice_PendingConnection(t *testing.T) {
 func TestUnrootedLink(t *testing.T) {
 	cases := []struct {
 		name string
-		tile rpc.Tile
+		tile *gridwellv1.Tile
 		want bool
 	}{
-		{"launcher with no root", rpc.Tile{Kind: rpc.KindWell, Reference: true}, true},
-		{"launcher with a root", rpc.Tile{Kind: rpc.KindWell, Reference: true, ChildGridID: "fs/1"}, false},
-		{"leaf link", rpc.Tile{Kind: rpc.KindText, Reference: true, LinkTargetID: "fs/2"}, false},
-		{"plain well", rpc.Tile{Kind: rpc.KindWell, ChildGridID: "3"}, false},
+		{"launcher with no root", &gridwellv1.Tile{Kind: rpc.KindWell, Reference: true}, true},
+		{"launcher with a root", &gridwellv1.Tile{Kind: rpc.KindWell, Reference: true, ChildGridId: "fs/1"}, false},
+		{"leaf link", &gridwellv1.Tile{Kind: rpc.KindText, Reference: true, LinkTargetId: "fs/2"}, false},
+		{"plain well", &gridwellv1.Tile{Kind: rpc.KindWell, ChildGridId: "3"}, false},
 	}
 	for _, c := range cases {
-		if got := UnrootedLink(&c.tile); got != c.want {
+		if got := UnrootedLink(c.tile); got != c.want {
 			t.Errorf("%s: UnrootedLink = %v, want %v", c.name, got, c.want)
 		}
 	}

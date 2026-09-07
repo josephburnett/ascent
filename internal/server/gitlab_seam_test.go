@@ -220,7 +220,7 @@ func TestTrashingATodoKeepsItsRowItsPlacementAndItsLinks(t *testing.T) {
 	}
 	var todosRoot string
 	for _, p := range pl.Plugins {
-		if p.UUID == "ug1" {
+		if p.Uuid == "ug1" {
 			todosRoot = plugintest.LandingOf(t, p)
 		}
 	}
@@ -231,16 +231,16 @@ func TestTrashingATodoKeepsItsRowItsPlacementAndItsLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var week rpc.Tile
+	var week *gridwellv1.Tile
 	for _, tl := range root.Tiles {
 		if strings.HasPrefix(tl.AltText, "2026-08-17") {
 			week = tl
 		}
 	}
-	if week.ChildGridID == "" {
+	if week.ChildGridId == "" {
 		t.Fatalf("no week well: %+v", root.Tiles)
 	}
-	wk, err := cl.GetGrid(ctx, week.ChildGridID)
+	wk, err := cl.GetGrid(ctx, week.ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,30 +251,27 @@ func TestTrashingATodoKeepsItsRowItsPlacementAndItsLinks(t *testing.T) {
 
 	// The user moves the todo somewhere of their own, and drags a link to it
 	// onto the home grid — a weekly plan naming this todo.
-	moved, err := cl.PlaceTile(ctx, &rpc.PlaceTileRequest{TileID: todo.ID, X: 5, Y: 5, W: 3, H: 2})
+	moved, err := cl.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{TileId: todo.Id, X: 5, Y: 5, W: 3, H: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	todo = *moved
-	link, err := cl.CreateLeafLink(ctx, &rpc.CreateLeafLinkRequest{
-		GridID: homeRoot, X: 1, Y: 1, W: 1, H: 1,
-		Kind: rpc.KindText, LinkTargetID: todo.ID, Label: todo.AltText,
-	})
+	todo = moved
+	link, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: homeRoot, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 1, Y: 1, W: 1, H: 1, LinkTargetId: todo.Id, AltText: todo.AltText}})
 	if err != nil {
 		t.Fatalf("link to a todo: %v", err)
 	}
 	// A reference at rest names a row, so the link's target is the id the
 	// delete is about to decide the fate of.
-	if link.LinkTargetID != todo.ID {
-		t.Fatalf("link target = %q, want the moved todo %q", link.LinkTargetID, todo.ID)
+	if link.LinkTargetId != todo.Id {
+		t.Fatalf("link target = %q, want the moved todo %q", link.LinkTargetId, todo.Id)
 	}
 
 	// The trash gesture. GitLab accepts the mark-as-done; the todo stays.
-	if err := cl.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: todo.ID}); err != nil {
+	if err := cl.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: todo.Id}); err != nil {
 		t.Fatalf("trash a todo: %v", err)
 	}
 
-	after, err := cl.GetGrid(ctx, week.ChildGridID)
+	after, err := cl.GetGrid(ctx, week.ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -282,8 +279,8 @@ func TestTrashingATodoKeepsItsRowItsPlacementAndItsLinks(t *testing.T) {
 		t.Fatalf("week grid after the trash = %+v, want the todo still there, done", after.Tiles)
 	}
 	kept := after.Tiles[0]
-	if kept.ID != todo.ID {
-		t.Errorf("the todo came back under a fresh id %q, want %q: every stored reference to it is now dead", kept.ID, todo.ID)
+	if kept.Id != todo.Id {
+		t.Errorf("the todo came back under a fresh id %q, want %q: every stored reference to it is now dead", kept.Id, todo.Id)
 	}
 	if kept.X != 5 || kept.Y != 5 || kept.W != 3 || kept.H != 2 {
 		t.Errorf("the todo snapped back to its hint: %+v, want the 5,5 3x2 the user left", kept)
@@ -294,10 +291,10 @@ func TestTrashingATodoKeepsItsRowItsPlacementAndItsLinks(t *testing.T) {
 	}
 
 	// And the link still names something that reads.
-	if _, err := cl.GetTile(ctx, link.LinkTargetID); err != nil {
-		t.Fatalf("the link went dead: GetTile %s: %v", link.LinkTargetID, err)
+	if _, err := cl.GetTile(ctx, link.LinkTargetId); err != nil {
+		t.Fatalf("the link went dead: GetTile %s: %v", link.LinkTargetId, err)
 	}
-	body, _, _, err := cl.ReadContent(ctx, link.LinkTargetID)
+	body, _, _, err := cl.ReadContent(ctx, link.LinkTargetId)
 	if err != nil {
 		t.Fatalf("content through the link target: %v", err)
 	}

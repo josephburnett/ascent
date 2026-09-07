@@ -1,6 +1,7 @@
 package textedit
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"strings"
 	"testing"
 
@@ -37,8 +38,8 @@ func TestToggleVisibleTable(t *testing.T) {
 		{"rendered, read-only", rpc.TextPresentationRendered, true, "notes.md", false},
 	}
 	for _, c := range cases {
-		tile := rpc.Tile{Kind: rpc.KindText, TextPresentation: c.presentation, AltText: c.altText}
-		if got := ToggleVisible(&tile, c.readOnly); got != c.want {
+		tile := &gridwellv1.Tile{Kind: rpc.KindText, TextPresentation: c.presentation, AltText: c.altText}
+		if got := ToggleVisible(tile, c.readOnly); got != c.want {
 			t.Errorf("%s: ToggleVisible = %v, want %v", c.name, got, c.want)
 		}
 	}
@@ -65,8 +66,8 @@ func TestPresentationHTMLTable(t *testing.T) {
 		{"both declaration renders too", rpc.TextPresentationBoth, "notes.md", "<li", ""},
 	}
 	for _, c := range cases {
-		tile := rpc.Tile{Kind: rpc.KindText, TextPresentation: c.presentation, AltText: c.altText}
-		got := PresentationHTML(&tile, body)
+		tile := &gridwellv1.Tile{Kind: rpc.KindText, TextPresentation: c.presentation, AltText: c.altText}
+		got := PresentationHTML(tile, body)
 		if !strings.Contains(got, c.wantContains) {
 			t.Errorf("%s: PresentationHTML = %q, want it to contain %q", c.name, got, c.wantContains)
 		}

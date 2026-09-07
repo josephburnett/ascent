@@ -3,6 +3,7 @@
 package main
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"syscall/js"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -44,9 +45,9 @@ const pagePreviewBlobID = -1
 // preview blob id when there is one, the page sentinel for a serves_page
 // tile, 0 (= no preview, no fetch) otherwise. The one keying rule for every
 // preview draw and fetch.
-func previewBlobKey(n *rpc.Tile) int64 {
-	if n.PreviewBlobID != 0 {
-		return n.PreviewBlobID
+func previewBlobKey(n *gridwellv1.Tile) int64 {
+	if n.PreviewBlobId != 0 {
+		return n.PreviewBlobId
 	}
 	if n.ServesPage {
 		return pagePreviewBlobID
@@ -61,10 +62,10 @@ func previewBlobKey(n *rpc.Tile) int64 {
 // runs instead when nothing is cached: it kicks the fetch and paints whatever
 // stands in meanwhile. One owner of "cached preview or stand-in", so no tile
 // kind can drift into its own answer.
-func (a *App) drawPreviewFace(n *rpc.Tile, x, y, w, h float64, fill string, blobID int64, fallback func()) {
+func (a *App) drawPreviewFace(n *gridwellv1.Tile, x, y, w, h float64, fill string, blobID int64, fallback func()) {
 	a.cctx.Set("fillStyle", fill)
 	a.cctx.Call("fillRect", x, y, w, h)
-	if cached, ok := a.views.urlPreview.Get(n.ContentID(), blobID); ok {
+	if cached, ok := a.views.urlPreview.Get(rpc.ContentID(n), blobID); ok {
 		if img, ok := previewImage(cached); ok {
 			drawImageContain(a.cctx, img, x, y, w, h)
 		}
@@ -90,7 +91,7 @@ func (a *App) drawPreviewPlaceholder(label string, x, y, w, h float64) {
 // preview image letterboxed to fit. While a live view is attached, mirror
 // frames flow into the same urlPreview cache, so this draw call reflects
 // them.
-func (a *App) drawURLTileInPane(n *rpc.Tile, x, y, w, h float64) {
+func (a *App) drawURLTileInPane(n *gridwellv1.Tile, x, y, w, h float64) {
 	// When live, the native WebContentsView paints over this content box;
 	// the JPEG drawn here is the fallback shown while the view is parked
 	// during a gesture, and the frozen preview otherwise. Its bounds are
@@ -98,8 +99,8 @@ func (a *App) drawURLTileInPane(n *rpc.Tile, x, y, w, h float64) {
 
 	withClip(a.cctx, x, y, w, h, func() {
 		a.drawPreviewFace(n, x, y, w, h, colorFileInnerBg, previewBlobKey(n), func() {
-			a.fetchURLPreview(n.ContentID(), previewBlobKey(n))
-			label := n.URLString
+			a.fetchURLPreview(rpc.ContentID(n), previewBlobKey(n))
+			label := n.UrlString
 			if label == "" {
 				label = n.AltText // a page tile has no address; its name says what it is
 			}
@@ -116,11 +117,11 @@ func (a *App) drawURLTileInPane(n *rpc.Tile, x, y, w, h float64) {
 // inside the text family's border, because it is a file and only its
 // presentation is web content. Falls back to the file name while the
 // thumbnail loads, or when the plugin serves none.
-func (a *App) drawPageTile(n *rpc.Tile, x, y, w, h float64, selected, outside, dashed bool) {
+func (a *App) drawPageTile(n *gridwellv1.Tile, x, y, w, h float64, selected, outside, dashed bool) {
 	withClip(a.cctx, x, y, w, h, func() {
 		a.drawPreviewFace(n, x, y, w, h, colorFileInnerBg, previewBlobKey(n), func() {
 			a.drawPreviewPlaceholder(n.AltText, x, y, w, h)
-			a.fetchURLPreview(n.ContentID(), previewBlobKey(n))
+			a.fetchURLPreview(rpc.ContentID(n), previewBlobKey(n))
 		})
 
 		line := colorMarkdownLine
@@ -141,12 +142,12 @@ func (a *App) drawPageTile(n *rpc.Tile, x, y, w, h float64, selected, outside, d
 // overlay sits on top of this canvas — the JPEG underneath becomes
 // invisible, but painting it costs ~nothing and avoids a flash if the
 // overlay hasn't been positioned yet for the current frame.
-func (a *App) drawShellTileInPane(p *pane.Pane, n *rpc.Tile, x, y, w, h float64) {
+func (a *App) drawShellTileInPane(p *pane.Pane, n *gridwellv1.Tile, x, y, w, h float64) {
 	withClip(a.cctx, x, y, w, h, func() {
 		a.cctx.Set("fillStyle", colorShellFill)
 		a.cctx.Call("fillRect", x, y, w, h)
 
-		if cached, ok := a.views.urlPreview.Get(n.ContentID(), n.PreviewBlobID); ok {
+		if cached, ok := a.views.urlPreview.Get(rpc.ContentID(n), n.PreviewBlobId); ok {
 			if img, ok := previewImage(cached); ok {
 				// Stand-in geometry, not letterbox: the live xterm canvas sits
 				// top-left at integer-cell size, so the snapshot goes back
@@ -159,8 +160,8 @@ func (a *App) drawShellTileInPane(p *pane.Pane, n *rpc.Tile, x, y, w, h float64)
 					a.cctx.Call("drawImage", img, dx, dy, dw, dh)
 				}
 			}
-		} else if n.PreviewBlobID != 0 {
-			a.fetchURLPreview(n.ContentID(), n.PreviewBlobID)
+		} else if n.PreviewBlobId != 0 {
+			a.fetchURLPreview(rpc.ContentID(n), n.PreviewBlobId)
 		} else if !a.hasShellStream(p.ID) {
 			// No preview yet and no live stream: the pre-refresh state. Show
 			// the shell glyph so the descent reads as a frozen shell rather
@@ -176,11 +177,11 @@ func (a *App) drawShellTileInPane(p *pane.Pane, n *rpc.Tile, x, y, w, h float64)
 // is the shell orange — bash runs outside Gridwell's data world. Reuses
 // urlPreview as the JPEG cache; the cache is keyed by tile id so URL and
 // shell tiles can share a single decode pool.
-func (a *App) drawShellTile(n *rpc.Tile, x, y, w, h float64, selected, dashed bool) {
+func (a *App) drawShellTile(n *gridwellv1.Tile, x, y, w, h float64, selected, dashed bool) {
 	withClip(a.cctx, x, y, w, h, func() {
-		a.drawPreviewFace(n, x, y, w, h, colorShellFill, n.PreviewBlobID, func() {
-			if n.PreviewBlobID != 0 {
-				a.fetchURLPreview(n.ContentID(), n.PreviewBlobID)
+		a.drawPreviewFace(n, x, y, w, h, colorShellFill, n.PreviewBlobId, func() {
+			if n.PreviewBlobId != 0 {
+				a.fetchURLPreview(rpc.ContentID(n), n.PreviewBlobId)
 			} else if w > 20 && h > 20 {
 				// No preview yet, because a palette drop never refreshed:
 				// paint the shell glyph so the swatch reads as a shell rather
@@ -198,11 +199,11 @@ func (a *App) drawShellTile(n *rpc.Tile, x, y, w, h float64, selected, dashed bo
 //  2. the cached preview JPEG letterboxed into the tile footprint, or a
 //     placeholder showing the URL text if no preview is loaded yet
 //  3. the tile outline + selection highlight
-func (a *App) drawURLTile(n *rpc.Tile, x, y, w, h float64, selected, dashed bool) {
+func (a *App) drawURLTile(n *gridwellv1.Tile, x, y, w, h float64, selected, dashed bool) {
 	withClip(a.cctx, x, y, w, h, func() {
-		a.drawPreviewFace(n, x, y, w, h, colorFileInnerBg, n.PreviewBlobID, func() {
-			a.drawPreviewPlaceholder(n.URLString, x, y, w, h)
-			a.fetchURLPreview(n.ContentID(), n.PreviewBlobID)
+		a.drawPreviewFace(n, x, y, w, h, colorFileInnerBg, n.PreviewBlobId, func() {
+			a.drawPreviewPlaceholder(n.UrlString, x, y, w, h)
+			a.fetchURLPreview(rpc.ContentID(n), n.PreviewBlobId)
 		})
 
 		strokeTileFrame(a.cctx, x, y, w, h, colorURLLine, dashed, selected)

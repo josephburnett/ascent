@@ -3,6 +3,9 @@
 package main
 
 import (
+	"google.golang.org/protobuf/proto"
+
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"syscall/js"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -194,7 +197,7 @@ func cellAtScreen(p *pane.Pane, r pane.Rect, sx, sy float64) (int64, int64) {
 
 // tileAtCell returns the tile in the pane's grid that covers the given cell,
 // or nil. Used for click hit-testing.
-func (a *App) tileAtCell(p *pane.Pane, cellX, cellY int64) *rpc.Tile {
+func (a *App) tileAtCell(p *pane.Pane, cellX, cellY int64) *gridwellv1.Tile {
 	gid := a.gridIDForPane(p)
 	g, ok := a.c.Grid(gid)
 	if !ok {
@@ -203,7 +206,7 @@ func (a *App) tileAtCell(p *pane.Pane, cellX, cellY int64) *rpc.Tile {
 	for _, n := range g.Tiles {
 		if dragdrop.TileContainsCell(n.X, n.Y, n.W, n.H, cellX, cellY) {
 			nn := n
-			return &nn
+			return nn
 		}
 	}
 	return nil
@@ -258,10 +261,10 @@ func (a *App) onWheel(this js.Value, args []js.Value) any {
 	// the impure facts (live view attached? cursor in the content box? an
 	// enterable well under the cursor, and how much of the view it covers?)
 	// and executes the verdict.
-	var hoverWell *rpc.Tile
+	var hoverWell *gridwellv1.Tile
 	wellCoverage := 0.0
 	if p.ContentID() == "" {
-		if t := a.tileAtScreen(p, r, sx, sy); t != nil && rpc.IsWellKind(t.Kind) && t.ChildGridID != "" {
+		if t := a.tileAtScreen(p, r, sx, sy); t != nil && rpc.IsWellKind(t.Kind) && t.ChildGridId != "" {
 			hoverWell = t
 			ps := paneToDragdrop(p, r)
 			x0, y0 := ps.CellToScreen(float64(t.X), float64(t.Y))
@@ -321,7 +324,7 @@ func (a *App) onWheel(this js.Value, args []js.Value) any {
 		// later notches feed the drift back in, so a cursor-anchored zoom
 		// travels.
 		cx0, cy0 := zoomtrans.EffectiveCenter(zw)
-		if st, ok := a.persist.wellWheelPending[hoverWell.ID]; ok {
+		if st, ok := a.persist.wellWheelPending[hoverWell.Id]; ok {
 			cx0, cy0 = st.cx, st.cy
 		}
 		cx1, cy1, ratio, changed := zoomtrans.WellWheelView(dy, zw, parentCell,
@@ -329,12 +332,13 @@ func (a *App) onWheel(this js.Value, args []js.Value) any {
 		if !changed {
 			return nil
 		}
-		updated := *hoverWell
+		updated := proto.CloneOf(hoverWell)
 		updated.ViewCx = cx1
 		updated.ViewCy = cy1
 		updated.ViewZoom = ratio
-		a.c.Apply(rpc.Event{Kind: rpc.EventTileChanged, TileChanged: &rpc.TileChanged{Tile: updated}})
-		a.persist.wellWheelPending[hoverWell.ID] = wellWheelDrift{
+		a.c.Apply(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{
+			TileChanged: &gridwellv1.TileChanged{Tile: updated}}})
+		a.persist.wellWheelPending[hoverWell.Id] = wellWheelDrift{
 			gridID: a.gridIDForPane(p), cx: cx1, cy: cy1,
 			ratio: ratio, version: hoverWell.Version,
 		}
@@ -365,9 +369,9 @@ func (a *App) wheelZoomPaneAt(p *pane.Pane, r pane.Rect, dy, sx, sy float64) {
 // resolves the cursor and the corner in whichever space the tile lives —
 // the parent grid, a well's child preview, or the clone arm's parent grid —
 // and every arm records the same six fields the same way.
-func (d *dragState) grabTile(n *rpc.Tile, cursorCellX, cursorCellY, tlX, tlY float64) {
-	d.tileID = n.ID
-	d.snapshotTile = *n
+func (d *dragState) grabTile(n *gridwellv1.Tile, cursorCellX, cursorCellY, tlX, tlY float64) {
+	d.tileID = n.Id
+	d.snapshotTile = n
 	d.cellOffsetX = cursorCellX - float64(n.X)
 	d.cellOffsetY = cursorCellY - float64(n.Y)
 	d.originScreenX = tlX
@@ -514,7 +518,7 @@ func (a *App) onMouseDown(this js.Value, args []js.Value) any {
 			cxF, cyF := cp.ChildCellAtScreen(sx, sy)
 			tlX, tlY := cp.CellToScreen(float64(child.X), float64(child.Y))
 			a.dragging.grabTile(child, cxF, cyF, tlX, tlY)
-			a.dragging.srcGridID = n.ChildGridID
+			a.dragging.srcGridID = n.ChildGridId
 			a.dragging.srcCellSize = cp.CellPx
 			return nil
 		}
@@ -762,7 +766,7 @@ func (a *App) attemptDescentOrAscent(p *pane.Pane, r pane.Rect, sx, sy float64, 
 	// An address-less url tile, dropped bare: the first descent is where the
 	// address is asked for. A url link resolves its address through the
 	// target and never prompts.
-	if hit.Kind == rpc.KindURL && hit.URLString == "" && !hit.LeafLink() {
+	if hit.Kind == rpc.KindURL && hit.UrlString == "" && !rpc.LeafLink(hit) {
 		a.openConfigureURL(p, hit)
 		return true
 	}
@@ -837,7 +841,7 @@ func (a *App) persistedGridView(p *pane.Pane, anchor string, path []string) (cx,
 	if !found {
 		return 0, 0, 0, false
 	}
-	w := wellOf(&t)
+	w := wellOf(t)
 	cx, cy, zoom = zoomtrans.StoredView(w, r.W, r.H, cellPx)
 	return cx, cy, zoom, true
 }

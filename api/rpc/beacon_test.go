@@ -3,14 +3,16 @@ package rpc
 import (
 	"encoding/json"
 	"testing"
+
+	pb "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
 // The beacon bodies must be the exact Connect-unary wire form the ordinary
-// client calls send: same converters, same procedures, so the unload flush
-// and the settle flush cannot write different shapes.
+// client calls send: same requests, same procedures, so the unload flush and
+// the settle flush cannot write different shapes.
 func TestBeaconBodies(t *testing.T) {
-	path, body := SetFramingBeacon(&SetFramingRequest{
-		TileID: "u1/5", Framing: Framing{Cx: 1, Cy: 2, Zoom: 0.5},
+	path, body := SetFramingBeacon(&pb.SetFramingRequest{
+		TileId: "u1/5", Cx: 1, Cy: 2, Zoom: 0.5,
 	})
 	if path != "/gridwell.v1.Gridwell/SetFraming" {
 		t.Errorf("doorway framing path = %q", path)
@@ -23,7 +25,7 @@ func TestBeaconBodies(t *testing.T) {
 		t.Errorf("body = %s", body)
 	}
 
-	path, body = SetFramingBeacon(&SetFramingRequest{RootGridID: "u1/1", Framing: Framing{Cx: 1, Cy: 2, Zoom: 0.3}})
+	path, body = SetFramingBeacon(&pb.SetFramingRequest{RootGridId: "u1/1", Cx: 1, Cy: 2, Zoom: 0.3})
 	// The same procedure for a root: one verb, both rows.
 	if path != "/gridwell.v1.Gridwell/SetFraming" {
 		t.Errorf("root framing path = %q", path)
@@ -32,14 +34,24 @@ func TestBeaconBodies(t *testing.T) {
 		t.Errorf("root body = %s err=%v", body, err)
 	}
 
-	if path, body = SetTextViewBeacon(&SetTextViewRequest{TileID: "u1/9", TextY: 40}); path == "" || body == nil {
-		t.Error("text-view beacon empty")
+	// The preview jpeg never rides a beacon: the queue budget is about
+	// 64 KB, and the store skips an empty preview.
+	path, body = SetTileBeacon(&pb.SetTileRequest{TileId: "u1/9",
+		Tile: &pb.Tile{Kind: KindURL, UrlString: "https://example.com"}, Preview: []byte("jpeg")})
+	if path != "/gridwell.v1.Gridwell/SetTile" {
+		t.Errorf("set-tile path = %q", path)
+	}
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatalf("set-tile body not JSON: %v", err)
+	}
+	if _, ok := m["preview"]; ok {
+		t.Errorf("beacon carries the preview jpeg: %s", body)
 	}
 
 	// The ephemeral cleanup parks, so it can be drained at unload: a quit
 	// mid-ascent must still take the scratch row, and a shell's tmux session,
 	// with it.
-	path, body = DeleteTileBeacon(&DeleteTileRequest{TileID: "u1/7"})
+	path, body = DeleteTileBeacon(&pb.DeleteTileRequest{TileId: "u1/7"})
 	if path != "/gridwell.v1.Gridwell/DeleteTile" {
 		t.Errorf("delete path = %q", path)
 	}

@@ -186,15 +186,15 @@ func TestConnectionThroughTheChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(lp.HomeGridID, localNodeID+"/") {
-		t.Fatalf("home_grid_id = %q, want the local home", lp.HomeGridID)
+	if !strings.HasPrefix(lp.HomeGridId, localNodeID+"/") {
+		t.Fatalf("home_grid_id = %q, want the local home", lp.HomeGridId)
 	}
 	if len(lp.Connections) != 1 {
 		t.Fatalf("connections = %+v, want one", lp.Connections)
 	}
 	conn := lp.Connections[0]
 	wantRoot := localNodeID + "/geneva/rnode1/" + h.rootBare
-	if conn.UUID != localNodeID+"/geneva" || conn.Label != "Geneva" || conn.RootGridID != wantRoot {
+	if conn.Uuid != localNodeID+"/geneva" || conn.Label != "Geneva" || conn.RootGridId != wantRoot {
 		t.Fatalf("connection row = %+v, want uuid %s/geneva rooted at %s", conn, localNodeID, wantRoot)
 	}
 	if h.dialed[0].Addr != "/far/federation.sock" || h.dialed[0].Host != "" {
@@ -207,7 +207,7 @@ func TestConnectionThroughTheChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if menu.HomeGridID != wantRoot || len(menu.Plugins) != 1 || menu.Plugins[0].UUID != localNodeID+"/geneva/rnode1" {
+	if menu.HomeGridId != wantRoot || len(menu.Plugins) != 1 || menu.Plugins[0].Uuid != localNodeID+"/geneva/rnode1" {
 		t.Fatalf("routed menu = %+v", menu)
 	}
 	if menu.ContentToken != "" {
@@ -219,19 +219,19 @@ func TestConnectionThroughTheChain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if g.Grid.NodeNS != localNodeID+"/geneva" || !g.Grid.Writable {
+	if g.Grid.NodeNs != localNodeID+"/geneva" || !g.Grid.Writable {
 		t.Fatalf("landing grid = %+v, want node_ns %s/geneva, writable", g.Grid, localNodeID)
 	}
 
 	// Write through the chain, read back on the remote's own door.
-	txt, err := h.localCl.CreateText(ctx, &rpc.CreateTextRequest{GridID: wantRoot, X: 1, Y: 1, W: 1, H: 1, Data: []byte("# via geneva")})
+	txt, err := h.localCl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: wantRoot, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 1, Y: 1, W: 1, H: 1}}, []byte("# via geneva"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(txt.ID, localNodeID+"/geneva/rnode1/") {
-		t.Fatalf("created id = %q, want the four-segment chain", txt.ID)
+	if !strings.HasPrefix(txt.Id, localNodeID+"/geneva/rnode1/") {
+		t.Fatalf("created id = %q, want the four-segment chain", txt.Id)
 	}
-	bare := strings.TrimPrefix(txt.ID, localNodeID+"/geneva/")
+	bare := strings.TrimPrefix(txt.Id, localNodeID+"/geneva/")
 	data, _, _, err := h.remoteCl.ReadContent(ctx, bare)
 	if err != nil || string(data) != "# via geneva" {
 		t.Fatalf("remote read = %q (%v)", data, err)
@@ -246,7 +246,7 @@ func TestConnectionEventsArrivePrefixed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := lp.Connections[0].RootGridID
+	root := lp.Connections[0].RootGridId
 	// Hop 1: the transport's own stream carries the remote's events with
 	// the connection segment prepended.
 	transportEvents := make(chan *gridwellv1.Event, 32)
@@ -262,7 +262,7 @@ func TestConnectionEventsArrivePrefixed(t *testing.T) {
 	// Hop 2: the local door's stream carries them under the node's id.
 	// (Connect's server-stream call returns only once headers flush — on
 	// the first event — so it runs in a goroutine, like server_test does.)
-	doorEvents := make(chan rpc.Event, 16)
+	doorEvents := make(chan *gridwellv1.Event, 16)
 	doorErr := make(chan error, 1)
 	go func() {
 		es, err := h.localCl.Subscribe(ctx)
@@ -281,7 +281,7 @@ func TestConnectionEventsArrivePrefixed(t *testing.T) {
 		}
 	}()
 	time.Sleep(300 * time.Millisecond)
-	if _, err := h.localCl.CreateText(ctx, &rpc.CreateTextRequest{GridID: root, X: 0, Y: 0, W: 1, H: 1}); err != nil {
+	if _, err := h.localCl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}); err != nil {
 		t.Fatal(err)
 	}
 	for done := false; !done; {
@@ -300,9 +300,9 @@ func TestConnectionEventsArrivePrefixed(t *testing.T) {
 	for {
 		select {
 		case ev := <-doorEvents:
-			if ev.TileChanged != nil {
-				if !strings.HasPrefix(ev.TileChanged.Tile.ID, localNodeID+"/geneva/rnode1/") {
-					t.Fatalf("event id = %q, want the chain", ev.TileChanged.Tile.ID)
+			if c := ev.GetTileChanged(); c != nil {
+				if !strings.HasPrefix(c.GetTile().GetId(), localNodeID+"/geneva/rnode1/") {
+					t.Fatalf("event id = %q, want the chain", c.GetTile().GetId())
 				}
 				return
 			}
@@ -328,7 +328,7 @@ func TestConnectionHealthArrivesQualified(t *testing.T) {
 	defer cancel()
 	h := newTransportHarness(t, []config.ConnectionConfig{{Name: "geneva", Addr: "/s"}}, nil)
 
-	health := make(chan *rpc.PluginHealth, 8)
+	health := make(chan *gridwellv1.EventPluginHealth, 8)
 	doorErr := make(chan error, 1)
 	go func() {
 		es, err := h.localCl.Subscribe(ctx)
@@ -343,8 +343,8 @@ func TestConnectionHealthArrivesQualified(t *testing.T) {
 				doorErr <- err
 				return
 			}
-			if ev.Kind == rpc.EventPluginHealth {
-				health <- ev.PluginHealth
+			if h := ev.GetPluginHealth(); h != nil {
+				health <- h
 			}
 		}
 	}()
@@ -359,9 +359,9 @@ func TestConnectionHealthArrivesQualified(t *testing.T) {
 			if ph.Healthy {
 				continue // the transport's own fan-in settling, not the outage
 			}
-			if ph.PluginUUID != localNodeID+"/geneva" {
+			if ph.PluginUuid != localNodeID+"/geneva" {
 				t.Fatalf("health uuid = %q, want %s/geneva — the client cannot address a connection it was told about by its bare name",
-					ph.PluginUUID, localNodeID)
+					ph.PluginUuid, localNodeID)
 			}
 			if ph.Detail == "" {
 				t.Error("a health-down with no detail tells the user nothing about why")
@@ -385,7 +385,7 @@ func TestDialFailureRidesTheRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(lp.Connections) != 1 || lp.Connections[0].RootGridID != "" || !strings.Contains(lp.Connections[0].StatusDetail, "host key mismatch") {
+	if len(lp.Connections) != 1 || lp.Connections[0].RootGridId != "" || !strings.Contains(lp.Connections[0].StatusDetail, "host key mismatch") {
 		t.Fatalf("pending row = %+v, want no root and the dial failure as status", lp.Connections)
 	}
 	if _, err := h.localCl.GetGrid(ctx, localNodeID+"/dead/x/1"); err == nil {
@@ -407,15 +407,15 @@ func TestShellDoorThroughAConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	remoteRoot := lp.Connections[0].RootGridID
+	remoteRoot := lp.Connections[0].RootGridId
 
 	// The shell tile lives on the REMOTE, created through the chain.
-	tile, err := h.localCl.CreateShell(ctx, &rpc.CreateShellRequest{GridID: remoteRoot, X: 0, Y: 0, W: 1, H: 1})
+	tile, err := h.localCl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: remoteRoot, Tile: &gridwellv1.Tile{Kind: rpc.KindShell, X: 0, Y: 0, W: 1, H: 1}})
 	if err != nil {
 		t.Fatalf("CreateShell through the connection: %v", err)
 	}
-	if !strings.HasPrefix(tile.ID, localNodeID+"/geneva/") {
-		t.Fatalf("tile id %q is not a chain through the connection", tile.ID)
+	if !strings.HasPrefix(tile.Id, localNodeID+"/geneva/") {
+		t.Fatalf("tile id %q is not a chain through the connection", tile.Id)
 	}
 
 	out := make(chan []byte, 8)
@@ -425,7 +425,7 @@ func TestShellDoorThroughAConnection(t *testing.T) {
 		func(_ string, b []byte) { out <- append([]byte(nil), b...) },
 		func(e shellstream.Exit) { exits <- e },
 	)
-	reg.Open("pane-1", tile.ID, 90, 30)
+	reg.Open("pane-1", tile.Id, 90, 30)
 	t.Cleanup(func() { reg.Close("pane-1") })
 
 	reg.Write("pane-1", []byte("across the wire"))
@@ -463,7 +463,7 @@ func TestTwoSubscribersEachSeeExactlyOnePrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := lp.Connections[0].RootGridID
+	root := lp.Connections[0].RootGridId
 
 	const subscribers = 4
 	ids := make(chan string, subscribers*8)
@@ -481,9 +481,9 @@ func TestTwoSubscribersEachSeeExactlyOnePrefix(t *testing.T) {
 				if err != nil || !ok {
 					return
 				}
-				if ev.TileChanged != nil {
+				if c := ev.GetTileChanged(); c != nil {
 					select {
-					case ids <- ev.TileChanged.Tile.ID:
+					case ids <- c.GetTile().GetId():
 					case <-ctx.Done():
 						return
 					}
@@ -493,7 +493,7 @@ func TestTwoSubscribersEachSeeExactlyOnePrefix(t *testing.T) {
 	}
 	time.Sleep(500 * time.Millisecond) // every subscriber is fanned in
 
-	if _, err := h.localCl.CreateText(ctx, &rpc.CreateTextRequest{GridID: root, X: 0, Y: 0, W: 1, H: 1}); err != nil {
+	if _, err := h.localCl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -534,32 +534,27 @@ func TestLeafLinkToConnectionTargetResolves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	localHome, remoteRoot := lp.HomeGridID, lp.Connections[0].RootGridID
+	localHome, remoteRoot := lp.HomeGridId, lp.Connections[0].RootGridId
 
 	// The target: a text tile on the far node, addressed through the chain.
 	body := []byte("# through geneva")
-	src, err := h.localCl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: remoteRoot, X: 0, Y: 0, W: 2, H: 2, Data: body,
-	})
+	src, err := h.localCl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: remoteRoot, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 2, H: 2}}, body)
 	if err != nil {
 		t.Fatalf("create remote text: %v", err)
 	}
-	if !strings.HasPrefix(src.ID, localNodeID+"/geneva/") {
-		t.Fatalf("target id = %q, want a connection chain", src.ID)
+	if !strings.HasPrefix(src.Id, localNodeID+"/geneva/") {
+		t.Fatalf("target id = %q, want a connection chain", src.Id)
 	}
 
 	// The link: a leaf link on the LOCAL home pointing at it.
-	link, err := h.localCl.CreateLeafLink(ctx, &rpc.CreateLeafLinkRequest{
-		GridID: localHome, X: 4, Y: 0, W: 2, H: 2, Kind: rpc.KindText,
-		LinkTargetID: src.ID, Label: "through geneva",
-	})
+	link, err := h.localCl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: localHome, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 4, Y: 0, W: 2, H: 2, LinkTargetId: src.Id, AltText: "through geneva"}})
 	if err != nil {
 		t.Fatalf("create link: %v", err)
 	}
 
 	// Reading the LINK's own id — what a session restore hands ReadContent —
 	// returns the target's bytes.
-	data, _, version, err := h.localCl.ReadContent(ctx, link.ID)
+	data, _, version, err := h.localCl.ReadContent(ctx, link.Id)
 	if err != nil {
 		t.Fatalf("read through a link into a connection: %v", err)
 	}
@@ -572,23 +567,18 @@ func TestLeafLinkToConnectionTargetResolves(t *testing.T) {
 
 	// The preview door resolves the same link the same way.
 	jpeg := []byte("\xff\xd8fake-jpeg-bytes")
-	url, err := h.localCl.CreateURL(ctx, &rpc.CreateURLRequest{
-		GridID: remoteRoot, X: 0, Y: 4, W: 2, H: 2, URL: "https://example.com",
-	})
+	url, err := h.localCl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: remoteRoot, Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: 0, Y: 4, W: 2, H: 2, UrlString: "https://example.com"}})
 	if err != nil {
 		t.Fatalf("create remote url: %v", err)
 	}
-	if _, err := h.localCl.SetURLState(ctx, &rpc.SetURLStateRequest{TileID: url.ID, JPEG: jpeg}); err != nil {
+	if _, err := h.localCl.SetTile(ctx, &gridwellv1.SetTileRequest{TileId: url.Id, Tile: &gridwellv1.Tile{Kind: rpc.KindURL}, Preview: jpeg}); err != nil {
 		t.Fatalf("freeze: %v", err)
 	}
-	urlLink, err := h.localCl.CreateLeafLink(ctx, &rpc.CreateLeafLinkRequest{
-		GridID: localHome, X: 4, Y: 4, W: 2, H: 2, Kind: rpc.KindURL,
-		LinkTargetID: url.ID, Label: "example",
-	})
+	urlLink, err := h.localCl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: localHome, Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: 4, Y: 4, W: 2, H: 2, LinkTargetId: url.Id, AltText: "example"}})
 	if err != nil {
 		t.Fatalf("create url link: %v", err)
 	}
-	got, err := h.localCl.GetTilePreview(ctx, urlLink.ID)
+	got, err := h.localCl.GetTilePreview(ctx, urlLink.Id)
 	if err != nil {
 		t.Fatalf("preview through a link into a connection: %v", err)
 	}

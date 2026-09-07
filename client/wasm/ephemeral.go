@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/errsurface"
@@ -43,7 +44,7 @@ func (a *App) scratchGridIn(gridID string) scratch.Grid {
 	if !ok {
 		return scratch.Grid{}
 	}
-	return scratch.Grid{Cached: true, ScratchGridID: g.Meta.ScratchGridID}
+	return scratch.Grid{Cached: true, ScratchGridID: g.Meta.ScratchGridId}
 }
 
 // scratchFor is scratch.For over that read: the scratch grid a visit from
@@ -86,14 +87,13 @@ func (a *App) visitEphemeralURL(p *pane.Pane, url string) {
 		return
 	}
 	paneID := p.ID
-	req := &rpc.CreateURLRequest{
-		GridID: scratch, X: 0, Y: 0, W: 1, H: 1, URL: url,
-	}
-	a.postTileMutate("CreateURL", scratch, func(ctx context.Context) (*rpc.Tile, error) {
-		return a.cl.CreateURL(ctx, req)
-	}, func(tile rpc.Tile) {
+	req := &gridwellv1.CreateTileRequest{GridId: scratch,
+		Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: 0, Y: 0, W: 1, H: 1, UrlString: url}}
+	a.postTileMutate("CreateURL", scratch, func(ctx context.Context) (*gridwellv1.Tile, error) {
+		return a.cl.CreateTile(ctx, req)
+	}, func(tile *gridwellv1.Tile) {
 		if fp := a.tree.FindPane(paneID); fp != nil {
-			a.descend(fp, &tile)
+			a.descend(fp, tile)
 		}
 	})
 }
@@ -104,8 +104,8 @@ func (a *App) visitEphemeralURL(p *pane.Pane, url string) {
 // each of those is irreversible or a promise, and none may be made on a
 // guess. An unloaded grid answers no, and the read kicked the fetch that
 // makes the next answer real.
-func (a *App) certainlyEphemeral(p *pane.Pane, t *rpc.Tile) bool {
-	eph, known := scratch.Ephemeral(a.scratchGridOf(p), t.GridID)
+func (a *App) certainlyEphemeral(p *pane.Pane, t *gridwellv1.Tile) bool {
+	eph, known := scratch.Ephemeral(a.scratchGridOf(p), t.GridId)
 	return known && eph
 }
 
@@ -114,8 +114,8 @@ func (a *App) certainlyEphemeral(p *pane.Pane, t *rpc.Tile) bool {
 // intent, or re-anchoring its pane onto its own grid — because a write made
 // about a visit that is about to die leaves a mark the user never asked for,
 // while a write skipped costs only that it is made a moment later.
-func (a *App) possiblyEphemeral(p *pane.Pane, t *rpc.Tile) bool {
-	eph, known := scratch.Ephemeral(a.scratchGridOf(p), t.GridID)
+func (a *App) possiblyEphemeral(p *pane.Pane, t *gridwellv1.Tile) bool {
+	eph, known := scratch.Ephemeral(a.scratchGridOf(p), t.GridId)
 	return eph || !known
 }
 
@@ -136,7 +136,7 @@ func (a *App) deleteEphemeralTile(gridID, tileID string) {
 	// that precedes it triggers the plugin's detach-time title capture.
 	// Captures do not bump the row and a delete carries no claim, so the two
 	// cannot race.
-	req := &rpc.DeleteTileRequest{TileID: tileID}
+	req := &gridwellv1.DeleteTileRequest{TileId: tileID}
 	// Drop any cached liveness probe: the row is going, and so is the tmux
 	// session behind it.
 	delete(a.shellAlive, tileID)
@@ -165,12 +165,13 @@ func (a *App) visitEphemeralShell(p *pane.Pane) {
 		return
 	}
 	paneID := p.ID
-	req := &rpc.CreateShellRequest{GridID: scratch, X: 0, Y: 0, W: 1, H: 1}
-	a.postTileMutate("CreateShell", scratch, func(ctx context.Context) (*rpc.Tile, error) {
-		return a.cl.CreateShell(ctx, req)
-	}, func(tile rpc.Tile) {
+	req := &gridwellv1.CreateTileRequest{GridId: scratch,
+		Tile: &gridwellv1.Tile{Kind: rpc.KindShell, X: 0, Y: 0, W: 1, H: 1}}
+	a.postTileMutate("CreateShell", scratch, func(ctx context.Context) (*gridwellv1.Tile, error) {
+		return a.cl.CreateTile(ctx, req)
+	}, func(tile *gridwellv1.Tile) {
 		if fp := a.tree.FindPane(paneID); fp != nil {
-			a.descend(fp, &tile)
+			a.descend(fp, tile)
 		}
 	})
 }
@@ -231,19 +232,20 @@ func (a *App) promoteEphemeralURL(originPaneID, destPaneID, gid string, cellX, c
 		return
 	}
 	t, ok := a.descendedTile(op)
-	if !ok || t.Kind != rpc.KindURL || !a.certainlyEphemeral(op, &t) {
+	if !ok || t.Kind != rpc.KindURL || !a.certainlyEphemeral(op, t) {
 		return
 	}
-	url := t.URLString
+	url := t.UrlString
 	if v := a.urlViewFor(op.ID); v != nil && v.lastURL != "" {
 		url = v.lastURL
 	}
 	destID := destPaneID
-	oldID := t.ID
-	req := &rpc.CreateURLRequest{GridID: gid, X: cellX, Y: cellY, W: 1, H: 1, URL: url}
-	a.postTileMutate("CreateURL", gid, func(ctx context.Context) (*rpc.Tile, error) {
-		return a.cl.CreateURL(ctx, req)
-	}, func(created rpc.Tile) {
+	oldID := t.Id
+	req := &gridwellv1.CreateTileRequest{GridId: gid,
+		Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: cellX, Y: cellY, W: 1, H: 1, UrlString: url}}
+	a.postTileMutate("CreateURL", gid, func(ctx context.Context) (*gridwellv1.Tile, error) {
+		return a.cl.CreateTile(ctx, req)
+	}, func(created *gridwellv1.Tile) {
 		// The create was the await: what happens now — the freeze onto the new
 		// row, the ephemeral delete, the relocation, going live again — is the
 		// promote verb, planned against the world as it is when the row lands.

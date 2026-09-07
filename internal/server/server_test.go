@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -72,9 +73,7 @@ func errCode(err error) connect.Code {
 
 func TestCreateWell(t *testing.T) {
 	_, cl, root := newTestServer(t)
-	tile, err := cl.CreateWell(context.Background(), &rpc.CreateWellRequest{
-		GridID: root, X: 1, Y: 2, W: 1, H: 1,
-	})
+	tile, err := cl.CreateTile(context.Background(), &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 1, Y: 2, W: 1, H: 1}})
 	if err != nil {
 		t.Fatalf("create well: %v", err)
 	}
@@ -92,7 +91,7 @@ func TestSubscribeStreamsEvents(t *testing.T) {
 	// HTTP/1.1 streaming response only flushes headers once the
 	// server sends its first frame — so cl.Subscribe blocks until the
 	// CreateWell below fires. Concurrent setup avoids the deadlock.
-	doneCh := make(chan rpc.Event, 1)
+	doneCh := make(chan *gridwellv1.Event, 1)
 	errCh := make(chan error, 1)
 	go func() {
 		stream, err := cl.Subscribe(ctx)
@@ -116,16 +115,14 @@ func TestSubscribeStreamsEvents(t *testing.T) {
 	// Give the goroutine a moment to land its subscribe request on the
 	// server's subscriber list before triggering the event.
 	time.Sleep(100 * time.Millisecond)
-	if _, err := cl.CreateWell(context.Background(), &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	}); err != nil {
+	if _, err := cl.CreateTile(context.Background(), &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1}}); err != nil {
 		t.Fatalf("create well: %v", err)
 	}
 
 	select {
 	case ev := <-doneCh:
-		if ev.Kind != rpc.EventTileChanged && ev.Kind != rpc.EventGridChanged {
-			t.Errorf("first event kind = %q", ev.Kind)
+		if ev.GetTileChanged() == nil && ev.GetGridChanged() == nil {
+			t.Errorf("first event = %v", ev)
 		}
 	case err := <-errCh:
 		t.Errorf("stream error: %v", err)

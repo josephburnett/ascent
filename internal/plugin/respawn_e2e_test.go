@@ -12,6 +12,7 @@ package plugin_test
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -95,7 +96,7 @@ func TestAPluginSubprocessCrashSurfacesAndRespawns(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	events := make(chan rpc.Event, 64)
+	events := make(chan *gridwellv1.Event, 64)
 	go func() {
 		stream, serr := cl.Subscribe(ctx)
 		if serr != nil {
@@ -112,7 +113,7 @@ func TestAPluginSubprocessCrashSurfacesAndRespawns(t *testing.T) {
 			events <- ev
 		}
 	}()
-	await := func(want bool, what string) rpc.PluginHealth {
+	await := func(want bool, what string) *gridwellv1.EventPluginHealth {
 		t.Helper()
 		for {
 			select {
@@ -120,15 +121,15 @@ func TestAPluginSubprocessCrashSurfacesAndRespawns(t *testing.T) {
 				if !ok {
 					t.Fatal("the event stream ended")
 				}
-				h := ev.PluginHealth
-				if ev.Kind != rpc.EventPluginHealth || h == nil {
+				h := ev.GetPluginHealth()
+				if h == nil {
 					continue
 				}
-				if h.PluginUUID != respawnUUID {
-					t.Fatalf("health event uuid = %q, want the namespace it came from", h.PluginUUID)
+				if h.PluginUuid != respawnUUID {
+					t.Fatalf("health event uuid = %q, want the namespace it came from", h.PluginUuid)
 				}
 				if h.Healthy == want {
-					return *h
+					return h
 				}
 			case <-ctx.Done():
 				t.Fatal(what)
@@ -151,7 +152,7 @@ func TestAPluginSubprocessCrashSurfacesAndRespawns(t *testing.T) {
 			if time.Now().After(deadline) {
 				t.Fatal("a write's GridChanged never reached the client stream")
 			}
-			if _, perr := cl.PlaceTile(ctx, &rpc.PlaceTileRequest{TileID: g.Tiles[0].ID, X: 4, Y: 4, W: 1, H: 1}); perr != nil {
+			if _, perr := cl.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{TileId: g.Tiles[0].Id, X: 4, Y: 4, W: 1, H: 1}); perr != nil {
 				t.Fatal(perr)
 			}
 			timeout := time.After(300 * time.Millisecond)
@@ -162,7 +163,7 @@ func TestAPluginSubprocessCrashSurfacesAndRespawns(t *testing.T) {
 					if !ok {
 						t.Fatal("the event stream ended")
 					}
-					if ev.Kind == rpc.EventGridChanged && ev.GridChanged != nil && ev.GridChanged.GridID == rootGrid {
+					if g := ev.GetGridChanged(); g != nil && g.GridId == rootGrid {
 						return
 					}
 				case <-timeout:

@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -78,20 +79,18 @@ func TestContentConflictSurfaces(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
 
-	tile, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte("v1"),
-	})
+	tile, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("v1"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	basis := tile.Version
 
 	// Someone else edits the bytes; our basis is now stale.
-	if _, err := cl.WriteContent(ctx, tile.ID, basis, []byte("their edit")); err != nil {
+	if _, err := cl.WriteContent(ctx, tile.Id, basis, []byte("their edit")); err != nil {
 		t.Fatalf("foreign edit: %v", err)
 	}
 
-	_, err = cl.WriteContent(ctx, tile.ID, basis, []byte("my edit"))
+	_, err = cl.WriteContent(ctx, tile.Id, basis, []byte("my edit"))
 	if err == nil {
 		t.Fatal("a stale save basis must not be accepted — that is the stomp")
 	}
@@ -104,7 +103,7 @@ func TestContentConflictSurfaces(t *testing.T) {
 	}
 
 	// And the server still holds the other edit, byte-for-byte.
-	body, _, _, err := cl.ReadContent(ctx, tile.ID)
+	body, _, _, err := cl.ReadContent(ctx, tile.Id)
 	if err != nil || string(body) != "their edit" {
 		t.Errorf("server holds %q (err %v), want the foreign edit intact", body, err)
 	}
@@ -119,45 +118,37 @@ func TestCaptureDuringAnEditDoesNotConflict(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
 
-	tile, err := cl.CreateURL(ctx, &rpc.CreateURLRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, URL: "https://start.example",
-	})
+	tile, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: 0, Y: 0, W: 1, H: 1, UrlString: "https://start.example"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, _, basis, err := cl.ReadContent(ctx, tile.ID)
+	_, _, basis, err := cl.ReadContent(ctx, tile.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// The live view is torn down mid-edit and freezes everything it saw.
-	if _, err := cl.SetURLState(ctx, &rpc.SetURLStateRequest{
-		TileID: tile.ID,
-		JPEG:   []byte("frozen frame"), URL: "https://start.example/deep",
-		Title: "a title nobody typed", History: `["https://start.example"]`,
-	}); err != nil {
+	if _, err := cl.SetTile(ctx, &gridwellv1.SetTileRequest{TileId: tile.Id, Tile: &gridwellv1.Tile{Kind: rpc.KindURL, UrlString: "https://start.example/deep", AltText: "a title nobody typed", UrlHistory: `["https://start.example"]`}, Preview: []byte("frozen frame")}); err != nil {
 		t.Fatalf("capture: %v", err)
 	}
 	// A shell-style automatic name capture on the same row, for good measure.
-	if _, err := cl.SetContentZoom(ctx, &rpc.SetContentZoomRequest{
-		TileID: tile.ID, ContentZoom: 1.25,
-	}); err != nil {
+	if _, err := cl.SetContentZoom(ctx, tile.Id, 1.25); err != nil {
 		t.Fatalf("content zoom: %v", err)
 	}
 
-	if _, err := cl.WriteContent(ctx, tile.ID, basis, []byte("https://the.user.typed.this")); err != nil {
+	if _, err := cl.WriteContent(ctx, tile.Id, basis, []byte("https://the.user.typed.this")); err != nil {
 		t.Fatalf("the user's edit lost to a capture: %v", err)
 	}
-	after, err := cl.GetTile(ctx, tile.ID)
+	after, err := cl.GetTile(ctx, tile.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.URLString != "https://the.user.typed.this" {
-		t.Errorf("address = %q, want the typed one", after.URLString)
+	if after.UrlString != "https://the.user.typed.this" {
+		t.Errorf("address = %q, want the typed one", after.UrlString)
 	}
 	// The capture is still there — last-writer-wins, not discarded.
-	if after.URLHistory == "" || after.PreviewBlobID == 0 {
-		t.Errorf("the capture was lost: history=%q preview=%d", after.URLHistory, after.PreviewBlobID)
+	if after.UrlHistory == "" || after.PreviewBlobId == 0 {
+		t.Errorf("the capture was lost: history=%q preview=%d", after.UrlHistory, after.PreviewBlobId)
 	}
 	// And exactly one bump happened, from the one user edit.
 	if after.Version != basis+1 {
@@ -175,17 +166,17 @@ func TestTransportFailureParksAndTheKickLandsIt(t *testing.T) {
 	_, healthy, flaky, link, root := flakyClient(t)
 	ctx := context.Background()
 
-	well, err := healthy.CreateWell(ctx, &rpc.CreateWellRequest{GridID: root, X: 0, Y: 0, W: 1, H: 1})
+	well, err := healthy.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	out := outbox.New()
-	key := outbox.Key{Op: "SetFraming", ID: well.ID}
+	key := outbox.Key{Op: "SetFraming", ID: well.Id}
 	framing := rpc.Framing{Cx: 12.5, Cy: -3.25, Zoom: 1.75}
 	var post func()
 	post = func() {
-		_, err := flaky.SetFraming(ctx, &rpc.SetFramingRequest{TileID: well.ID, Framing: framing})
+		_, err := flaky.SetFraming(ctx, &gridwellv1.SetFramingRequest{TileId: well.Id, Cx: framing.Cx, Cy: framing.Cy, Zoom: framing.Zoom})
 		out.Record(clientsync.Of(err), key, post)
 	}
 
@@ -194,7 +185,7 @@ func TestTransportFailureParksAndTheKickLandsIt(t *testing.T) {
 	if out.Len() != 1 {
 		t.Fatalf("a transport failure left %d writes parked, want 1", out.Len())
 	}
-	if got := framingOf(t, healthy, well.ID); got == framing {
+	if got := framingOf(t, healthy, well.Id); got == framing {
 		t.Fatal("the server took the write while the link was down")
 	}
 
@@ -220,7 +211,7 @@ func TestTransportFailureParksAndTheKickLandsIt(t *testing.T) {
 	if out.Len() != 0 {
 		t.Errorf("a landed write left %d parked", out.Len())
 	}
-	if got := framingOf(t, healthy, well.ID); got != framing {
+	if got := framingOf(t, healthy, well.Id); got != framing {
 		t.Errorf("framing after the kick = %+v, want %+v", got, framing)
 	}
 }
@@ -230,12 +221,12 @@ func TestTransportFailureParksAndTheKickLandsIt(t *testing.T) {
 // Subscribe stream carried back, in the order the server emitted them. Both
 // halves come off the wire: a constructed echo would only re-test the client's
 // own unit rules.
-func echoesOf(t *testing.T, cl *rpc.Client, tileID string, basis int64) (resp, echo [2]rpc.Tile) {
+func echoesOf(t *testing.T, cl *rpc.Client, tileID string, basis int64) (resp, echo [2]*gridwellv1.Tile) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	t.Cleanup(cancel)
 
-	rows := make(chan rpc.Tile, 32)
+	rows := make(chan *gridwellv1.Tile, 32)
 	streamErr := make(chan error, 1)
 	go func() {
 		stream, err := cl.Subscribe(ctx)
@@ -250,8 +241,8 @@ func echoesOf(t *testing.T, cl *rpc.Client, tileID string, basis int64) (resp, e
 				streamErr <- err
 				return
 			}
-			if ev.Kind == rpc.EventTileChanged && ev.TileChanged != nil && ev.TileChanged.Tile.ID == tileID {
-				rows <- ev.TileChanged.Tile
+			if c := ev.GetTileChanged(); c != nil && c.GetTile().GetId() == tileID {
+				rows <- c.Tile
 			}
 		}
 	}()
@@ -262,17 +253,17 @@ func echoesOf(t *testing.T, cl *rpc.Client, tileID string, basis int64) (resp, e
 		if err != nil {
 			t.Fatalf("write %d: %v", i+1, err)
 		}
-		resp[i] = *tile
+		resp[i] = tile
 		basis = tile.Version
 	}
 	// The stream also carries the create's own row, so collect by version
 	// rather than by arrival position.
-	seen := map[int64]rpc.Tile{}
+	seen := map[int64]*gridwellv1.Tile{}
 	for {
 		_, got1 := seen[resp[0].Version]
 		_, got2 := seen[resp[1].Version]
 		if got1 && got2 {
-			return resp, [2]rpc.Tile{seen[resp[0].Version], seen[resp[1].Version]}
+			return resp, [2]*gridwellv1.Tile{seen[resp[0].Version], seen[resp[1].Version]}
 		}
 		select {
 		case row := <-rows:
@@ -304,9 +295,7 @@ func TestEchoInterlockAcrossTheSeam(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
 
-	created, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte("v0"),
-	})
+	created, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("v0"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +305,7 @@ func TestEchoInterlockAcrossTheSeam(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, echo := echoesOf(t, cl, created.ID, created.Version)
+	resp, echo := echoesOf(t, cl, created.Id, created.Version)
 	if resp[0].Version >= resp[1].Version {
 		t.Fatalf("two writes did not advance the row: %d then %d", resp[0].Version, resp[1].Version)
 	}
@@ -326,7 +315,7 @@ func TestEchoInterlockAcrossTheSeam(t *testing.T) {
 	// the way App.startSSE applies it.
 	type step struct {
 		name string
-		tile rpc.Tile
+		tile *gridwellv1.Tile
 		echo bool
 	}
 	r1 := step{"response 1", resp[0], false}
@@ -350,22 +339,22 @@ func TestEchoInterlockAcrossTheSeam(t *testing.T) {
 			high := created.Version
 			for _, s := range tc.order {
 				if s.echo {
-					c.Apply(rpc.Event{Kind: rpc.EventTileChanged, TileChanged: &rpc.TileChanged{Tile: s.tile}})
+					c.Apply(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{TileChanged: &gridwellv1.TileChanged{Tile: s.tile}}})
 				} else {
-					c.UpdateTile(s.tile.GridID, s.tile)
+					c.UpdateTile(s.tile.GridId, s.tile)
 				}
 				g, ok := c.Grid(root)
 				if !ok {
 					t.Fatal("the grid left the cache")
 				}
-				got := g.Tiles[created.ID].Version
+				got := g.Tiles[created.Id].Version
 				if got < high {
 					t.Fatalf("after %s the cached row went back to %d from %d", s.name, got, high)
 				}
 				high = got
 			}
 			g, _ := c.Grid(root)
-			if got := g.Tiles[created.ID].Version; got != resp[1].Version {
+			if got := g.Tiles[created.Id].Version; got != resp[1].Version {
 				t.Errorf("settled at version %d, want the last write's %d", got, resp[1].Version)
 			}
 		})
@@ -388,9 +377,7 @@ func TestAResponseRowObeysTheInterlock(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
 
-	created, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte("v0"),
-	})
+	created, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("v0"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -398,23 +385,23 @@ func TestAResponseRowObeysTheInterlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, echo := echoesOf(t, cl, created.ID, created.Version)
+	resp, echo := echoesOf(t, cl, created.Id, created.Version)
 
 	c := cache.New()
 	c.PutGrid(grid.Grid, grid.Tiles)
 	// The newer write is settled, response and echo both.
-	c.UpdateTile(resp[1].GridID, resp[1])
-	c.Apply(rpc.Event{Kind: rpc.EventTileChanged, TileChanged: &rpc.TileChanged{Tile: echo[1]}})
+	c.UpdateTile(resp[1].GridId, resp[1])
+	c.Apply(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{TileChanged: &gridwellv1.TileChanged{Tile: echo[1]}}})
 	// The older write's ECHO is refused.
-	c.Apply(rpc.Event{Kind: rpc.EventTileChanged, TileChanged: &rpc.TileChanged{Tile: echo[0]}})
+	c.Apply(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{TileChanged: &gridwellv1.TileChanged{Tile: echo[0]}}})
 	g, _ := c.Grid(root)
-	if got := g.Tiles[created.ID].Version; got != resp[1].Version {
+	if got := g.Tiles[created.Id].Version; got != resp[1].Version {
 		t.Fatalf("a stale echo moved the row to %d, want %d", got, resp[1].Version)
 	}
 	// And so is the older write's RESPONSE: same fact, same rule, one door.
-	c.UpdateTile(resp[0].GridID, resp[0])
+	c.UpdateTile(resp[0].GridId, resp[0])
 	g, _ = c.Grid(root)
-	if got := g.Tiles[created.ID].Version; got != resp[1].Version {
+	if got := g.Tiles[created.Id].Version; got != resp[1].Version {
 		t.Fatalf("a stale RESPONSE rolled the row back to %d, want %d: "+
 			"Cache.UpdateTile is a second door into the tile map again (#274)", got, resp[1].Version)
 	}
@@ -429,15 +416,15 @@ func TestUnloadDrainsTheOutbox(t *testing.T) {
 	hs, healthy, flaky, link, root := flakyClient(t)
 	ctx := context.Background()
 
-	well, err := healthy.CreateWell(ctx, &rpc.CreateWellRequest{GridID: root, X: 0, Y: 0, W: 1, H: 1})
+	well, err := healthy.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	framing := rpc.Framing{Cx: 5, Cy: 6, Zoom: 0.75}
-	req := &rpc.SetFramingRequest{TileID: well.ID, Framing: framing}
+	req := &gridwellv1.SetFramingRequest{TileId: well.Id, Cx: framing.Cx, Cy: framing.Cy, Zoom: framing.Zoom}
 
 	out := outbox.New()
-	key := outbox.Key{Op: "SetFraming", ID: well.ID}
+	key := outbox.Key{Op: "SetFraming", ID: well.Id}
 	link.down.Store(true)
 	_, err = flaky.SetFraming(ctx, req)
 	out.Record(clientsync.Of(err), key, func() { t.Fatal("unused") })
@@ -452,7 +439,7 @@ func TestUnloadDrainsTheOutbox(t *testing.T) {
 			t.Fatalf("framing beacon = %d, want 200", res.StatusCode)
 		}
 	}
-	if got := framingOf(t, healthy, well.ID); got != framing {
+	if got := framingOf(t, healthy, well.Id); got != framing {
 		t.Errorf("framing after the unload drain = %+v, want %+v", got, framing)
 	}
 }

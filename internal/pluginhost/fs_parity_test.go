@@ -12,6 +12,7 @@ package pluginhost_test
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"os"
 	"path/filepath"
 	"testing"
@@ -108,16 +109,16 @@ func TestPluginServesTouchedRowsWhenSourceDark(t *testing.T) {
 	}
 	// One durable touch: the user drags notes.md somewhere. That is what
 	// mints a row, and the row is what survives the dark.
-	var notes rpc.Tile
+	var notes *gridwellv1.Tile
 	for _, tile := range before.Tiles {
 		if tile.AltText == "notes.md" {
 			notes = tile
 		}
 	}
-	if notes.ID == "" {
+	if notes.Id == "" {
 		t.Fatal("no notes.md tile")
 	}
-	placed, err := v2.PlaceTile(ctx, &rpc.PlaceTileRequest{TileID: notes.ID, GridID: rootGrid, X: 7, Y: 3, W: 1, H: 1})
+	placed, err := v2.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{TileId: notes.Id, GridId: rootGrid, X: 7, Y: 3, W: 1, H: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +135,7 @@ func TestPluginServesTouchedRowsWhenSourceDark(t *testing.T) {
 	if len(after.Tiles) != 1 {
 		t.Fatalf("dark source answered %d tiles, want only the touched one: %+v", len(after.Tiles), after.Tiles)
 	}
-	if got := after.Tiles[0]; got.ID != placed.ID || got.X != 7 || got.Y != 3 || got.AltText != "notes.md" {
+	if got := after.Tiles[0]; got.Id != placed.Id || got.X != 7 || got.Y != 3 || got.AltText != "notes.md" {
 		t.Fatalf("the touched row drifted in the dark: %+v", got)
 	}
 	// The source returns; the stale stamp clears and every entry is back.
@@ -168,7 +169,7 @@ func TestDeleteRetiresOnTheWire(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var bin rpc.Tile
+	var bin *gridwellv1.Tile
 	for _, tile := range g.Tiles {
 		if tile.AltText == "data.bin" {
 			bin = tile
@@ -178,24 +179,24 @@ func TestDeleteRetiresOnTheWire(t *testing.T) {
 	// "recreation mints fresh" half of the contract needs one. An entry nobody
 	// ever touched has no row — deleting it is the plugin's verdict and
 	// nothing else, which the last stanza pins.
-	minted, err := v2.PlaceTile(ctx, &rpc.PlaceTileRequest{TileID: bin.ID, GridID: rootGrid, X: 4, Y: 4, W: 1, H: 1})
+	minted, err := v2.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{TileId: bin.Id, GridId: rootGrid, X: 4, Y: 4, W: 1, H: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if minted.ID != bin.ID {
-		t.Fatalf("the placement renamed the entry: %q, was %q", minted.ID, bin.ID)
+	if minted.Id != bin.Id {
+		t.Fatalf("the placement renamed the entry: %q, was %q", minted.Id, bin.Id)
 	}
-	bin = *minted
-	if err := v2.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: bin.ID}); err != nil {
+	bin = minted
+	if err := v2.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: bin.Id}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "data.bin")); !os.IsNotExist(err) {
 		t.Fatalf("source file not deleted: %v", err)
 	}
-	if _, err := v2.GetTile(ctx, bin.ID); err == nil {
+	if _, err := v2.GetTile(ctx, bin.Id); err == nil {
 		t.Fatal("a retired tile still reads")
 	}
-	if err := v2.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: bin.ID}); err != nil {
+	if err := v2.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: bin.Id}); err != nil {
 		t.Fatalf("delete must be idempotent: %v", err)
 	}
 	// Recreation mints a fresh ROW. The entry's public id is its key's address
@@ -212,21 +213,21 @@ func TestDeleteRetiresOnTheWire(t *testing.T) {
 		t.Fatal(err)
 	}
 	remade := tileNamed(g.Tiles, "data.bin")
-	if remade.ID != bin.ID {
-		t.Fatalf("a recreated file was renamed: %q, want the key's address %q", remade.ID, bin.ID)
+	if remade.Id != bin.Id {
+		t.Fatalf("a recreated file was renamed: %q, want the key's address %q", remade.Id, bin.Id)
 	}
 	if remade.X == 4 && remade.Y == 4 {
 		t.Fatal("a recreated file inherited the retired row's placement")
 	}
 	// Deleting an UNTOUCHED entry involves no row at all: the plugin trashes
 	// the file and the next listing simply does not name it.
-	var doc rpc.Tile
+	var doc *gridwellv1.Tile
 	for _, tile := range g.Tiles {
 		if tile.AltText == "notes.md" {
 			doc = tile
 		}
 	}
-	if err := v2.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: doc.ID}); err != nil {
+	if err := v2.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: doc.Id}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(root, "notes.md")); !os.IsNotExist(err) {
@@ -260,7 +261,7 @@ func TestFSPluginPlacementAndFramingPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	find := func(name string) rpc.Tile {
+	find := func(name string) *gridwellv1.Tile {
 		t.Helper()
 		for _, tile := range g.Tiles {
 			if tile.AltText == name {
@@ -268,16 +269,16 @@ func TestFSPluginPlacementAndFramingPersist(t *testing.T) {
 			}
 		}
 		t.Fatalf("%s not found", name)
-		return rpc.Tile{}
+		return &gridwellv1.Tile{}
 	}
 	notes, sub := find("notes.md"), find("sub")
-	if _, err := v2.PlaceTile(ctx, &rpc.PlaceTileRequest{
-		TileID: notes.ID, GridID: rootGrid, X: 6, Y: 2, W: 2, H: 1,
+	if _, err := v2.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+		TileId: notes.Id, GridId: rootGrid, X: 6, Y: 2, W: 2, H: 1,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := v2.SetFraming(ctx, &rpc.SetFramingRequest{
-		TileID: sub.ID, Framing: rpc.Framing{Cx: 2, Cy: -1, Zoom: 1.4},
+	if _, err := v2.SetFraming(ctx, &gridwellv1.SetFramingRequest{
+		TileId: sub.Id, Cx: 2, Cy: -1, Zoom: 1.4,
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -296,8 +297,8 @@ func TestFSPluginPlacementAndFramingPersist(t *testing.T) {
 	// address the client was already holding still resolves to the same tile:
 	// an id in a bookmark or a link does not go stale because the thing it
 	// names finally earned a row.
-	if held, err := v2.GetTile(ctx, notes.ID); err != nil || held.ID != got.ID {
-		t.Fatalf("the pre-mint address stopped resolving: %+v (%v), want %s", held, err, got.ID)
+	if held, err := v2.GetTile(ctx, notes.Id); err != nil || held.Id != got.Id {
+		t.Fatalf("the pre-mint address stopped resolving: %+v (%v), want %s", held, err, got.Id)
 	}
 	if sub2.ViewCx != 2 || sub2.ViewCy != -1 || sub2.ViewZoom != 1.4 {
 		t.Fatalf("framing did not persist: %+v", sub2)
@@ -325,13 +326,13 @@ func TestFSPluginSweepRemovesOnlyTheDead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var arranged rpc.Tile
+	var arranged *gridwellv1.Tile
 	for _, tile := range before.Tiles {
 		if tile.AltText == "notes.md" {
 			arranged = tile
 		}
 	}
-	placed, err := v2.PlaceTile(ctx, &rpc.PlaceTileRequest{TileID: arranged.ID, GridID: rootGrid, X: 6, Y: 6, W: 1, H: 1})
+	placed, err := v2.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{TileId: arranged.Id, GridId: rootGrid, X: 6, Y: 6, W: 1, H: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +346,7 @@ func TestFSPluginSweepRemovesOnlyTheDead(t *testing.T) {
 	if len(after.Tiles) != len(before.Tiles)-1 {
 		t.Fatalf("sweep removed %d tiles, want exactly 1", len(before.Tiles)-len(after.Tiles))
 	}
-	survivors := map[string]rpc.Tile{}
+	survivors := map[string]*gridwellv1.Tile{}
 	for _, tile := range after.Tiles {
 		if tile.AltText == "data.bin" {
 			t.Fatal("dead file still listed")
@@ -357,11 +358,11 @@ func TestFSPluginSweepRemovesOnlyTheDead(t *testing.T) {
 			continue
 		}
 		s, ok := survivors[tile.AltText]
-		if !ok || s.ID != tile.ID {
+		if !ok || s.Id != tile.Id {
 			t.Fatalf("survivor %s lost its identity: %+v != %+v", tile.AltText, s, tile)
 		}
 	}
-	if s := survivors["notes.md"]; s.ID != placed.ID || s.X != 6 || s.Y != 6 {
+	if s := survivors["notes.md"]; s.Id != placed.Id || s.X != 6 || s.Y != 6 {
 		t.Fatalf("the arranged survivor drifted: %+v", s)
 	}
 }
@@ -390,22 +391,19 @@ func TestFSPluginTextViewPersists(t *testing.T) {
 	if g.Grid.Writable {
 		t.Fatal("the fs root grid answered writable: this test is about a READ-ONLY host tile")
 	}
-	var notes rpc.Tile
+	var notes *gridwellv1.Tile
 	for _, tile := range g.Tiles {
 		if tile.AltText == "notes.md" {
 			notes = tile
 		}
 	}
-	if notes.ID == "" || notes.Kind != rpc.KindText {
+	if notes.Id == "" || notes.Kind != rpc.KindText {
 		t.Fatalf("no read-only notes.md text tile: %+v", notes)
 	}
-	if _, err := v2.SetTextView(ctx, &rpc.SetTextViewRequest{
-		TileID: notes.ID, TextX: 12, TextY: 340, TextW: 600, TextH: 400,
-		TextMode: rpc.TextModeRendered,
-	}); err != nil {
+	if _, err := v2.SetTile(ctx, &gridwellv1.SetTileRequest{TileId: notes.Id, Tile: &gridwellv1.Tile{Kind: rpc.KindText, TextX: 12, TextY: 340, TextW: 600, TextH: 400, TextMode: rpc.TextModeRendered}}); err != nil {
 		t.Fatalf("the fs stack refused text framing for a read-only file: %v", err)
 	}
-	held, err := v2.GetTile(ctx, notes.ID)
+	held, err := v2.GetTile(ctx, notes.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -449,16 +447,16 @@ func TestAnEntriesOnlyPluginPresentsAndServes(t *testing.T) {
 		t.Fatal(err)
 	}
 	row := pl.Plugins[0]
-	if row.RootGridID != "" {
-		t.Errorf("a plugin is not a place; it named a grid of its own: %q", row.RootGridID)
+	if row.RootGridId != "" {
+		t.Errorf("a plugin is not a place; it named a grid of its own: %q", row.RootGridId)
 	}
 	if row.InfoError != "" {
 		t.Errorf("declaring no place of its own is not a failure: %q", row.InfoError)
 	}
-	if len(row.MenuEntries) != 1 || row.MenuEntries[0].GridID == "" {
+	if len(row.MenuEntries) != 1 || row.MenuEntries[0].GridId == "" {
 		t.Fatalf("row = %+v, want its one collection, resolved to a grid", row)
 	}
-	g, err := cl.GetGrid(ctx, row.MenuEntries[0].GridID)
+	g, err := cl.GetGrid(ctx, row.MenuEntries[0].GridId)
 	if err != nil {
 		t.Fatalf("the declared collection does not serve: %v", err)
 	}

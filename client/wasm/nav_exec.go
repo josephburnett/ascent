@@ -155,7 +155,7 @@ func (a *App) navPersistFraming(e nav.Effect) {
 	if !ok {
 		return
 	}
-	a.persistFraming(p, &t, e.Owner.DoorAnchor, e.Owner.DoorPath)
+	a.persistFraming(p, t, e.Owner.DoorAnchor, e.Owner.DoorPath)
 }
 
 // navSaveText posts the editor buffer and the framed window for the content
@@ -167,7 +167,7 @@ func (a *App) navSaveText(e nav.Effect) {
 		return
 	}
 	file, ok := a.descendedTile(p)
-	if !ok || file.ID != e.TileID {
+	if !ok || file.Id != e.TileID {
 		return
 	}
 	a.saveTextBeforeAscent(p, file)
@@ -283,7 +283,7 @@ func (a *App) navAwait(e nav.Effect) {
 			// The row lands in the cache before the machine acts on it: the
 			// place it heals to and the row the renderer draws are the same
 			// answer.
-			a.c.UpdateTile(tile.GridID, *tile)
+			a.c.UpdateTile(tile.GridId, tile)
 			a.runNav(a.nav.Resume(tok, nav.Result{OK: true, Tile: tile}, a.navWorldCommon()))
 		}()
 	case nav.RequestGetGrid:

@@ -12,6 +12,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -93,7 +94,7 @@ func fsGrid(t *testing.T, cl *rpc.Client, fsRoot string, n int) string {
 		t.Fatal(err)
 	}
 	for _, p := range lp.Plugins {
-		if p.UUID == fsPluginUUID {
+		if p.Uuid == fsPluginUUID {
 			return plugintest.LandingOf(t, p)
 		}
 	}
@@ -116,26 +117,26 @@ func TestListingAHundredEntriesMintsNothing(t *testing.T) {
 	if len(g.Tiles) != 101 {
 		t.Fatalf("listed %d tiles, want 101", len(g.Tiles))
 	}
-	var sub rpc.Tile
+	var sub *gridwellv1.Tile
 	for _, tile := range g.Tiles {
 		if tile.AltText == "sub" {
 			sub = tile
 		}
-		if tile.ID == "" {
+		if tile.Id == "" {
 			t.Fatalf("tile with no id: %+v", tile)
 		}
 	}
-	if sub.ChildGridID == "" {
+	if sub.ChildGridId == "" {
 		t.Fatal("the subdirectory well opens into nothing")
 	}
 	// Descend, and list both grids again: still a read.
-	if _, err := cl.GetGrid(ctx, sub.ChildGridID); err != nil {
+	if _, err := cl.GetGrid(ctx, sub.ChildGridId); err != nil {
 		t.Fatalf("descent into an unminted well: %v", err)
 	}
 	if _, err := cl.GetGrid(ctx, root); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cl.GetGrid(ctx, sub.ChildGridID); err != nil {
+	if _, err := cl.GetGrid(ctx, sub.ChildGridId); err != nil {
 		t.Fatal(err)
 	}
 	if tiles, grids := pluginRows(t, st); tiles != tiles0 || grids != grids0 {
@@ -169,8 +170,8 @@ func TestTouchingEveryTileChangesNothingTheClientCanSee(t *testing.T) {
 	// Every tile placed where it already is: the durable touch that mints,
 	// with nothing about the arrangement changed.
 	for _, tile := range derived.Tiles {
-		if _, err := cl.PlaceTile(ctx, &rpc.PlaceTileRequest{
-			TileID: tile.ID, GridID: root, X: tile.X, Y: tile.Y, W: tile.W, H: tile.H,
+		if _, err := cl.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+			TileId: tile.Id, GridId: root, X: tile.X, Y: tile.Y, W: tile.W, H: tile.H,
 		}); err != nil {
 			t.Fatalf("touch %q: %v", tile.AltText, err)
 		}
@@ -188,8 +189,8 @@ func TestTouchingEveryTileChangesNothingTheClientCanSee(t *testing.T) {
 			d.X != m.X || d.Y != m.Y || d.W != m.W || d.H != m.H {
 			t.Fatalf("tile %d moved when it was minted: %+v != %+v", i, m, d)
 		}
-		if d.ID != m.ID {
-			t.Fatalf("tile %d was renamed by its mint: %q, was %q — everything standing on the old id is now naming a tile the listing does not contain", i, m.ID, d.ID)
+		if d.Id != m.Id {
+			t.Fatalf("tile %d was renamed by its mint: %q, was %q — everything standing on the old id is now naming a tile the listing does not contain", i, m.Id, d.Id)
 		}
 	}
 }
@@ -205,8 +206,8 @@ func TestOneMoveMintsExactlyOneRow(t *testing.T) {
 	}
 	tiles0, grids0 := pluginRows(t, st)
 
-	moved, err := cl.PlaceTile(ctx, &rpc.PlaceTileRequest{
-		TileID: g.Tiles[3].ID, GridID: root, X: 9, Y: 4, W: 2, H: 2,
+	moved, err := cl.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+		TileId: g.Tiles[3].Id, GridId: root, X: 9, Y: 4, W: 2, H: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -225,7 +226,7 @@ func TestOneMoveMintsExactlyOneRow(t *testing.T) {
 	}
 	var found bool
 	for _, tile := range again.Tiles {
-		if tile.ID == moved.ID {
+		if tile.Id == moved.Id {
 			found = true
 			if tile.X != 9 || tile.Y != 4 || tile.W != 2 || tile.H != 2 {
 				t.Fatalf("the move did not survive re-listing: %+v", tile)
@@ -246,7 +247,7 @@ func TestOneMoveMintsExactlyOneRow(t *testing.T) {
 // reflow, and the address is the same name the listing answers. Storing a row
 // id instead would give the same document two names — one reached in place and
 // one reached through the link — and the client keys a live surface, and a
-// text save queue, by that name (rpc.Tile.ContentID).
+// text save queue, by that name (rpc.ContentID).
 func TestALinkOntoAnUntouchedEntryStoresItsAddress(t *testing.T) {
 	cl, st, _, fsRoot := lazyStack(t)
 	ctx := context.Background()
@@ -260,34 +261,28 @@ func TestALinkOntoAnUntouchedEntryStoresItsAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var leaf, well rpc.Tile
+	var leaf, well *gridwellv1.Tile
 	for _, tile := range g.Tiles {
 		if tile.AltText == "sub" {
 			well = tile
-		} else if leaf.ID == "" {
+		} else if leaf == nil {
 			leaf = tile
 		}
 	}
-	if leaf.ID == "" || well.ID == "" {
+	if leaf == nil || well == nil {
 		t.Fatalf("need a leaf and a well: %+v", g.Tiles)
 	}
-	if _, ok := rpc.TileKey(rpc.LocalOf(leaf.ID)); !ok {
-		t.Fatalf("the leaf was already minted: %q", leaf.ID)
+	if _, ok := rpc.TileKey(rpc.LocalOf(leaf.Id)); !ok {
+		t.Fatalf("the leaf was already minted: %q", leaf.Id)
 	}
 
 	// The left-drag onto home: a leaf link at its target, an exit well at the
 	// directory's grid. The client sends exactly the ids it was shown.
-	link, err := cl.CreateLeafLink(ctx, &rpc.CreateLeafLinkRequest{
-		GridID: homeGrid, X: 0, Y: 4, W: 1, H: 1, Kind: rpc.KindText,
-		LinkTargetID: leaf.ID, Label: leaf.AltText,
-	})
+	link, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: homeGrid, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 4, W: 1, H: 1, LinkTargetId: leaf.Id, AltText: leaf.AltText}})
 	if err != nil {
 		t.Fatalf("leaf link onto an untouched entry: %v", err)
 	}
-	mount, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: homeGrid, X: 1, Y: 4, W: 1, H: 1,
-		ChildGridID: well.ChildGridID, Label: "sub",
-	})
+	mount, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: homeGrid, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 1, Y: 4, W: 1, H: 1, ChildGridId: well.ChildGridId, AltText: "sub"}})
 	if err != nil {
 		t.Fatalf("exit well onto an untouched directory: %v", err)
 	}
@@ -296,22 +291,22 @@ func TestALinkOntoAnUntouchedEntryStoresItsAddress(t *testing.T) {
 	// answer to their key-form address for good, and the context key and the
 	// entry key are as permanent as the plugin's keys, so there is nothing a
 	// row would make safer — and a second name is what a row would cost.
-	ns, local, ok := rpc.SplitID(link.LinkTargetID)
+	ns, local, ok := rpc.SplitID(link.LinkTargetId)
 	if !ok || ns != fsPluginUUID || rpc.ShapeOf(local) != rpc.ShapeKey {
-		t.Fatalf("link_target_id = %q: a leaf link at rest must name the entry's address in the fs plugin", link.LinkTargetID)
+		t.Fatalf("link_target_id = %q: a leaf link at rest must name the entry's address in the fs plugin", link.LinkTargetId)
 	}
-	if link.LinkTargetID != leaf.ID {
-		t.Fatalf("link_target_id = %q, want the id the user dragged, %q", link.LinkTargetID, leaf.ID)
+	if link.LinkTargetId != leaf.Id {
+		t.Fatalf("link_target_id = %q, want the id the user dragged, %q", link.LinkTargetId, leaf.Id)
 	}
-	if mount.ChildGridID != well.ChildGridID {
-		t.Fatalf("child_grid_id = %q, want the grid the user dragged, %q", mount.ChildGridID, well.ChildGridID)
+	if mount.ChildGridId != well.ChildGridId {
+		t.Fatalf("child_grid_id = %q, want the grid the user dragged, %q", mount.ChildGridId, well.ChildGridId)
 	}
-	stored := storedReference(t, st, link.ID)
-	if stored != link.LinkTargetID {
-		t.Fatalf("the file holds %q, the wire says %q", stored, link.LinkTargetID)
+	stored := storedReference(t, st, link.Id)
+	if stored != link.LinkTargetId {
+		t.Fatalf("the file holds %q, the wire says %q", stored, link.LinkTargetId)
 	}
 	// The link resolves to the same file it was dropped on.
-	body, _, _, err := cl.ReadContent(ctx, link.ID)
+	body, _, _, err := cl.ReadContent(ctx, link.Id)
 	if err != nil {
 		t.Fatalf("read through the link: %v", err)
 	}
@@ -347,24 +342,24 @@ func TestKeyFormReadsRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var leaf rpc.Tile
+	var leaf *gridwellv1.Tile
 	for _, tile := range g.Tiles {
 		if tile.AltText == "f1.txt" {
 			leaf = tile
 		}
 	}
-	if leaf.ID == "" {
+	if leaf.Id == "" {
 		t.Fatalf("no f1.txt among %+v", g.Tiles)
 	}
 
-	got, err := cl.GetTile(ctx, leaf.ID)
+	got, err := cl.GetTile(ctx, leaf.Id)
 	if err != nil {
 		t.Fatalf("GetTile on a derived address: %v", err)
 	}
-	if got.ID != leaf.ID || got.AltText != "f1.txt" || got.X != leaf.X || got.Y != leaf.Y {
+	if got.Id != leaf.Id || got.AltText != "f1.txt" || got.X != leaf.X || got.Y != leaf.Y {
 		t.Fatalf("GetTile answered a different tile: %+v != %+v", got, leaf)
 	}
-	body, media, _, err := cl.ReadContent(ctx, leaf.ID)
+	body, media, _, err := cl.ReadContent(ctx, leaf.Id)
 	if err != nil {
 		t.Fatalf("ReadContent on a derived address: %v", err)
 	}
@@ -372,7 +367,7 @@ func TestKeyFormReadsRoundTrip(t *testing.T) {
 		t.Fatalf("content = (%q, %q)", body, media)
 	}
 	// The /content/ door: the same id in a URL path, served as HTTP.
-	url := hs.URL + "/content/" + ContentToken(testPassword) + "/" + leaf.ID + "/"
+	url := hs.URL + "/content/" + ContentToken(testPassword) + "/" + leaf.Id + "/"
 	res, err := hs.client.Get(url)
 	if err != nil {
 		t.Fatal(err)
@@ -402,31 +397,31 @@ func TestURLDescentToAKeyFormLeafResolves(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var sub rpc.Tile
+	var sub *gridwellv1.Tile
 	for _, tile := range g.Tiles {
 		if tile.AltText == "sub" {
 			sub = tile
 		}
 	}
-	deep, err := cl.GetGrid(ctx, sub.ChildGridID)
+	deep, err := cl.GetGrid(ctx, sub.ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(deep.Tiles) != 1 {
 		t.Fatalf("sub/ = %+v", deep.Tiles)
 	}
-	leafID := deep.Tiles[0].ID
+	leafID := deep.Tiles[0].Id
 
 	// What the address bar would hold, projected and read back.
 	raw := pane.EncodeURL(pane.URLState{
-		Anchor:  sub.ChildGridID,
+		Anchor:  sub.ChildGridId,
 		TileIDs: []string{rpc.LocalOf(leafID)},
 	})
 	st, err := pane.DecodeURL(raw)
 	if err != nil {
 		t.Fatalf("DecodeURL(%q): %v", raw, err)
 	}
-	if st.Anchor != sub.ChildGridID || len(st.TileIDs) != 1 {
+	if st.Anchor != sub.ChildGridId || len(st.TileIDs) != 1 {
 		t.Fatalf("decoded %+v from %q", st, raw)
 	}
 	// The boot walk: the anchor grid, then the descent segment qualified with
@@ -435,7 +430,7 @@ func TestURLDescentToAKeyFormLeafResolves(t *testing.T) {
 	if err != nil {
 		t.Fatalf("boot: anchor grid %q: %v", st.Anchor, err)
 	}
-	if anchor.Grid.ID == "" {
+	if anchor.Grid.Id == "" {
 		t.Fatal("boot: anchor grid has no id")
 	}
 	qualified := rpc.QualifyID(rpc.UUIDOf(st.Anchor), st.TileIDs[0])
@@ -446,7 +441,7 @@ func TestURLDescentToAKeyFormLeafResolves(t *testing.T) {
 	if tile.AltText != "deep.txt" {
 		t.Fatalf("boot landed on %q", tile.AltText)
 	}
-	body, _, _, err := cl.ReadContent(ctx, tile.ID)
+	body, _, _, err := cl.ReadContent(ctx, tile.Id)
 	if err != nil || string(body) != "deep" {
 		t.Fatalf("boot read %q (%v)", body, err)
 	}

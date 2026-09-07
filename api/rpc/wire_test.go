@@ -11,16 +11,16 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
+
+	pb "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
-// The wire is frozen and these tests are the pin. The Go record types
-// (rpc.Tile, rpc.Grid) travel to the client as protojson over the generated
-// pb messages, through connect.WithProtoJSON in NewDefaultClient, so the
-// JSON names on the wire are the proto field names, not the json tags on the
-// Go structs. Two properties are locked here:
+// The wire is frozen and these tests are the pin. Records travel to the
+// client as protojson over the generated messages, through
+// connect.WithProtoJSON in NewDefaultClient. Two properties are locked here:
 //
 //   - An exhaustive round trip. The fixture is built by reflection over the
-//     Go struct, so it fills every field automatically and a converter that
+//     message, so it fills every field automatically and an encoding that
 //     drops a newly added field cannot round-trip green.
 //   - The JSON shape is golden. api/rpc/testdata/*.json records the exact
 //     field names and values a fully-populated record marshals to; the client
@@ -55,14 +55,13 @@ func fill(t *testing.T, v reflect.Value) {
 		case reflect.Bool:
 			fv.SetBool(true)
 		case reflect.Slice:
-			if f.Type.Elem().Kind() != reflect.Struct {
-				t.Fatalf("fill: %s.%s is a slice of %s — extend fill", rt.Name(), f.Name, f.Type.Elem().Kind())
+			et := f.Type.Elem()
+			if et.Kind() != reflect.Pointer || et.Elem().Kind() != reflect.Struct {
+				t.Fatalf("fill: %s.%s is a slice of %s — extend fill", rt.Name(), f.Name, et.Kind())
 			}
-			elem := reflect.New(f.Type.Elem()).Elem()
-			fill(t, elem)
+			elem := reflect.New(et.Elem())
+			fill(t, elem.Elem())
 			fv.Set(reflect.Append(fv, elem))
-		case reflect.Struct:
-			fill(t, fv)
 		default:
 			t.Fatalf("fill: %s.%s has unhandled kind %s — extend fill", rt.Name(), f.Name, f.Type.Kind())
 		}
@@ -70,26 +69,26 @@ func fill(t *testing.T, v reflect.Value) {
 }
 
 // exhaustiveTile returns a Tile with every field set to a distinct value.
-func exhaustiveTile(t *testing.T) *Tile {
+func exhaustiveTile(t *testing.T) *pb.Tile {
 	t.Helper()
-	var out Tile
+	var out pb.Tile
 	fill(t, reflect.ValueOf(&out).Elem())
 	return &out
 }
 
 // exhaustiveGrid returns a Grid with every field set to a distinct value.
-func exhaustiveGrid(t *testing.T) *Grid {
+func exhaustiveGrid(t *testing.T) *pb.Grid {
 	t.Helper()
-	var out Grid
+	var out pb.Grid
 	fill(t, reflect.ValueOf(&out).Elem())
 	return &out
 }
 
-// TestTileWireRoundTrip: rpc.Tile → pb → the Connect JSON codec → pb →
-// rpc.Tile is the identity for a tile with every field set.
+// TestTileWireRoundTrip: a tile with every field set through the Connect
+// JSON codec and back is the identity.
 func TestTileWireRoundTrip(t *testing.T) {
 	in := exhaustiveTile(t)
-	if got := TileFromProto(throughJSON(t, TileToProto(in))); !reflect.DeepEqual(in, got) {
+	if got := throughJSON(t, in); !proto.Equal(in, got) {
 		t.Errorf("tile wire round-trip diverged:\n in = %+v\nout = %+v", in, got)
 	}
 }
@@ -97,7 +96,7 @@ func TestTileWireRoundTrip(t *testing.T) {
 // TestGridWireRoundTrip: the same for a grid (menu entries included).
 func TestGridWireRoundTrip(t *testing.T) {
 	in := exhaustiveGrid(t)
-	if got := GridFromProto(throughJSON(t, GridToProto(in))); !reflect.DeepEqual(in, got) {
+	if got := throughJSON(t, in); !proto.Equal(in, got) {
 		t.Errorf("grid wire round-trip diverged:\n in = %+v\nout = %+v", in, got)
 	}
 }
@@ -121,11 +120,11 @@ func throughJSON[M proto.Message](t *testing.T, m M) M {
 // value encodings of a fully-populated record. Update the golden only with a
 // deliberate wire change, never for a Go-side refactor.
 func TestTileJSONGolden(t *testing.T) {
-	checkGolden(t, "tile.json", TileToProto(exhaustiveTile(t)))
+	checkGolden(t, "tile.json", exhaustiveTile(t))
 }
 
 func TestGridJSONGolden(t *testing.T) {
-	checkGolden(t, "grid.json", GridToProto(exhaustiveGrid(t)))
+	checkGolden(t, "grid.json", exhaustiveGrid(t))
 }
 
 // checkGolden compares m's Connect-JSON encoding with testdata/<name>.

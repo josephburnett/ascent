@@ -1,6 +1,7 @@
 package nav
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/anim"
 	"github.com/josephburnett/gridwell/client/errsurface"
@@ -58,7 +59,7 @@ func (m *Machine) descend(g Gesture, w World) Plan {
 	pl.add(Effect{Kind: EffFlushFraming})
 	switch {
 	case rpc.IsWorkspaceKind(g.Door.Kind):
-		pl.add(Effect{Kind: EffEnterLevel, PaneID: p.ID, TileID: g.Door.ID,
+		pl.add(Effect{Kind: EffEnterLevel, PaneID: p.ID, TileID: g.Door.Id,
 			Tile: g.Door})
 	case rpc.IsContentDescentKind(g.Door.Kind):
 		m.descendContent(p, g.Door, w, &pl)
@@ -82,8 +83,8 @@ func (m *Machine) descend(g Gesture, w World) Plan {
 //
 // Total time is split between A and C proportional to motion distance so
 // neither feels rushed. C is zero-length when ViewZoom is unset.
-func (m *Machine) descendGrid(p PaneView, well rpc.Tile, w World, pl *planner) {
-	if well.ChildGridID == "" {
+func (m *Machine) descendGrid(p PaneView, well *gridwellv1.Tile, w World, pl *planner) {
+	if well.ChildGridId == "" {
 		// A link tile whose target is not available: a broken plugin, or
 		// a connection whose remote has not answered yet. Say why
 		// instead of silently doing nothing; pluginhealth owns the wording,
@@ -99,8 +100,8 @@ func (m *Machine) descendGrid(p PaneView, well rpc.Tile, w World, pl *planner) {
 	}
 	r := p.Rect
 	from := zoomtrans.Endpoints{Path: p.Stack.Path(), Cx: p.Cx, Cy: p.Cy, Zoom: p.Zoom}
-	wl := zoomtrans.WellOf(&well)
-	next := pane.Frame{Door: well.ID}
+	wl := zoomtrans.WellOf(well)
+	next := pane.Frame{Door: well.Id}
 	mid, swap, final := zoomtrans.Descent(from, wl, r.W, r.H, w.CellPx)
 	base := p.Stack.Clone()
 	if w.Door.IsLink {
@@ -110,7 +111,7 @@ func (m *Machine) descendGrid(p PaneView, well rpc.Tile, w World, pl *planner) {
 		// it stays within one namespace, and the ascent pops back onto this
 		// very tile without searching the parent grid for a well whose child
 		// matches the anchor.
-		next.GridID = well.ChildGridID
+		next.GridID = well.ChildGridId
 		// The + menu comes back with you, just as you left it.
 		base.MenuOpen = w.MenuOpenOn == p.ID
 		pl.add(Effect{Kind: EffCloseMenu})
@@ -120,7 +121,7 @@ func (m *Machine) descendGrid(p PaneView, well rpc.Tile, w World, pl *planner) {
 		mid.Cx = float64(well.X) + float64(well.W)/2
 		mid.Cy = float64(well.Y) + float64(well.H)/2
 	}
-	pl.add(Effect{Kind: EffFetchGrid, GridID: well.ChildGridID})
+	pl.add(Effect{Kind: EffFetchGrid, GridID: well.ChildGridId})
 
 	// The place each segment plays in: the parent zoom happens where the pane
 	// already is, and the child segment plays in the pushed frame. Because
@@ -167,7 +168,7 @@ func (m *Machine) descendGrid(p PaneView, well rpc.Tile, w World, pl *planner) {
 // push the footprint screen size is the inner box, and the live TextZoom is
 // reconstructed from the tile's intrinsic ViewZoom ratio for visual
 // continuity.
-func (m *Machine) descendContent(p PaneView, file rpc.Tile, w World, pl *planner) {
+func (m *Machine) descendContent(p PaneView, file *gridwellv1.Tile, w World, pl *planner) {
 	r := p.Rect
 	foot := pane.Footprint{X: file.X, Y: file.Y, W: file.W, H: file.H}
 	wellCx, wellCy := foot.Center()
@@ -180,7 +181,7 @@ func (m *Machine) descendContent(p PaneView, file rpc.Tile, w World, pl *planner
 	// lands. URL tiles don't have a blob; their preview path goes through the
 	// url preview instead — and so does a serves_page tile's (its descent is
 	// the page, not the document body).
-	if file.TextDocument() {
+	if rpc.TextDocument(file) {
 		// Source-backed bodies (fs files, the proc @info tile) are host
 		// state, not versioned content: their version is always 0, so a cache
 		// entry from the first open would match forever and the descent would
@@ -188,10 +189,10 @@ func (m *Machine) descendContent(p PaneView, file rpc.Tile, w World, pl *planner
 		// re-reads — it is all read-only — so drop before fetching, or the
 		// fetch does not refetch.
 		if w.Door.ReadOnly {
-			pl.add(Effect{Kind: EffDropTileContent, ContentID: file.ContentID()})
+			pl.add(Effect{Kind: EffDropTileContent, ContentID: rpc.ContentID(file)})
 			pl.add(Effect{Kind: EffFetchGrid, PaneID: p.ID})
 		}
-		pl.add(Effect{Kind: EffFetchTileContent, TileID: file.ID})
+		pl.add(Effect{Kind: EffFetchTileContent, TileID: file.Id})
 	}
 
 	base := p.Stack.Clone()
@@ -205,7 +206,7 @@ func (m *Machine) descendContent(p PaneView, file rpc.Tile, w World, pl *planner
 		animBase.Pop()
 	}
 	landing := base.Clone()
-	landing.Push(pane.ContentFrame(file.ID, foot, target,
+	landing.Push(pane.ContentFrame(file.Id, foot, target,
 		descentTextMode(file, w.Door.ReadOnly),
 		float64(file.TextX), float64(file.TextY)))
 	wasContent := base.Content
@@ -217,7 +218,7 @@ func (m *Machine) descendContent(p PaneView, file rpc.Tile, w World, pl *planner
 		Guard:  Guard{Kind: GuardPaneExists, PaneID: p.ID},
 		Step:   stepDescendContentLand,
 		PaneID: p.ID,
-		TileID: file.ID,
+		TileID: file.Id,
 		Tile:   file,
 		Stack:  landing,
 	})
@@ -242,9 +243,9 @@ func (m *Machine) descendContent(p PaneView, file rpc.Tile, w World, pl *planner
 // descentTextMode applies textedit.DescentMode, the one owner, to the
 // descent-time row. cursorURL is the restore path's extra input (an address
 // that encodes a text cursor), which a gesture descent never has.
-func descentTextMode(file rpc.Tile, readOnly bool) string {
+func descentTextMode(file *gridwellv1.Tile, readOnly bool) string {
 	return textedit.DescentMode(textedit.ModeInput{
-		TextDocument: file.TextDocument(), ReadOnly: readOnly,
+		TextDocument: rpc.TextDocument(file), ReadOnly: readOnly,
 		Cached: true, CursorURL: false, Stored: file.TextMode,
 	})
 }
@@ -283,12 +284,12 @@ func (m *Machine) reEngage(g Gesture, w World) Plan {
 func (m *Machine) followLink(g Gesture, w World) Plan {
 	var pl planner
 	tok := m.mint(cont{
-		Guard:  Guard{Kind: GuardDescendedIn, PaneID: g.PaneID, TileID: g.Door.ID},
+		Guard:  Guard{Kind: GuardDescendedIn, PaneID: g.PaneID, TileID: g.Door.Id},
 		Step:   stepLinkTarget,
 		PaneID: g.PaneID,
 	})
 	pl.add(Effect{Kind: EffAwait, Token: tok,
-		Request: Request{Kind: RequestGetTile, ID: g.Door.ContentID()}})
+		Request: Request{Kind: RequestGetTile, ID: rpc.ContentID(g.Door)}})
 	return pl.plan()
 }
 
@@ -300,7 +301,7 @@ func (m *Machine) followLink(g Gesture, w World) Plan {
 // It reports whether the search was started; when it is, the go-live verdict
 // rides the answer instead, so a heal always precedes the re-engagement it
 // changes the place under.
-func (m *Machine) healStale(paneID string, tile rpc.Tile, w World, pl *planner) bool {
+func (m *Machine) healStale(paneID string, tile *gridwellv1.Tile, w World, pl *planner) bool {
 	p, ok := w.Pane(paneID)
 	if !ok {
 		return false
@@ -310,22 +311,22 @@ func (m *Machine) healStale(paneID string, tile rpc.Tile, w World, pl *planner) 
 	// stale — the tile is elsewhere by design — and healing would re-anchor
 	// the pane into the scratch grid. Not-known-yet counts as ephemeral here,
 	// because the re-anchor is a durable write.
-	if eph, known := scratch.Ephemeral(p.Scratch, tile.GridID); eph || !known {
+	if eph, known := scratch.Ephemeral(p.Scratch, tile.GridId); eph || !known {
 		return false
 	}
-	if p.GridID == tile.GridID {
+	if p.GridID == tile.GridId {
 		return false // the path still resolves: nothing to heal
 	}
 	tok := m.mint(cont{
-		Guard:  Guard{Kind: GuardDescendedIn, PaneID: paneID, TileID: tile.ID},
+		Guard:  Guard{Kind: GuardDescendedIn, PaneID: paneID, TileID: tile.Id},
 		Step:   stepHealed,
 		PaneID: paneID,
-		TileID: tile.ID,
+		TileID: tile.Id,
 		Tile:   tile,
 	})
 	pl.add(Effect{Kind: EffAwait, Token: tok,
-		Request: Request{Kind: RequestSearch, Query: "id:" + tile.ID,
-			Scope: tile.ID, Limit: 1}})
+		Request: Request{Kind: RequestSearch, Query: "id:" + tile.Id,
+			Scope: tile.Id, Limit: 1}})
 	return true
 }
 
@@ -333,22 +334,22 @@ func (m *Machine) healStale(paneID string, tile rpc.Tile, w World, pl *planner) 
 // the descent binds and the crumbs show a true path from the root. The layout
 // persister derives the corrected layout from the live tree on its next tick,
 // so the heal persists with no dedicated writer.
-func landHealed(paneID string, tile rpc.Tile, wells []rpc.Tile, pl *planner) {
-	anchor := tile.GridID
+func landHealed(paneID string, tile *gridwellv1.Tile, wells []*gridwellv1.Tile, pl *planner) {
+	anchor := tile.GridId
 	path := make([]string, 0, len(wells))
 	if len(wells) > 0 {
-		anchor = wells[0].GridID
+		anchor = wells[0].GridId
 		for _, wl := range wells {
-			path = append(path, wl.ID)
+			path = append(path, wl.Id)
 		}
 	}
-	st := pane.StackAt(anchor, path, tile.ID)
+	st := pane.StackAt(anchor, path, tile.Id)
 	// Centre the healed viewport on the tile in its new grid, so ascending out
 	// of the descent lands looking at the tile, not a stale offset.
 	st.Cx = float64(tile.X) + float64(tile.W)/2
 	st.Cy = float64(tile.Y) + float64(tile.H)/2
 	pl.add(Effect{Kind: EffInstallPlace, PaneID: paneID, Stack: &st})
-	pl.add(Effect{Kind: EffFetchGrid, GridID: tile.GridID})
+	pl.add(Effect{Kind: EffFetchGrid, GridID: tile.GridId})
 	pl.add(Effect{Kind: EffScheduleURLUpdate})
 }
 
@@ -361,30 +362,30 @@ func landHealed(paneID string, tile rpc.Tile, wells []rpc.Tile, pl *planner) {
 // The caller has already established that the pane is descended in tile: the
 // descent's landing installs that very place one effect earlier, and the
 // restore path re-checks with a DescendedIn guard before it resumes.
-func (m *Machine) autoLiveOnDescent(paneID string, tile rpc.Tile, w World, pl *planner) {
+func (m *Machine) autoLiveOnDescent(paneID string, tile *gridwellv1.Tile, w World, pl *planner) {
 	// The shell facts key by the content id, so a link attaches its target's
 	// session: the same reads the refresh button's visibility does, so the
 	// two decisions cannot disagree about a dead session.
-	cid := tile.ContentID()
+	cid := rpc.ContentID(tile)
 	switch shellconn.DecideAutoLive(
-		tile.WebContent(), tile.Kind == rpc.KindShell,
+		rpc.WebContent(tile), tile.Kind == rpc.KindShell,
 		w.Caps.LiveURL, w.Caps.LiveShell,
-		tile.PreviewBlobID != 0, w.ShellAliveKnown[cid], w.ShellAlive[cid],
-		tile.URLFrozen) {
+		tile.PreviewBlobId != 0, w.ShellAliveKnown[cid], w.ShellAlive[cid],
+		tile.UrlFrozen) {
 	case shellconn.AutoLiveURL:
-		pl.add(Effect{Kind: EffOpenStream, PaneID: paneID, TileID: tile.ID,
+		pl.add(Effect{Kind: EffOpenStream, PaneID: paneID, TileID: tile.Id,
 			Stream: StreamURL})
 	case shellconn.AutoLiveShell:
-		pl.add(Effect{Kind: EffOpenStream, PaneID: paneID, TileID: tile.ID,
+		pl.add(Effect{Kind: EffOpenStream, PaneID: paneID, TileID: tile.Id,
 			Stream: StreamShell})
 	case shellconn.AutoLiveProbeShell:
 		// The probe is async and the user may move on: the continuation
 		// carries the one guard that says so.
 		tok := m.mint(cont{
-			Guard:  Guard{Kind: GuardDescendedIn, PaneID: paneID, TileID: tile.ID},
+			Guard:  Guard{Kind: GuardDescendedIn, PaneID: paneID, TileID: tile.Id},
 			Step:   stepProbedShell,
 			PaneID: paneID,
-			TileID: tile.ID,
+			TileID: tile.Id,
 		})
 		pl.add(Effect{Kind: EffAwait, Token: tok,
 			Request: Request{Kind: RequestProbeShell, ID: cid}})

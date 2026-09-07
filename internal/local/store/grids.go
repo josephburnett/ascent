@@ -60,7 +60,7 @@ func (s *Store) loadGrid(ctx context.Context, q gridReader, gridID int64) (*grid
 // order, so the list and the scan cannot fall out of step.
 var tileColumns = wireColumns(tilesColumns)
 
-// scanTile scans a single row into an gridwellv1.Tile.
+// scanTile scans a single row into a Tile.
 func scanTile(scanner interface {
 	Scan(dest ...any) error
 }) (*gridwellv1.Tile, error) {

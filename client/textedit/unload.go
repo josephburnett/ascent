@@ -1,6 +1,9 @@
 package textedit
 
-import "github.com/josephburnett/gridwell/api/rpc"
+import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
+	"github.com/josephburnett/gridwell/api/rpc"
+)
 
 // UnloadFlush is one dirty content entry's unload decision.
 type UnloadFlush int
@@ -47,7 +50,7 @@ type Framing struct {
 }
 
 // FramingOf is the tile's stored framing.
-func FramingOf(t rpc.Tile) Framing {
+func FramingOf(t *gridwellv1.Tile) Framing {
 	return Framing{X: t.TextX, Y: t.TextY, W: t.TextW, H: t.TextH, Mode: t.TextMode}
 }
 
@@ -57,7 +60,7 @@ func FramingChanged(cur, next Framing) bool { return cur != next }
 // ModeInput is everything the descent-mode decision reads.
 type ModeInput struct {
 	// TextDocument: the row's content is its own document body
-	// (rpc.Tile.TextDocument, the owner). Nothing else has a text mode, so
+	// (rpc.TextDocument, the owner). Nothing else has a text mode, so
 	// the kind and the page flag never travel here separately.
 	TextDocument bool
 	ReadOnly     bool

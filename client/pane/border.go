@@ -34,7 +34,7 @@ type BorderColors struct {
 // BorderInput is everything BorderColor needs to know about a pane in
 // order to pick its outline color. Carrying a struct instead of *Pane +
 // loose flags keeps the function from depending on cache.Grid or
-// rpc.Tile types — the caller resolves "is there a descended tile, and
+// tile types — the caller resolves "is there a descended tile, and
 // what kind?" first.
 type BorderInput struct {
 	// HasTextFocus mirrors "the pane's place is a content frame": this pane is
@@ -46,7 +46,7 @@ type BorderInput struct {
 	// TileKnown is true when the descended tile's row is in the
 	// client's cache (so TileKind is meaningful).
 	TileKnown bool
-	// TileKind is the rpc.Kind string ("text", "url", "well", "shell",
+	// TileKind is the tile kind string ("text", "url", "well", "shell",
 	// "pane"). Only consulted when TileKnown is true.
 	TileKind string
 	// Focused is true when this pane is the keyboard-focused pane in

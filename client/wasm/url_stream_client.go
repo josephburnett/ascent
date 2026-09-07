@@ -3,7 +3,10 @@
 package main
 
 import (
+	"google.golang.org/protobuf/proto"
+
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"slices"
 	"sync"
 
@@ -74,32 +77,32 @@ func contentViewBounds(r pane.Rect) viewBounds {
 
 // urlTileForPane resolves the web-content tile a pane is descended into —
 // a url tile or a serves_page tile; both go live through the same view.
-func (a *App) urlTileForPane(p *pane.Pane, tileID string) (rpc.Tile, bool) {
+func (a *App) urlTileForPane(p *pane.Pane, tileID string) (*gridwellv1.Tile, bool) {
 	if g, ok := a.c.Grid(a.gridIDForPane(p)); ok {
-		if t, ok := g.Tiles[tileID]; ok && t.WebContent() {
+		if t, ok := g.Tiles[tileID]; ok && rpc.WebContent(t) {
 			return t, true
 		}
 	}
 	// An off-grid, ephemeral tile is focused in the scratch grid without
 	// re-anchoring the pane onto it: resolve by id from any cached grid.
-	if t := a.findTileByID(tileID); t != nil && t.WebContent() {
-		return *t, true
+	if t := a.findTileByID(tileID); t != nil && rpc.WebContent(t) {
+		return t, true
 	}
-	return rpc.Tile{}, false
+	return nil, false
 }
 
 // webAddress resolves the address a web-content tile presents at: a url
 // tile's own frozen URLString, or the /content/ door address for a
 // serves_page tile — derived here at use time (rpc.PageURL), never
 // persisted, because the desktop origin is an ephemeral port.
-func (a *App) webAddress(t *rpc.Tile) string {
+func (a *App) webAddress(t *gridwellv1.Tile) string {
 	if t.Kind == rpc.KindURL {
-		return t.URLString
+		return t.UrlString
 	}
-	if t.PageContent() {
+	if rpc.PageContent(t) {
 		// ContentID is the one client-side link resolution. The door would
 		// re-resolve server-side, but every content op keys by the owner.
-		return rpc.PageURL(a.origin, a.contentToken, t.ContentID())
+		return rpc.PageURL(a.origin, a.contentToken, rpc.ContentID(t))
 	}
 	return ""
 }
@@ -118,14 +121,14 @@ func (a *App) openURLStream(p *pane.Pane, tileID string) {
 	if !ok {
 		return
 	}
-	if t.URLFrozen {
+	if t.UrlFrozen {
 		// Going live is the unfreeze: the reconnect gesture clears the
 		// standing intent, so the two facts never coexist. Auto-live never
 		// reaches here while the intent is set, because DecideAutoLive
 		// blocks it, so this only fires on the explicit reconnect click.
-		a.postURLFrozen(t.ID, false, nil)
+		a.postURLFrozen(t.Id, false, nil)
 	}
-	if !t.LeafLink() {
+	if !rpc.LeafLink(t) {
 		a.placeURLView(p.ID, t)
 		return
 	}
@@ -140,7 +143,7 @@ func (a *App) openURLStream(p *pane.Pane, tileID string) {
 
 // placeURLView places the native WebContentsView for pane paneID showing tile
 // t, always the content-owning row: a link never reaches here.
-func (a *App) placeURLView(paneID string, t rpc.Tile) {
+func (a *App) placeURLView(paneID string, t *gridwellv1.Tile) {
 	p := a.tree.FindPane(paneID)
 	if p == nil {
 		return
@@ -150,7 +153,7 @@ func (a *App) placeURLView(paneID string, t rpc.Tile) {
 	// tile live in this pane closes through the one path that persists its
 	// freeze; tearing it down elsewhere would drop the FreezeResult.
 	if v := a.urlViewFor(paneID); v != nil {
-		if v.tileID == t.ID {
+		if v.tileID == t.Id {
 			return
 		}
 		a.closeURLStream(paneID, true)
@@ -158,17 +161,17 @@ func (a *App) placeURLView(paneID string, t rpc.Tile) {
 	// One live surface per content tile: any other pane, at any stack level,
 	// holding a live view on this content freezes now, and the opener takes
 	// over. pane.TakeOver is the rule, shared with the shell side.
-	for _, otherID := range pane.TakeOver(a.urlSurfaces(), paneID, t.ID) {
+	for _, otherID := range pane.TakeOver(a.urlSurfaces(), paneID, t.Id) {
 		a.closeURLStream(otherID, true)
 	}
 	r := paneRectFor(a, p)
 	b := contentViewBounds(r)
-	page := t.PageContent()
+	page := rpc.PageContent(t)
 	// Every caller places into the descent the pane is already in — the
 	// descent's auto-live, the reconnect click, the promote's relocation —
 	// so the pane's own frame is the descent this view belongs to. For a
 	// link that frame is the link row, while t is its target.
-	v := &urlView{tileID: t.ID, paneID: p.ID, descentID: p.ContentID(), bounds: b, anchor: p.Anchor(), path: slices.Clone(p.Path()), page: page}
+	v := &urlView{tileID: t.Id, paneID: p.ID, descentID: p.ContentID(), bounds: b, anchor: p.Anchor(), path: slices.Clone(p.Path()), page: page}
 	a.local(p.ID).urlView = v
 	// durable means the descended row survives ascent: false for an
 	// ephemeral visit, which gets no Freeze Page in the context menu. A page
@@ -176,18 +179,18 @@ func (a *App) placeURLView(paneID string, t rpc.Tile) {
 	// freeze and no history writeback, and its frozen face is the plugin's
 	// own derivation.
 	durable := !page
-	if tile, ok := a.descendedTile(p); ok && a.possiblyEphemeral(p, &tile) {
+	if tile, ok := a.descendedTile(p); ok && a.possiblyEphemeral(p, tile) {
 		durable = false
 	}
 	v.durable = durable
-	addr := a.webAddress(&t)
-	urlLog("place pane=%s tile=%s url=%s", p.ID, t.ID, addr)
+	addr := a.webAddress(t)
+	urlLog("place pane=%s tile=%s url=%s", p.ID, t.Id, addr)
 	// The focus fact goes with the placement, from the same owner
 	// syncURLViews reads it from: going live is not always a gesture on the
 	// focused pane. The handle above is optimistic — it is set before main
 	// answers, so the very next frame positions the view — so a refused
 	// placement takes it back down (dropFailedURLView).
-	a.bridgePlace(p.ID, t.ID, addr, b, contentZoomOf(&t), t.URLHistory, durable,
+	a.bridgePlace(p.ID, t.Id, addr, b, contentZoomOf(t), t.UrlHistory, durable,
 		a.liveOverlaysHidden(), p.ID == a.tree.Focus,
 		func() { a.dropFailedURLView(p.ID, v) })
 	a.draw()
@@ -242,7 +245,7 @@ func (a *App) closeURLStreamTo(paneID string, target *freezeTarget, freeze bool)
 	// frame lands where nobody reads.
 	previewKey := tileID
 	if ct := a.cachedTileByID(tileID); ct != nil {
-		previewKey = ct.ContentID()
+		previewKey = rpc.ContentID(ct)
 	}
 	if target != nil {
 		tileID = target.tileID
@@ -270,22 +273,22 @@ func (a *App) closeURLStreamTo(paneID string, target *freezeTarget, freeze bool)
 			// surfaces and resyncs the grid: the freeze the user just saw
 			// was not persisted and the preview reverts on next load. The
 			// beacon form carries it through a tab close.
-			req := &rpc.SetURLStateRequest{
-				TileID: tileID,
-				JPEG:   jpeg, URL: url, Title: title, History: history,
-			}
+			req := &gridwellv1.SetTileRequest{TileId: tileID,
+				Tile: &gridwellv1.Tile{Kind: rpc.KindURL,
+					UrlString: url, AltText: title, UrlHistory: history},
+				Preview: jpeg}
 			a.post(write{
 				label: "SetURLState", gid: gid, id: tileID,
 				source: "urlfreeze", failText: "page preview save failed",
 				call: func(ctx context.Context) error {
-					_, err := a.cl.SetURLState(ctx, req)
+					_, err := a.cl.SetTile(ctx, req)
 					if err != nil {
 						urlLog("SetURLState tile=%s err=%v", tileID, err)
 					}
 					return err
 				},
 				beacon: func() (string, []byte, string) {
-					path, body := rpc.SetURLStateBeacon(req)
+					path, body := rpc.SetTileBeacon(req)
 					return path, body, rpc.BeaconJSONType
 				},
 			})
@@ -303,7 +306,7 @@ func (a *App) closeURLStreamTo(paneID string, target *freezeTarget, freeze bool)
 // freezeURLPaneByIntent runs the explicit freeze gesture, the context menu's
 // "Freeze Page": persist the user's standing freeze, then tear the live view
 // down through the ordinary freeze writeback. The intent lands on the
-// descended row (p.ContentID()), which for a url link is the link row itself:
+// descended row (rpc.ContentID(p)), which for a url link is the link row itself:
 // the freeze is this reference's presentation, not the content owner's, and
 // it is the row the next descent's DecideAutoLive reads. The intent write
 // goes first, then the teardown's SetURLState capture; neither touches the
@@ -316,10 +319,10 @@ func (a *App) freezeURLPaneByIntent(paneID string) {
 		return
 	}
 	tile, ok := a.descendedTile(p)
-	if !ok || tile.Kind != rpc.KindURL || a.possiblyEphemeral(p, &tile) {
+	if !ok || tile.Kind != rpc.KindURL || a.possiblyEphemeral(p, tile) {
 		return
 	}
-	a.postURLFrozen(tile.ID, true, func() {
+	a.postURLFrozen(tile.Id, true, func() {
 		// The teardown runs whatever the write did: the view parks either
 		// way, and a freeze still owed to the server is the outbox's business,
 		// not the surface's.
@@ -340,8 +343,7 @@ func (a *App) freezeURLPaneByIntent(paneID string) {
 // teardown that follows the freeze, which is presentation and must happen
 // exactly once however many times the write is retried.
 func (a *App) postURLFrozen(tileID string, frozen bool, after func()) {
-	req := &rpc.SetURLFrozenRequest{TileID: tileID, Frozen: frozen}
-	var tile *rpc.Tile
+	var tile *gridwellv1.Tile
 	var once sync.Once
 	a.post(write{
 		label: "SetURLFrozen", gid: a.gridIDOfTile(tileID), id: tileID,
@@ -352,12 +354,12 @@ func (a *App) postURLFrozen(tileID string, frozen bool, after func()) {
 		source: "urlfrozen", failText: "freeze state save failed",
 		call: func(ctx context.Context) error {
 			var err error
-			tile, err = a.cl.SetURLFrozen(ctx, req)
+			tile, err = a.cl.SetURLFrozen(ctx, tileID, frozen)
 			return err
 		},
 		then: func() {
 			if tile != nil {
-				a.c.UpdateTile(tile.GridID, *tile)
+				a.c.UpdateTile(tile.GridId, tile)
 			}
 		},
 		done: func() {
@@ -451,7 +453,7 @@ func (a *App) isURLDescent(p *pane.Pane) bool {
 	if !ok {
 		return false
 	}
-	return t.WebContent()
+	return rpc.WebContent(t)
 }
 
 // updateCachedTileURL walks every cached grid and rewrites the URLString
@@ -462,8 +464,12 @@ func (a *App) updateCachedTileURL(tileID string, newURL string) {
 	a.forEachCachedGrid(func(gid string, g *cache.Grid) bool {
 		t, ok := g.Tiles[tileID]
 		if ok && t.Kind == rpc.KindURL {
-			t.URLString = newURL
-			a.c.UpdateTile(gid, t)
+			// A clone, not the row: cache.Grid hands out the cached rows
+			// themselves, and the patch must go through UpdateTile's
+			// interlock rather than land behind it.
+			patched := proto.CloneOf(t)
+			patched.UrlString = newURL
+			a.c.UpdateTile(gid, patched)
 		}
 		return true
 	})

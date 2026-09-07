@@ -1,6 +1,7 @@
 package nav
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"testing"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -23,9 +24,9 @@ func engagedPane(id string) PaneView {
 	return p
 }
 
-func urlRowIn(gridID string) *rpc.Tile {
-	return &rpc.Tile{ID: "r1", Kind: rpc.KindURL, GridID: gridID,
-		X: 2, Y: 2, W: 3, H: 2, URLString: "https://example.test/"}
+func urlRowIn(gridID string) *gridwellv1.Tile {
+	return &gridwellv1.Tile{Id: "r1", Kind: rpc.KindURL, GridId: gridID,
+		X: 2, Y: 2, W: 3, H: 2, UrlString: "https://example.test/"}
 }
 
 func TestReEngageReadsTheRowFirst(t *testing.T) {
@@ -106,7 +107,7 @@ func TestReEngageAfterTheRowLands(t *testing.T) {
 
 // healAwait drives a re-engagement to the point where the locate is
 // outstanding, and returns its token.
-func healAwait(t *testing.T, m *Machine, moved *rpc.Tile) Token {
+func healAwait(t *testing.T, m *Machine, moved *gridwellv1.Tile) Token {
 	t.Helper()
 	w := baseWorld(engagedPane("pane1"))
 	tok := only(t, m.Do(reEngageGesture("pane1", "r1"), w), EffAwait).Token
@@ -124,8 +125,8 @@ func TestHealedPlans(t *testing.T) {
 	t.Run("the locate answers: re-anchor, then engage", func(t *testing.T) {
 		m := New()
 		tok := healAwait(t, m, moved)
-		plan := m.Resume(tok, Result{OK: true, Wells: []rpc.Tile{
-			{ID: "w9", GridID: "root9"}, {ID: "w8", GridID: "mid"},
+		plan := m.Resume(tok, Result{OK: true, Wells: []*gridwellv1.Tile{
+			{Id: "w9", GridId: "root9"}, {Id: "w8", GridId: "mid"},
 		}}, baseWorld(engagedPane("pane1")))
 
 		want := []EffectKind{EffInstallPlace, EffFetchGrid, EffScheduleURLUpdate,
@@ -175,7 +176,7 @@ func TestHealedPlans(t *testing.T) {
 	t.Run("the user moved on while the locate was in flight", func(t *testing.T) {
 		m := New()
 		tok := healAwait(t, m, moved)
-		plan := m.Resume(tok, Result{OK: true, Wells: []rpc.Tile{{ID: "w9", GridID: "root9"}}},
+		plan := m.Resume(tok, Result{OK: true, Wells: []*gridwellv1.Tile{{Id: "w9", GridId: "root9"}}},
 			baseWorld(gridPane("pane1", "g1")))
 		if len(plan.Effects) != 0 {
 			t.Fatalf("re-anchored a pane that moved on: %v", kinds(plan))

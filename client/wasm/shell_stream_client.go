@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"slices"
 	"syscall/js"
 
@@ -124,18 +125,18 @@ func (a *App) hasShellStream(paneID string) bool {
 //
 // Side effect: kicks off a ShellSessionAlive probe when the alive
 // state for tileID isn't cached and no probe is already in flight.
-func (a *App) shellRefreshButtonVisible(tile *rpc.Tile) bool {
+func (a *App) shellRefreshButtonVisible(tile *gridwellv1.Tile) bool {
 	if tile == nil {
 		return false
 	}
 	// A shell link probes, and attaches to, the target's session: the PTY is
 	// keyed by the owner tile's id, and the link is a second door to the
 	// same session — one shell, seen from two grids.
-	alive, known := a.shellAlive[tile.ContentID()]
+	alive, known := a.shellAlive[rpc.ContentID(tile)]
 	v := shellconn.DecideShellRefreshVisible(
-		tile.Kind == rpc.KindShell, tile.PreviewBlobID != 0, known, alive)
+		tile.Kind == rpc.KindShell, tile.PreviewBlobId != 0, known, alive)
 	if v.Probe {
-		a.probeShellSessionAlive(tile.ContentID(), nil)
+		a.probeShellSessionAlive(rpc.ContentID(tile), nil)
 	}
 	return v.Show
 }
@@ -172,7 +173,7 @@ func (a *App) probeShellSessionAlive(tileID string, then func(alive bool)) {
 		// control never appearing, a restore never attaching, nothing said.
 		ctx, cancel := inflight.Bounded()
 		defer cancel()
-		res, err := a.cl.ShellSessionAlive(ctx, &rpc.ShellSessionAliveRequest{TileID: tileID})
+		alive, err := a.cl.ShellSessionAlive(ctx, tileID)
 		// Everyone parked on this flight, then clear it so a future
 		// probe can retry.
 		done := a.shellAliveProbing[tileID]
@@ -184,9 +185,9 @@ func (a *App) probeShellSessionAlive(tileID string, then func(alive bool)) {
 			a.reportErr(errsurface.Error, "shell", "shell session probe failed: "+rpcErrText(err))
 			return
 		}
-		a.shellAlive[tileID] = res.Alive
+		a.shellAlive[tileID] = alive
 		for _, fn := range done {
-			fn(res.Alive)
+			fn(alive)
 		}
 		a.draw()
 	}()
@@ -929,12 +930,13 @@ func (a *App) postSetShellPreview(tileID, anchor string, path []string, jpeg []b
 	// gone. A verdict surfaces and resyncs the grid: the terminal frame the
 	// user just left was not persisted, and the preview will show an older
 	// state.
-	req := &rpc.SetShellPreviewRequest{TileID: tileID, JPEG: jpeg}
+	req := &gridwellv1.SetTileRequest{TileId: tileID,
+		Tile: &gridwellv1.Tile{Kind: rpc.KindShell}, Preview: jpeg}
 	a.do(write{
 		label: "SetShellPreview", gid: a.gridIDForPathFrom(anchor, path), id: tileID,
 		source: "shell", failText: "shell preview save failed",
 		call: func(ctx context.Context) error {
-			_, err := a.cl.SetShellPreview(ctx, req)
+			_, err := a.cl.SetTile(ctx, req)
 			if err != nil {
 				shellLog("SetShellPreview tile=%s err=%v", tileID, err)
 			}

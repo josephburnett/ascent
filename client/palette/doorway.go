@@ -13,14 +13,14 @@ package palette
 // EntryName). Layout is the geometry and Show is what a fold state shows.
 
 import (
-	"github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/client/door"
 	"github.com/josephburnett/gridwell/client/pluginhealth"
 )
 
 // Doorways composes the section from a handshake's menu rows, in the order
 // rpc.MenuRows gives them, each row's declared entries directly after it.
-func Doorways(rows []rpc.PluginInfo) []door.Place {
+func Doorways(rows []*gridwellv1.PluginInfo) []door.Place {
 	out := make([]door.Place, 0, len(rows))
 	for i := range rows {
 		row := rows[i]

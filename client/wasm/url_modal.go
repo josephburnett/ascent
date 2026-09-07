@@ -26,10 +26,10 @@ func (a *App) urlSuggestCandidates(pluginUUID string) []urlnorm.Candidate {
 			return true
 		}
 		for _, t := range g.Tiles {
-			if t.Kind == rpc.KindURL && t.URLString != "" {
+			if t.Kind == rpc.KindURL && t.UrlString != "" {
 				// AltText is the page title captured at freeze, so typing
 				// title words finds the address.
-				out = append(out, urlnorm.Candidate{URL: t.URLString, Title: t.AltText})
+				out = append(out, urlnorm.Candidate{URL: t.UrlString, Title: t.AltText})
 			}
 		}
 		return true

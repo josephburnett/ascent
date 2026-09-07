@@ -95,7 +95,7 @@ func TestServeFirstEventReachesTheClient(t *testing.T) {
 	if len(list.Connections) != 1 {
 		t.Fatalf("connections = %+v, want the one", list.Connections)
 	}
-	qualified := list.Connections[0].RootGridID
+	qualified := list.Connections[0].RootGridId
 	if qualified != nodeID+"/"+root {
 		t.Fatalf("connection root = %q, want %q", qualified, nodeID+"/"+root)
 	}
@@ -109,7 +109,7 @@ func TestServeFirstEventReachesTheClient(t *testing.T) {
 
 	subCtx, subCancel := context.WithCancel(ctx)
 	defer subCancel()
-	events := make(chan rpc.Event, 64)
+	events := make(chan *pb.Event, 64)
 	go func() {
 		// The connect client's Subscribe blocks until the server's first
 		// event flushes the response headers, and nothing emits until the
@@ -135,7 +135,7 @@ func TestServeFirstEventReachesTheClient(t *testing.T) {
 	// after that. Keep making the far side genuinely change — one more tile,
 	// a read to kick the refresh — until an event arrives.
 	deadline := time.Now().Add(15 * time.Second)
-	var got *rpc.GridChanged
+	var got *pb.GridChanged
 	for got == nil {
 		if time.Now().After(deadline) {
 			t.Fatal("the revalidation's GridChanged never reached the client stream")
@@ -152,8 +152,8 @@ func TestServeFirstEventReachesTheClient(t *testing.T) {
 				if !ok {
 					t.Fatal("event stream closed early")
 				}
-				if ev.Kind == rpc.EventGridChanged && ev.GridChanged != nil && ev.GridChanged.GridID == qualified {
-					got = ev.GridChanged
+				if g := ev.GetGridChanged(); g != nil && g.GridId == qualified {
+					got = g
 					break drain
 				}
 			case <-timeout:

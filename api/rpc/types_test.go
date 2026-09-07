@@ -1,6 +1,10 @@
 package rpc
 
-import "testing"
+import (
+	"testing"
+
+	pb "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
+)
 
 func TestIsWellKind(t *testing.T) {
 	if !IsWellKind(KindWell) {
@@ -112,32 +116,32 @@ func TestLocalOf(t *testing.T) {
 func TestIsExitWell(t *testing.T) {
 	cases := []struct {
 		name string
-		tile Tile
+		tile *pb.Tile
 		want bool
 	}{
 		{"interior well (same plugin) is not an exit well",
-			Tile{Kind: KindWell, GridID: "u/1", ChildGridID: "u/2"}, false},
+			&pb.Tile{Kind: KindWell, GridId: "u/1", ChildGridId: "u/2"}, false},
 		{"cross-plugin well is an exit well",
-			Tile{Kind: KindWell, GridID: "u/1", ChildGridID: "v/2"}, true},
+			&pb.Tile{Kind: KindWell, GridId: "u/1", ChildGridId: "v/2"}, true},
 		{"non-well is never an exit well",
-			Tile{Kind: KindText, GridID: "u/1", ChildGridID: "v/2"}, false},
+			&pb.Tile{Kind: KindText, GridId: "u/1", ChildGridId: "v/2"}, false},
 		{"well with no child grid is not an exit well",
-			Tile{Kind: KindWell, GridID: "u/1"}, false},
+			&pb.Tile{Kind: KindWell, GridId: "u/1"}, false},
 		{"synthetic node, both ids empty, is not an exit well",
-			Tile{Kind: KindWell}, false},
+			&pb.Tile{Kind: KindWell}, false},
 		// A menu swatch's exact shape: no owning grid, qualified child grid.
-		{"synthetic launcher node (empty GridID, qualified ChildGridID) is an exit well",
-			Tile{Kind: KindWell, ChildGridID: "plugin-uuid/1"}, true},
+		{"synthetic launcher node (empty grid_id, qualified child_grid_id) is an exit well",
+			&pb.Tile{Kind: KindWell, ChildGridId: "plugin-uuid/1"}, true},
 	}
 	for _, c := range cases {
-		if got := IsExitWell(&c.tile); got != c.want {
+		if got := IsExitWell(c.tile); got != c.want {
 			t.Errorf("%s: IsExitWell = %v, want %v", c.name, got, c.want)
 		}
 	}
 }
 
 func TestPluginWellTile(t *testing.T) {
-	pl := PluginInfo{Label: "files", RootGridID: "fs-uuid/1",
+	pl := &pb.PluginInfo{Label: "files", RootGridId: "fs-uuid/1",
 		RootViewCx: 3, RootViewCy: -2, RootViewZoom: 0.5}
 	got := PluginWellTile(pl)
 	// The load-bearing invariants the swatch preview depends on: the tile is
@@ -146,10 +150,10 @@ func TestPluginWellTile(t *testing.T) {
 	if !IsWellKind(got.Kind) {
 		t.Errorf("PluginWellTile kind = %q, want a well", got.Kind)
 	}
-	if got.ChildGridID != pl.RootGridID {
-		t.Errorf("PluginWellTile ChildGridID = %q, want %q", got.ChildGridID, pl.RootGridID)
+	if got.ChildGridId != pl.RootGridId {
+		t.Errorf("PluginWellTile ChildGridID = %q, want %q", got.ChildGridId, pl.RootGridId)
 	}
-	if !IsExitWell(&got) {
+	if !IsExitWell(got) {
 		t.Errorf("PluginWellTile is not an exit well; launcher would draw an inert interior well")
 	}
 	// Reference is the one "this is a link" signal, and the client reads it
@@ -207,19 +211,19 @@ func TestKindPartition(t *testing.T) {
 // first rooted plugin row and skipping rootless ones. It is the one boot and
 // URL home derivation.
 func TestHomeGrid(t *testing.T) {
-	first := PluginInfo{UUID: "p1", RootGridID: "p1/1"}
-	second := PluginInfo{UUID: "p2", RootGridID: "p2/1"}
-	rootless := PluginInfo{UUID: "p0"} // no RootGridID: broken or rootless
-	if got := HomeGrid(PluginList{HomeGridID: "n/1", Plugins: []PluginInfo{first}}); got != "n/1" {
+	first := &pb.PluginInfo{Uuid: "p1", RootGridId: "p1/1"}
+	second := &pb.PluginInfo{Uuid: "p2", RootGridId: "p2/1"}
+	rootless := &pb.PluginInfo{Uuid: "p0"} // no root_grid_id: broken or rootless
+	if got := HomeGrid(&pb.HandshakeResponse{HomeGridId: "n/1", Plugins: []*pb.PluginInfo{first}}); got != "n/1" {
 		t.Errorf("HomeGrid = %q, want the handshake's home_grid_id", got)
 	}
-	if got := HomeGrid(PluginList{Plugins: []PluginInfo{rootless, second}}); got != "p2/1" {
+	if got := HomeGrid(&pb.HandshakeResponse{Plugins: []*pb.PluginInfo{rootless, second}}); got != "p2/1" {
 		t.Errorf("HomeGrid = %q, want p2/1 (the first rooted row, when the field is absent)", got)
 	}
-	if got := HomeGrid(PluginList{Plugins: []PluginInfo{rootless}}); got != "" {
+	if got := HomeGrid(&pb.HandshakeResponse{Plugins: []*pb.PluginInfo{rootless}}); got != "" {
 		t.Errorf("HomeGrid = %q, want \"\" (nothing rooted)", got)
 	}
-	if got := HomeGrid(PluginList{}); got != "" {
+	if got := HomeGrid(&pb.HandshakeResponse{}); got != "" {
 		t.Errorf("HomeGrid(empty) = %q, want empty", got)
 	}
 }
@@ -230,12 +234,12 @@ func TestHomeGrid(t *testing.T) {
 // shell session, pane layout) reads this, so a link and its target share one
 // content fact by construction.
 func TestContentID(t *testing.T) {
-	link := Tile{ID: "b/9", Kind: KindText, LinkTargetID: "a/42"}
-	if got := link.ContentID(); got != "a/42" {
+	link := &pb.Tile{Id: "b/9", Kind: KindText, LinkTargetId: "a/42"}
+	if got := ContentID(link); got != "a/42" {
 		t.Errorf("link ContentID = %q, want the target a/42", got)
 	}
-	owned := Tile{ID: "a/42", Kind: KindText}
-	if got := owned.ContentID(); got != "a/42" {
+	owned := &pb.Tile{Id: "a/42", Kind: KindText}
+	if got := ContentID(owned); got != "a/42" {
 		t.Errorf("owned ContentID = %q, want its own id", got)
 	}
 }
@@ -248,23 +252,23 @@ func TestContentID(t *testing.T) {
 func TestTextDocumentAndPageContent(t *testing.T) {
 	cases := []struct {
 		name                   string
-		tile                   Tile
+		tile                   *pb.Tile
 		document, page, webCon bool
 	}{
-		{"text document", Tile{Kind: KindText}, true, false, false},
-		{"page tile", Tile{Kind: KindText, ServesPage: true}, false, true, true},
-		{"url tile", Tile{Kind: KindURL}, false, false, true},
-		{"well", Tile{Kind: KindWell}, false, false, false},
-		{"url row flagged serves_page", Tile{Kind: KindURL, ServesPage: true}, false, false, true},
+		{"text document", &pb.Tile{Kind: KindText}, true, false, false},
+		{"page tile", &pb.Tile{Kind: KindText, ServesPage: true}, false, true, true},
+		{"url tile", &pb.Tile{Kind: KindURL}, false, false, true},
+		{"well", &pb.Tile{Kind: KindWell}, false, false, false},
+		{"url row flagged serves_page", &pb.Tile{Kind: KindURL, ServesPage: true}, false, false, true},
 	}
 	for _, c := range cases {
-		if got := c.tile.TextDocument(); got != c.document {
+		if got := TextDocument(c.tile); got != c.document {
 			t.Errorf("%s: TextDocument = %v, want %v", c.name, got, c.document)
 		}
-		if got := c.tile.PageContent(); got != c.page {
+		if got := PageContent(c.tile); got != c.page {
 			t.Errorf("%s: PageContent = %v, want %v", c.name, got, c.page)
 		}
-		if got := c.tile.WebContent(); got != c.webCon {
+		if got := WebContent(c.tile); got != c.webCon {
 			t.Errorf("%s: WebContent = %v, want %v", c.name, got, c.webCon)
 		}
 	}
@@ -274,16 +278,16 @@ func TestTextDocumentAndPageContent(t *testing.T) {
 // Reference flag: a well with a qualified child grid is a reference too, and
 // it owns its row.
 func TestLeafLink(t *testing.T) {
-	link := Tile{ID: "b/9", Kind: KindText, LinkTargetID: "a/42", Reference: true}
-	if !link.LeafLink() {
+	link := &pb.Tile{Id: "b/9", Kind: KindText, LinkTargetId: "a/42", Reference: true}
+	if !LeafLink(link) {
 		t.Error("a row with a target is a leaf link")
 	}
-	mount := Tile{ID: "b/1", Kind: KindWell, ChildGridID: "a/7", Reference: true}
-	if mount.LeafLink() {
+	mount := &pb.Tile{Id: "b/1", Kind: KindWell, ChildGridId: "a/7", Reference: true}
+	if LeafLink(mount) {
 		t.Error("an exit well is not a leaf link")
 	}
-	owned := Tile{ID: "a/42", Kind: KindText}
-	if owned.LeafLink() {
+	owned := &pb.Tile{Id: "a/42", Kind: KindText}
+	if LeafLink(owned) {
 		t.Error("a row that owns its content is not a leaf link")
 	}
 }

@@ -10,6 +10,7 @@ package pluginhost_test
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -77,10 +78,10 @@ func TestSearchThroughTheAdapterAnswersMintedPlaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var weekWell *rpc.Tile
+	var weekWell *gridwellv1.Tile
 	for i := range root.Tiles {
 		if strings.HasPrefix(root.Tiles[i].AltText, "2026-08-17") {
-			weekWell = &root.Tiles[i]
+			weekWell = root.Tiles[i]
 		}
 	}
 	if weekWell == nil {
@@ -97,28 +98,28 @@ func TestSearchThroughTheAdapterAnswersMintedPlaces(t *testing.T) {
 		t.Fatalf("hits = %v, want the one widget todo", hits)
 	}
 	hit := hits[0]
-	if len(hit.Path) != 1 || hit.Path[0].ID != weekWell.ID {
-		t.Errorf("path = %v, want the week well %s", hit.Path, weekWell.ID)
+	if len(hit.Path) != 1 || hit.Path[0].Id != weekWell.Id {
+		t.Errorf("path = %v, want the week well %s", hit.Path, weekWell.Id)
 	}
-	if hit.Tile.GridID != weekWell.ChildGridID || !strings.Contains(hit.Tile.AltText, "!1") {
-		t.Errorf("hit tile = %+v, want !1 in the week grid %s", hit.Tile, weekWell.ChildGridID)
+	if hit.Tile.GridId != weekWell.ChildGridId || !strings.Contains(hit.Tile.AltText, "!1") {
+		t.Errorf("hit tile = %+v, want !1 in the week grid %s", hit.Tile, weekWell.ChildGridId)
 	}
-	if !strings.HasPrefix(hit.Tile.ID, gitlabUUID+"/") {
-		t.Errorf("hit id %q is not qualified into the plugin's namespace", hit.Tile.ID)
+	if !strings.HasPrefix(hit.Tile.Id, gitlabUUID+"/") {
+		t.Errorf("hit id %q is not qualified into the plugin's namespace", hit.Tile.Id)
 	}
 
-	week, err := cl.GetGrid(ctx, weekWell.ChildGridID)
+	week, err := cl.GetGrid(ctx, weekWell.ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var minted *rpc.Tile
+	var minted *gridwellv1.Tile
 	for i := range week.Tiles {
-		if week.Tiles[i].ID == hit.Tile.ID {
-			minted = &week.Tiles[i]
+		if week.Tiles[i].Id == hit.Tile.Id {
+			minted = week.Tiles[i]
 		}
 	}
 	if minted == nil {
-		t.Fatalf("the hit's id %s is not among the week's minted tiles %v", hit.Tile.ID, week.Tiles)
+		t.Fatalf("the hit's id %s is not among the week's minted tiles %v", hit.Tile.Id, week.Tiles)
 	}
 	if minted.X != hit.Tile.X || minted.Y != hit.Tile.Y || minted.W != hit.Tile.W {
 		t.Errorf("hit placement %+v differs from the grid's %+v", hit.Tile, minted)
@@ -126,11 +127,11 @@ func TestSearchThroughTheAdapterAnswersMintedPlaces(t *testing.T) {
 
 	// Scoped to the plugin, the same answer; an id: locate is the one
 	// selector the adapter cannot resolve yet and says so.
-	scoped, err := cl.Search(ctx, "widget", hit.Tile.ID, 10)
-	if err != nil || len(scoped) != 1 || scoped[0].Tile.ID != hit.Tile.ID {
+	scoped, err := cl.Search(ctx, "widget", hit.Tile.Id, 10)
+	if err != nil || len(scoped) != 1 || scoped[0].Tile.Id != hit.Tile.Id {
 		t.Errorf("scoped search = %v, %v", scoped, err)
 	}
-	if _, err := cl.Search(ctx, "id:"+hit.Tile.ID, hit.Tile.ID, 1); err == nil {
+	if _, err := cl.Search(ctx, "id:"+hit.Tile.Id, hit.Tile.Id, 1); err == nil {
 		t.Error("id: locate through the adapter must refuse, not answer an empty or wrong place")
 	}
 }

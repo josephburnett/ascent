@@ -20,20 +20,20 @@ import (
 	"testing"
 	"time"
 
-	gwrpc "github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/internal/connection/dial/dialtest"
 )
 
 // awaitConnHealth reads the client's event stream until one connection's
 // health says what is expected, over the path health really takes: fan-in,
 // qualification, the source cache's arm, then the client's stream.
-func awaitConnHealth(t *testing.T, health <-chan gwrpc.Event, conn string, want bool) {
+func awaitConnHealth(t *testing.T, health <-chan *gridwellv1.Event, conn string, want bool) {
 	t.Helper()
 	deadline := time.After(90 * time.Second)
 	for {
 		select {
 		case ev := <-health:
-			if h := ev.PluginHealth; h != nil && strings.Contains(h.PluginUUID, conn) && h.Healthy == want {
+			if h := ev.GetPluginHealth(); h != nil && strings.Contains(h.PluginUuid, conn) && h.Healthy == want {
 				return
 			}
 		case <-deadline:
@@ -90,7 +90,7 @@ func TestMountPartitionServesCache(t *testing.T) {
 	// the request lands.
 	subCtx, subCancel := context.WithCancel(ctx)
 	defer subCancel()
-	health := make(chan gwrpc.Event, 64)
+	health := make(chan *gridwellv1.Event, 64)
 	go func() {
 		stream, serr := cl.Subscribe(subCtx)
 		if serr != nil {
@@ -102,7 +102,7 @@ func TestMountPartitionServesCache(t *testing.T) {
 			if !ok || rerr != nil {
 				return
 			}
-			if ev.PluginHealth != nil {
+			if ev.GetPluginHealth() != nil {
 				select {
 				case health <- ev:
 				default:

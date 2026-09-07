@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"strconv"
 	"syscall/js"
 
@@ -42,7 +43,7 @@ func (a *App) textContentWidth(p *pane.Pane) float64 {
 // source on canvas, because HTML cannot be painted here and an unfocused pane
 // must still show the doc, soft-wrapped to the pane width exactly like the
 // textarea.
-func (a *App) drawMarkdownInPane(p *pane.Pane, n *rpc.Tile, x, y, w, h float64) {
+func (a *App) drawMarkdownInPane(p *pane.Pane, n *gridwellv1.Tile, x, y, w, h float64) {
 	scale := a.textScaleFor(p)
 	originX := x - p.TextScrollX*scale
 	originY := y - p.TextScrollY*scale
@@ -76,7 +77,7 @@ func (a *App) drawMarkdownInPane(p *pane.Pane, n *rpc.Tile, x, y, w, h float64) 
 				if a.drawRenderedPreview(n, frame, x, y, w, h, 0) {
 					// e2e attribution (the renderedPreviews testhook): the pane
 					// painted the rendered raster, not raw.
-					a.renderedPanePaints[n.ID]++
+					a.renderedPanePaints[n.Id]++
 					return
 				}
 			}
@@ -97,7 +98,7 @@ func (a *App) drawMarkdownInPane(p *pane.Pane, n *rpc.Tile, x, y, w, h float64) 
 // the rasterized RenderHTML output (rendered_preview.go, no second layout
 // engine), anything else the raw source. The raw source also covers the async
 // raster gap.
-func (a *App) drawMarkdownNode(n *rpc.Tile, x, y, w, h float64, selected, outside, dashed bool) {
+func (a *App) drawMarkdownNode(n *gridwellv1.Tile, x, y, w, h float64, selected, outside, dashed bool) {
 	frame := markdown.PreviewWindowFrame(w, textFixedScale, contentZoomOf(n), n.TextX, n.TextY)
 	scale, scrollX, scrollY := frame.Scale, frame.ScrollX, frame.ScrollY
 
@@ -225,9 +226,9 @@ func drawMarkdownText(c js.Value, src string, x, y, w, h, scale, scrollY float64
 // same-length uncommitted edits may render one debounce cycle stale in a
 // background preview until the save's version bump corrects it. Bounded by
 // wholesale reset: it is a derived cache, never a fact.
-func (a *App) memoWrap(n *rpc.Tile) func(string, int) []string {
+func (a *App) memoWrap(n *gridwellv1.Tile) func(string, int) []string {
 	return func(src string, cols int) []string {
-		key := n.ContentID() + "\x00" + strconv.FormatInt(n.Version, 10) + "\x00" +
+		key := rpc.ContentID(n) + "\x00" + strconv.FormatInt(n.Version, 10) + "\x00" +
 			strconv.Itoa(len(src)) + "\x00" + strconv.Itoa(cols)
 		if lines, ok := a.views.wrapCache[key]; ok {
 			return lines

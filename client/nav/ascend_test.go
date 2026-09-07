@@ -1,6 +1,7 @@
 package nav
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"testing"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -26,9 +27,9 @@ func contentPane(id, tileID string) PaneView {
 	return p
 }
 
-func doorRow() *rpc.Tile {
-	return &rpc.Tile{ID: "w1", Kind: rpc.KindWell, GridID: "g1",
-		X: 2, Y: 3, W: 4, H: 4, ChildGridID: "gc"}
+func doorRow() *gridwellv1.Tile {
+	return &gridwellv1.Tile{Id: "w1", Kind: rpc.KindWell, GridId: "g1",
+		X: 2, Y: 3, W: 4, H: 4, ChildGridId: "gc"}
 }
 
 func ascendGesture(paneID string, n int, animate bool) Gesture {
@@ -36,8 +37,8 @@ func ascendGesture(paneID string, n int, animate bool) Gesture {
 }
 
 func TestAscendPlans(t *testing.T) {
-	textRow := &rpc.Tile{ID: "t1", Kind: rpc.KindText, GridID: "g1", X: 2, Y: 2, W: 3, H: 2}
-	urlRow := &rpc.Tile{ID: "r1", Kind: rpc.KindURL, GridID: "sg", X: 2, Y: 2, W: 3, H: 2}
+	textRow := &gridwellv1.Tile{Id: "t1", Kind: rpc.KindText, GridId: "g1", X: 2, Y: 2, W: 3, H: 2}
+	urlRow := &gridwellv1.Tile{Id: "r1", Kind: rpc.KindURL, GridId: "sg", X: 2, Y: 2, W: 3, H: 2}
 
 	cases := []struct {
 		name    string
@@ -134,7 +135,7 @@ func TestAscendPlans(t *testing.T) {
 }
 
 func TestAscendEphemeralWithASplitSiblingDoesNotDelete(t *testing.T) {
-	urlRow := &rpc.Tile{ID: "r1", Kind: rpc.KindURL, GridID: "sg", X: 2, Y: 2, W: 3, H: 2}
+	urlRow := &gridwellv1.Tile{Id: "r1", Kind: rpc.KindURL, GridId: "sg", X: 2, Y: 2, W: 3, H: 2}
 	w := baseWorld(contentPane("pane1", "r1"), contentPane("pane2", "r1"))
 	w.Leave = &LeaveWorld{DescendedTile: urlRow}
 	for i := range w.Panes {
@@ -223,8 +224,8 @@ func TestAscendLandsOnTheFrameItReached(t *testing.T) {
 
 func TestAscendLandingBackOnContentReEngages(t *testing.T) {
 	w := baseWorld(contentPane("pane1", "t1"))
-	w.Leave = &LeaveWorld{DescendedTile: &rpc.Tile{ID: "t1", Kind: rpc.KindText,
-		GridID: "g1", X: 2, Y: 2, W: 3, H: 2}}
+	w.Leave = &LeaveWorld{DescendedTile: &gridwellv1.Tile{Id: "t1", Kind: rpc.KindText,
+		GridId: "g1", X: 2, Y: 2, W: 3, H: 2}}
 	m := New()
 	tr := only(t, m.Do(ascendGesture("pane1", 1, true), w), EffStartTransition)
 
@@ -257,7 +258,7 @@ func TestAscendMultiHopOnlyAnimatesTheLast(t *testing.T) {
 	p.Cx, p.Cy, p.Zoom = 5, 6, 2
 	w := baseWorld(p)
 	w.Leave = &LeaveWorld{DoorGridID: "g1", DoorGridCached: true,
-		DoorTile: &rpc.Tile{ID: "w2", Kind: rpc.KindWell, GridID: "gc", W: 4, H: 4}}
+		DoorTile: &gridwellv1.Tile{Id: "w2", Kind: rpc.KindWell, GridId: "gc", W: 4, H: 4}}
 	m := New()
 
 	first := m.Do(ascendGesture("pane1", 2, true), w)

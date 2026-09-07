@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -32,7 +33,7 @@ func reapFixture(t *testing.T) (cl *rpc.Client, root, scratch string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scratch = g.Grid.ScratchGridID
+	scratch = g.Grid.ScratchGridId
 	if scratch == "" {
 		t.Fatal("no scratch grid advertised")
 	}
@@ -45,7 +46,7 @@ func destroyPane(t *testing.T, cl *rpc.Client, tileID string) {
 	t.Helper()
 	ctx := context.Background()
 	for i := 0; i < 2; i++ {
-		if err := cl.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: tileID}); err != nil {
+		if err := cl.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: tileID}); err != nil {
 			t.Fatalf("DeleteTile(pane) %d: %v", i+1, err)
 		}
 	}
@@ -66,26 +67,24 @@ func TestReapReadsTheSameFieldTheSweepProtects(t *testing.T) {
 	ctx := context.Background()
 	cl, root, scratch := reapFixture(t)
 
-	pt, err := cl.CreatePane(ctx, &rpc.CreatePaneRequest{
-		GridID: root, X: 0, Y: 0, W: 2, H: 2, Label: "ops",
-	})
+	pt, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindPane, X: 0, Y: 0, W: 2, H: 2, AltText: "ops"}})
 	if err != nil {
 		t.Fatalf("CreatePane: %v", err)
 	}
-	eph, err := cl.CreateShell(ctx, &rpc.CreateShellRequest{GridID: scratch, X: 0, Y: 0, W: 1, H: 1})
+	eph, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: scratch, Tile: &gridwellv1.Tile{Kind: rpc.KindShell, X: 0, Y: 0, W: 1, H: 1}})
 	if err != nil {
 		t.Fatalf("CreateShell (scratch): %v", err)
 	}
 
 	layout := fmt.Sprintf(`{"v":1,"root":{"pane":{"id":"p1","cx":0,"cy":0,"zoom":1,`+
-		`"place":[{"g":%q},{"d":%q,"c":true}]}},"focus":"p1"}`, root, eph.ID)
-	if _, err := cl.WriteContent(ctx, pt.ID, pt.Version, []byte(layout)); err != nil {
+		`"place":[{"g":%q},{"d":%q,"c":true}]}},"focus":"p1"}`, root, eph.Id)
+	if _, err := cl.WriteContent(ctx, pt.Id, pt.Version, []byte(layout)); err != nil {
 		t.Fatalf("SetPaneLayout: %v", err)
 	}
 
-	destroyPane(t, cl, pt.ID)
+	destroyPane(t, cl, pt.Id)
 
-	if _, err := cl.GetTile(ctx, eph.ID); err != nil {
+	if _, err := cl.GetTile(ctx, eph.Id); err != nil {
 		t.Errorf("the reap derived a reference the boot sweep's protection set "+
 			"does not see — two decoders of the same blob: %v", err)
 	}
@@ -100,19 +99,15 @@ func TestReapFindsEncoderWrittenReferences(t *testing.T) {
 	ctx := context.Background()
 	cl, root, scratch := reapFixture(t)
 
-	pt, err := cl.CreatePane(ctx, &rpc.CreatePaneRequest{
-		GridID: root, X: 0, Y: 0, W: 2, H: 2, Label: "ops",
-	})
+	pt, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindPane, X: 0, Y: 0, W: 2, H: 2, AltText: "ops"}})
 	if err != nil {
 		t.Fatalf("CreatePane: %v", err)
 	}
-	eph, err := cl.CreateShell(ctx, &rpc.CreateShellRequest{GridID: scratch, X: 0, Y: 0, W: 1, H: 1})
+	eph, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: scratch, Tile: &gridwellv1.Tile{Kind: rpc.KindShell, X: 0, Y: 0, W: 1, H: 1}})
 	if err != nil {
 		t.Fatalf("CreateShell (scratch): %v", err)
 	}
-	txt, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 3, Y: 3, W: 1, H: 1, Data: []byte("# viewed"),
-	})
+	txt, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 3, Y: 3, W: 1, H: 1}}, []byte("# viewed"))
 	if err != nil {
 		t.Fatalf("CreateText: %v", err)
 	}
@@ -123,12 +118,12 @@ func TestReapFindsEncoderWrittenReferences(t *testing.T) {
 	p := tr.FocusedPane()
 	p.Stack = pane.NewStack(root)
 	p.Push(pane.Frame{GridID: "other/1", Door: root, Zoom: 1})
-	p.Push(pane.Frame{Door: eph.ID, Content: true})
+	p.Push(pane.Frame{Door: eph.Id, Content: true})
 	second, err := tr.Split(pane.Vertical)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second.Stack = pane.StackAt(root, nil, txt.ID)
+	second.Stack = pane.StackAt(root, nil, txt.Id)
 	second.Zoom = 1
 
 	data, skipped, err := pane.EncodeLayout(tr, nil)
@@ -138,16 +133,16 @@ func TestReapFindsEncoderWrittenReferences(t *testing.T) {
 	if len(skipped) != 0 {
 		t.Fatalf("encoder skipped leaves: %v", skipped)
 	}
-	if _, err := cl.WriteContent(ctx, pt.ID, pt.Version, data); err != nil {
+	if _, err := cl.WriteContent(ctx, pt.Id, pt.Version, data); err != nil {
 		t.Fatalf("SetPaneLayout: %v", err)
 	}
 
-	destroyPane(t, cl, pt.ID)
+	destroyPane(t, cl, pt.Id)
 
-	if _, err := cl.GetTile(ctx, eph.ID); err == nil {
+	if _, err := cl.GetTile(ctx, eph.Id); err == nil {
 		t.Error("ephemeral scratch tile survived the destroy — its shell would leak until the boot sweep")
 	}
-	if _, err := cl.GetTile(ctx, txt.ID); err != nil {
+	if _, err := cl.GetTile(ctx, txt.Id); err != nil {
 		t.Errorf("viewed content was reaped with the workspace: %v", err)
 	}
 }

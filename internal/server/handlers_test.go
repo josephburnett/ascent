@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -86,22 +87,20 @@ func TestCreateTextRPC(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
 
-	tile, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 1, Y: 1, W: 1, H: 1, Data: []byte("# hi"),
-	})
+	tile, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 1, Y: 1, W: 1, H: 1}}, []byte("# hi"))
 	if err != nil {
 		t.Fatalf("create text: %v", err)
 	}
 	if tile.Kind != rpc.KindText {
 		t.Errorf("got kind %q, want %q", tile.Kind, rpc.KindText)
 	}
-	if tile.BlobID == 0 {
+	if tile.BlobId == 0 {
 		t.Error("blob_id = 0, want non-zero")
 	}
 
 	// Body is fetched by routable tile id (GetBlob is unroutable in the
 	// rootless model — blob ids carry no plugin namespace).
-	data, _, version, err := cl.ReadContent(ctx, tile.ID)
+	data, _, version, err := cl.ReadContent(ctx, tile.Id)
 	if err != nil {
 		t.Fatalf("get tile content: %v", err)
 	}
@@ -116,11 +115,11 @@ func TestCreateTextRPC(t *testing.T) {
 	// bumps the row, a re-fetch must return the NEW version with the new
 	// bytes — pairing them in one plugin read is what lets a client never
 	// claim a version whose content it hasn't seen.
-	upd, err := cl.WriteContent(ctx, tile.ID, tile.Version, []byte("# hi v2"))
+	upd, err := cl.WriteContent(ctx, tile.Id, tile.Version, []byte("# hi v2"))
 	if err != nil {
 		t.Fatalf("update text: %v", err)
 	}
-	data, _, version, err = cl.ReadContent(ctx, tile.ID)
+	data, _, version, err = cl.ReadContent(ctx, tile.Id)
 	if err != nil {
 		t.Fatalf("get tile content after edit: %v", err)
 	}
@@ -131,17 +130,15 @@ func TestCreateTextRPC(t *testing.T) {
 
 func TestCreateURLRPC(t *testing.T) {
 	_, cl, root := newTestServer(t)
-	tile, err := cl.CreateURL(context.Background(), &rpc.CreateURLRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, URL: "https://example.com",
-	})
+	tile, err := cl.CreateTile(context.Background(), &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: 0, Y: 0, W: 1, H: 1, UrlString: "https://example.com"}})
 	if err != nil {
 		t.Fatalf("create url: %v", err)
 	}
 	if tile.Kind != rpc.KindURL {
 		t.Errorf("got kind %q, want %q", tile.Kind, rpc.KindURL)
 	}
-	if tile.URLString != "https://example.com" {
-		t.Errorf("url_string = %q", tile.URLString)
+	if tile.UrlString != "https://example.com" {
+		t.Errorf("url_string = %q", tile.UrlString)
 	}
 }
 
@@ -155,8 +152,8 @@ func TestMountFsPlugin(t *testing.T) {
 	if tile.Kind != rpc.KindWell {
 		t.Errorf("kind = %q, want %q", tile.Kind, rpc.KindWell)
 	}
-	if !strings.HasPrefix(tile.ChildGridID, fsPluginUUID+"/") {
-		t.Errorf("child_grid_id = %q, want prefix %q/", tile.ChildGridID, fsPluginUUID)
+	if !strings.HasPrefix(tile.ChildGridId, fsPluginUUID+"/") {
+		t.Errorf("child_grid_id = %q, want prefix %q/", tile.ChildGridId, fsPluginUUID)
 	}
 }
 
@@ -166,7 +163,7 @@ func TestMountFsPlugin(t *testing.T) {
 // (client/wasm createPluginLinkAtCell). Which swatches a row contributes is
 // door.PlacesOf, the client's own rule, so this drags what the user drags.
 // Every plugin under test here declares one collection, so there is one.
-func mountByClone(t *testing.T, cl *rpc.Client, pluginUUID, destGrid string, x, y int64) *rpc.Tile {
+func mountByClone(t *testing.T, cl *rpc.Client, pluginUUID, destGrid string, x, y int64) *gridwellv1.Tile {
 	t.Helper()
 	ctx := context.Background()
 	lp, err := cl.Handshake(ctx)
@@ -175,7 +172,7 @@ func mountByClone(t *testing.T, cl *rpc.Client, pluginUUID, destGrid string, x, 
 	}
 	var places []door.Place
 	for _, p := range lp.Plugins {
-		if p.UUID == pluginUUID {
+		if p.Uuid == pluginUUID {
 			places = door.PlacesOf(p)
 		}
 	}
@@ -183,11 +180,7 @@ func mountByClone(t *testing.T, cl *rpc.Client, pluginUUID, destGrid string, x, 
 		t.Fatalf("mount %s: %d swatches in %+v, want one", pluginUUID, len(places), lp.Plugins)
 	}
 	row := places[0].Plugin
-	tile, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: destGrid, X: x, Y: y, W: 1, H: 1,
-		ChildGridID: row.RootGridID, Label: row.Label,
-		Framing: rpc.Framing{Cx: row.RootViewCx, Cy: row.RootViewCy, Zoom: row.RootViewZoom},
-	})
+	tile, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: destGrid, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: x, Y: y, W: 1, H: 1, ChildGridId: row.RootGridId, AltText: row.Label, ViewCx: row.RootViewCx, ViewCy: row.RootViewCy, ViewZoom: row.RootViewZoom}})
 	if err != nil {
 		t.Fatalf("mount %s by link: %v", pluginUUID, err)
 	}
@@ -207,7 +200,7 @@ func TestMenuAndMountLabelAgree(t *testing.T) {
 	}
 	var menuLabel string
 	for _, p := range plugins.Plugins {
-		if p.UUID == fsPluginUUID {
+		if p.Uuid == fsPluginUUID {
 			menuLabel = p.Label
 		}
 	}
@@ -226,14 +219,14 @@ func TestResizeAndSetFramingRPCs(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
 
-	tile, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{GridID: root, X: 0, Y: 0, W: 1, H: 1})
+	tile, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1}})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	id := tile.ID
+	id := tile.Id
 
-	resized, err := cl.PlaceTile(ctx, &rpc.PlaceTileRequest{
-		TileID: id, GridID: root, X: 0, Y: 0, W: 2, H: 2,
+	resized, err := cl.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+		TileId: id, GridId: root, X: 0, Y: 0, W: 2, H: 2,
 	})
 	if err != nil {
 		t.Fatalf("resize: %v", err)
@@ -242,8 +235,8 @@ func TestResizeAndSetFramingRPCs(t *testing.T) {
 		t.Errorf("after resize: %+v", resized)
 	}
 
-	tile, err = cl.SetFraming(ctx, &rpc.SetFramingRequest{
-		TileID: id, Framing: rpc.Framing{Cx: 7, Cy: 8, Zoom: 1.5},
+	tile, err = cl.SetFraming(ctx, &gridwellv1.SetFramingRequest{
+		TileId: id, Cx: 7, Cy: 8, Zoom: 1.5,
 	})
 	if err != nil {
 		t.Fatalf("set well view: %v", err)
@@ -257,18 +250,13 @@ func TestSetTextViewRPC(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
 
-	tile, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte("hi"),
-	})
+	tile, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("hi"))
 	if err != nil {
 		t.Fatalf("create text: %v", err)
 	}
-	id := tile.ID
+	id := tile.Id
 
-	tile, err = cl.SetTextView(ctx, &rpc.SetTextViewRequest{
-		TileID: id,
-		TextX:  1, TextY: 2, TextW: 3, TextH: 4, TextMode: rpc.TextModeRendered,
-	})
+	tile, err = cl.SetTile(ctx, &gridwellv1.SetTileRequest{TileId: id, Tile: &gridwellv1.Tile{Kind: rpc.KindText, TextX: 1, TextY: 2, TextW: 3, TextH: 4, TextMode: rpc.TextModeRendered}})
 	if err != nil {
 		t.Fatalf("set text view: %v", err)
 	}
@@ -283,11 +271,11 @@ func TestSetTextViewRPC(t *testing.T) {
 func TestDeleteTileRPC(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
-	tile, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{GridID: root, X: 0, Y: 0, W: 1, H: 1})
+	tile, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1}})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := cl.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: tile.ID}); err != nil {
+	if err := cl.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: tile.Id}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 }
@@ -295,17 +283,15 @@ func TestDeleteTileRPC(t *testing.T) {
 func TestUpdateTextRPC(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
-	tile, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte("v1"),
-	})
+	tile, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("v1"))
 	if err != nil {
 		t.Fatalf("create text: %v", err)
 	}
-	tile, err = cl.WriteContent(ctx, tile.ID, tile.Version, []byte("v2"))
+	tile, err = cl.WriteContent(ctx, tile.Id, tile.Version, []byte("v2"))
 	if err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	data, _, _, err := cl.ReadContent(ctx, tile.ID)
+	data, _, _, err := cl.ReadContent(ctx, tile.Id)
 	if err != nil {
 		t.Fatalf("get tile content: %v", err)
 	}
@@ -317,20 +303,20 @@ func TestUpdateTextRPC(t *testing.T) {
 func TestCloneAndMoveRPCs(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
-	tile, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{GridID: root, X: 0, Y: 0, W: 1, H: 1})
+	tile, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1}})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	clone, err := cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     tile.ID,
-		DestGridID: root, X: 5, Y: 5,
+	clone, err := cl.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     tile.Id,
+		DestGridId: root, X: 5, Y: 5,
 	})
 	if err != nil {
 		t.Fatalf("clone: %v", err)
 	}
-	moved, err := cl.PlaceTile(ctx, &rpc.PlaceTileRequest{
-		TileID: clone.ID,
-		GridID: root, X: 8, Y: 8, W: clone.W, H: clone.H,
+	moved, err := cl.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+		TileId: clone.Id,
+		GridId: root, X: 8, Y: 8, W: clone.W, H: clone.H,
 	})
 	if err != nil {
 		t.Fatalf("move: %v", err)
@@ -347,15 +333,11 @@ func TestErrorCodeMapping(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
 
-	if _, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 2, H: 2,
-	}); err != nil {
+	if _, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 2, H: 2}}); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
 	// Overlap → FailedPrecondition.
-	_, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 1, Y: 1, W: 1, H: 1,
-	})
+	_, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 1, Y: 1, W: 1, H: 1}})
 	if got := errCode(err); got != connect.CodeFailedPrecondition {
 		t.Errorf("overlap: code %v, want FailedPrecondition", got)
 	}
@@ -363,17 +345,13 @@ func TestErrorCodeMapping(t *testing.T) {
 	// A create into a grid that doesn't exist → InvalidArgument (grid_id is
 	// the authoritative location; there is no descent path).
 	pUUID, _, _ := rpc.SplitID(root)
-	_, err = cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: pUUID + "/999999", X: 10, Y: 10, W: 1, H: 1,
-	})
+	_, err = cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: pUUID + "/999999", Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 10, Y: 10, W: 1, H: 1}})
 	if got := errCode(err); got != connect.CodeInvalidArgument {
 		t.Errorf("missing grid: code %v, want InvalidArgument", got)
 	}
 
 	// Non-http URL → InvalidArgument.
-	_, err = cl.CreateURL(ctx, &rpc.CreateURLRequest{
-		GridID: root, X: 10, Y: 10, W: 1, H: 1, URL: "ftp://evil.example.com",
-	})
+	_, err = cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: 10, Y: 10, W: 1, H: 1, UrlString: "ftp://evil.example.com"}})
 	if got := errCode(err); got != connect.CodeInvalidArgument {
 		t.Errorf("bad url: code %v, want InvalidArgument", got)
 	}
@@ -383,20 +361,18 @@ func TestVersionConflictReturnsFailedPrecondition(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
 
-	tile, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte("v1"),
-	})
+	tile, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("v1"))
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	good := tile.Version
 
 	// Bump version via a successful UpdateText.
-	if _, err := cl.WriteContent(ctx, tile.ID, good, []byte("v2")); err != nil {
+	if _, err := cl.WriteContent(ctx, tile.Id, good, []byte("v2")); err != nil {
 		t.Fatalf("first update: %v", err)
 	}
 	// Retry with stale claimed version.
-	_, err = cl.WriteContent(ctx, tile.ID, good, []byte("v3"))
+	_, err = cl.WriteContent(ctx, tile.Id, good, []byte("v3"))
 	if got := errCode(err); got != connect.CodeFailedPrecondition {
 		t.Errorf("stale version: code %v, want FailedPrecondition", got)
 	}
@@ -419,19 +395,19 @@ func TestListPlugins(t *testing.T) {
 		t.Errorf("plugin[0] = %+v, want writable localdb", plugins[0])
 	}
 	// Each plugin advertises its qualified root grid id (for click-enter).
-	if !strings.HasPrefix(plugins[0].RootGridID, plugins[0].UUID+"/") {
-		t.Errorf("plugin[0] root_grid_id = %q, want %q prefix", plugins[0].RootGridID, plugins[0].UUID)
+	if !strings.HasPrefix(plugins[0].RootGridId, plugins[0].Uuid+"/") {
+		t.Errorf("plugin[0] root_grid_id = %q, want %q prefix", plugins[0].RootGridId, plugins[0].Uuid)
 	}
 	// Home advertises a qualified scratch grid id (the ephemeral-url
 	// target), distinct from its root. fs/proc have none.
-	if !strings.HasPrefix(plugins[0].ScratchGridID, plugins[0].UUID+"/") {
-		t.Errorf("plugin[0] scratch_grid_id = %q, want %q prefix", plugins[0].ScratchGridID, plugins[0].UUID)
+	if !strings.HasPrefix(plugins[0].ScratchGridId, plugins[0].Uuid+"/") {
+		t.Errorf("plugin[0] scratch_grid_id = %q, want %q prefix", plugins[0].ScratchGridId, plugins[0].Uuid)
 	}
-	if plugins[0].ScratchGridID == plugins[0].RootGridID {
-		t.Errorf("scratch grid id %q must differ from root", plugins[0].ScratchGridID)
+	if plugins[0].ScratchGridId == plugins[0].RootGridId {
+		t.Errorf("scratch grid id %q must differ from root", plugins[0].ScratchGridId)
 	}
-	if plugins[1].ScratchGridID != "" {
-		t.Errorf("fs plugin should have no scratch grid, got %q", plugins[1].ScratchGridID)
+	if plugins[1].ScratchGridId != "" {
+		t.Errorf("fs plugin should have no scratch grid, got %q", plugins[1].ScratchGridId)
 	}
 	if plugins[1].Kind != "fs" || plugins[1].Writable {
 		t.Errorf("plugin[1] = %+v, want read-only fs", plugins[1])
@@ -453,20 +429,17 @@ func TestCreateScratchURLRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handshake: %v", err)
 	}
-	scratch := plugins.Plugins[0].ScratchGridID
+	scratch := plugins.Plugins[0].ScratchGridId
 	if scratch == "" {
 		t.Fatal("localdb advertised no scratch grid")
 	}
 	// Empty path + scratch grid: a normal create here would fail path validation
 	// (the scratch grid is off-grid); the scratch route bypasses it.
-	tile, err := cl.CreateURL(ctx, &rpc.CreateURLRequest{
-		GridID: scratch, X: 0, Y: 0, W: 1, H: 1,
-		URL: "https://example.com/ephemeral",
-	})
+	tile, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: scratch, Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: 0, Y: 0, W: 1, H: 1, UrlString: "https://example.com/ephemeral"}})
 	if err != nil {
 		t.Fatalf("create ephemeral url into scratch: %v", err)
 	}
-	if tile.Kind != rpc.KindURL || tile.URLString != "https://example.com/ephemeral" {
+	if tile.Kind != rpc.KindURL || tile.UrlString != "https://example.com/ephemeral" {
 		t.Errorf("scratch tile = %+v, want a url tile with the typed URL", tile)
 	}
 	if tile.Reference {
@@ -477,7 +450,7 @@ func TestCreateScratchURLRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetGrid scratch: %v", err)
 	}
-	if len(g.Tiles) != 1 || g.Tiles[0].ID != tile.ID {
+	if len(g.Tiles) != 1 || g.Tiles[0].Id != tile.Id {
 		t.Errorf("scratch grid tiles = %+v, want the one ephemeral url", g.Tiles)
 	}
 }
@@ -495,7 +468,7 @@ func TestPluginGridCarriesHomeScratch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Handshake: %v", err)
 	}
-	homeScratch := hs.Plugins[0].ScratchGridID
+	homeScratch := hs.Plugins[0].ScratchGridId
 	if homeScratch == "" {
 		t.Fatal("home advertised no scratch grid")
 	}
@@ -504,15 +477,12 @@ func TestPluginGridCarriesHomeScratch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetGrid fs root: %v", err)
 	}
-	if g.Grid.ScratchGridID != homeScratch {
-		t.Fatalf("fs grid scratch_grid_id = %q, want home's %q", g.Grid.ScratchGridID, homeScratch)
+	if g.Grid.ScratchGridId != homeScratch {
+		t.Fatalf("fs grid scratch_grid_id = %q, want home's %q", g.Grid.ScratchGridId, homeScratch)
 	}
 	// The stamp must not be a dangling pointer: a visit created against it
 	// routes into home, exactly what a link click does.
-	tile, err := cl.CreateURL(ctx, &rpc.CreateURLRequest{
-		GridID: g.Grid.ScratchGridID, X: 0, Y: 0, W: 1, H: 1,
-		URL: "https://gitlab.example/g/p/-/merge_requests/1",
-	})
+	tile, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: g.Grid.ScratchGridId, Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: 0, Y: 0, W: 1, H: 1, UrlString: "https://gitlab.example/g/p/-/merge_requests/1"}})
 	if err != nil {
 		t.Fatalf("create ephemeral url into stamped scratch: %v", err)
 	}
@@ -529,8 +499,8 @@ func TestMountByClone(t *testing.T) {
 	if tile.Kind != rpc.KindWell {
 		t.Errorf("kind = %q, want well", tile.Kind)
 	}
-	if !strings.HasPrefix(tile.ChildGridID, procPluginUUID+"/") {
-		t.Errorf("child_grid_id = %q, want %q prefix", tile.ChildGridID, procPluginUUID)
+	if !strings.HasPrefix(tile.ChildGridId, procPluginUUID+"/") {
+		t.Errorf("child_grid_id = %q, want %q prefix", tile.ChildGridId, procPluginUUID)
 	}
 	// A mount is a LINK: the server must stamp reference=true on the way back
 	// through the wire, so the client renders it dashed (and a delete unlinks
@@ -555,12 +525,12 @@ func TestFramingRoundTripsByteIdenticalAcrossTheSeam(t *testing.T) {
 	want := rpc.Framing{Cx: 5.37, Cy: -7.125, Zoom: 0.1}
 
 	// The doorway row: a well tile.
-	well, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{GridID: root, X: 3, Y: 3, W: 3, H: 5})
+	well, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 3, Y: 3, W: 3, H: 5}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	set, err := cl.SetFraming(ctx, &rpc.SetFramingRequest{
-		TileID: well.ID, Framing: want,
+	set, err := cl.SetFraming(ctx, &gridwellv1.SetFramingRequest{
+		TileId: well.Id, Cx: want.Cx, Cy: want.Cy, Zoom: want.Zoom,
 	})
 	if err != nil {
 		t.Fatalf("SetFraming(doorway): %v", err)
@@ -576,7 +546,7 @@ func TestFramingRoundTripsByteIdenticalAcrossTheSeam(t *testing.T) {
 	}
 	found := false
 	for _, tile := range g.Tiles {
-		if tile.ID != well.ID {
+		if tile.Id != well.Id {
 			continue
 		}
 		found = true
@@ -590,7 +560,7 @@ func TestFramingRoundTripsByteIdenticalAcrossTheSeam(t *testing.T) {
 
 	// The root row: the same verb, the same shape, no doorway. It reads
 	// back through the handshake, where a root's framing rides.
-	if _, err := cl.SetFraming(ctx, &rpc.SetFramingRequest{RootGridID: root, Framing: want}); err != nil {
+	if _, err := cl.SetFraming(ctx, &gridwellv1.SetFramingRequest{RootGridId: root, Cx: want.Cx, Cy: want.Cy, Zoom: want.Zoom}); err != nil {
 		t.Fatalf("SetFraming(root): %v", err)
 	}
 	hs, err := cl.Handshake(ctx)
@@ -599,7 +569,7 @@ func TestFramingRoundTripsByteIdenticalAcrossTheSeam(t *testing.T) {
 	}
 	rootRow := false
 	for _, pl := range hs.Plugins {
-		if pl.RootGridID != root {
+		if pl.RootGridId != root {
 			continue
 		}
 		rootRow = true
@@ -612,12 +582,12 @@ func TestFramingRoundTripsByteIdenticalAcrossTheSeam(t *testing.T) {
 	}
 
 	// And the guiding rule: re-writing the SAME framing changes nothing.
-	if _, err := cl.SetFraming(ctx, &rpc.SetFramingRequest{
-		TileID: well.ID, Framing: want,
+	if _, err := cl.SetFraming(ctx, &gridwellv1.SetFramingRequest{
+		TileId: well.Id, Cx: want.Cx, Cy: want.Cy, Zoom: want.Zoom,
 	}); err != nil {
 		t.Fatalf("SetFraming(doorway, again): %v", err)
 	}
-	again, err := cl.GetTile(ctx, well.ID)
+	again, err := cl.GetTile(ctx, well.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
