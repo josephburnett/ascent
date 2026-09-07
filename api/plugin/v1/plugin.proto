@@ -1,22 +1,22 @@
-// plugin.proto is the plugin interface. A plugin holds no node fact: it
-// answers from its source — a directory tree, the process table, a mail
-// account — in its own stable string keys, and never sees ids, layout, or a
-// database. The node owns all of those. It mints ids against keys, keeps the
-// arrangement as a namespace of its own store, and serves the full Gridwell
-// surface to clients, so a plugin is invisible to a connection.
+// plugin.proto is the plugin interface. A plugin holds no node fact. It answers
+// from its source, such as a directory tree or the process table, in its own
+// stable string keys, and never sees ids, layout or a database. The node owns
+// all of those: it mints ids against keys, keeps the arrangement as a namespace
+// of its own store, and serves the full Gridwell surface to clients, so a
+// plugin is invisible to a connection.
 //
-// What a plugin MAY keep is its own memory of its source, in the private
-// directory the node hands it at spawn (`state_dir`), under cache.db's
-// contract: disposable, safe to delete, rewarmed by use.
+// A plugin may keep its own memory of its source, in the private directory the
+// node hands it at spawn (`state_dir`), under cache.db's contract: disposable,
+// safe to delete, rewarmed by use.
 //
-// Key stability is the plugin's one hard contract: a key names the same
-// logical thing forever — a path relative to the configured root, a
-// message-id, "pid:1234". Changing the key scheme orphans every stored
-// reference, exactly as re-minting ids would.
+// Key stability is the plugin's one hard contract. A key names the same logical
+// thing forever, such as a path relative to the configured root, a message-id
+// or "pid:1234". Changing the key scheme orphans every stored reference, as
+// re-minting ids would.
 //
-// Unimplemented is always polite: Search means no results, ServeContent a
-// 404, Watch no events, WriteContent read-only, GetPreview no thumbnail,
-// and Delete refused. A minimal plugin is Info, List, and ReadContent.
+// Unimplemented is always polite: Search means no results, ServeContent a 404,
+// Watch no events, WriteContent read-only, GetPreview no thumbnail, and Delete
+// refused. A minimal plugin is Info, List and ReadContent.
 //
 // docs/plugin-authoring.md is this contract from the plugin's side.
 syntax = "proto3";
@@ -32,76 +32,70 @@ message InfoResponse {
   string kind         = 1; // e.g. "fs", "proc", "mail"
   string display_name = 2;
   string glyph        = 3; // declared glyph vocabulary; "" = the generic globe
-  // root_context is RETIRED. The field number is kept forever rather than
-  // reused. A plugin is not a place: it contributes doorways, one
-  // menu_entries row per collection, and the node has no landing to choose
-  // among them. Leave it empty and declare your collections.
+  // root_context is retired and its field number is kept rather than reused.
+  // A plugin contributes doorways, one menu_entries row per collection, and
+  // the node has no landing to choose among them. Leave it empty and declare
+  // your collections.
   //
-  // The node reads it in exactly one case, so a binary built against the
-  // older proto keeps presenting without a rebuild: a plugin that answers a
-  // root_context and NO menu_entries gets one derived entry onto it, wearing
-  // the plugin's own name and face. Declare both and the entries win
-  // outright — the root gets no privilege, because there is no privileged
-  // collection.
+  // The node reads it in one case, so a binary built against the older proto
+  // keeps presenting without a rebuild: a plugin that answers a root_context
+  // and no menu_entries gets one derived entry onto it, wearing the plugin's
+  // own name and face. Declare both and the entries win; there is no
+  // privileged collection.
   string root_context = 4;
   // watch: the plugin implements Watch (live change events).
   bool watch = 5;
-  // writable: the plugin accepts WriteContent on (some of) its
-  // entries. Presentation writes never reach a plugin, so this is
-  // purely a content capability.
+  // writable: the plugin accepts WriteContent on some of its entries.
+  // Presentation writes never reach a plugin, so this is a content capability
+  // only.
   bool writable = 6;
-  // menu_entries: the plugin's collections, one row each — this is how a
-  // plugin is reached. Each becomes a (+) menu swatch, and the node stamps
-  // them onto every grid it serves for this plugin. Keyed by context instead
-  // of grid id. Declaring none is legal and means the plugin contributes
-  // nothing to the menu; it is not an error.
+  // menu_entries: the plugin's collections, one row each, and the way a plugin
+  // is reached. Each becomes a (+) menu swatch, and the node stamps them onto
+  // every grid it serves for this plugin. Keyed by context instead of grid id.
+  // Declaring none is legal and means the plugin contributes nothing to the
+  // menu.
   repeated MenuEntry menu_entries = 7;
-  // host_content: this plugin's contexts PROJECT host state — a directory
-  // tree, the process table — rather than holding content of their own.
-  // Their rows are summaries the node cannot re-arrange across contexts, and
-  // the client renders them with the host treatment: the outside tint on
-  // every tile, the exit border family on a descent. It is a DECLARATION,
-  // never inferred from kind: the node has no list of which kinds are
-  // host-backed, so a third-party plugin gets the same treatment by saying
-  // so. It becomes Grid.host_content on every grid the node serves for this
-  // plugin.
+  // host_content: this plugin's contexts project host state, such as a
+  // directory tree or the process table, rather than holding content of their
+  // own. Their rows are summaries the node cannot re-arrange across contexts,
+  // and the client renders them with the host treatment: the outside tint on
+  // every tile and the exit border family on a descent. The node has no list of
+  // which kinds are host-backed, so a third-party plugin gets the same
+  // treatment by declaring it here. It becomes Grid.host_content on every grid
+  // the node serves for this plugin.
   bool host_content = 8;
 }
 
-// MenuEntry mirrors the gridwell.v1 shape with contexts for targets: one of
-// the plugin's collections, which the node stamps onto every grid it serves
-// for this plugin. 5 and 6 were kind and param_schema, the creation-entry
-// half; the node never saw one.
+// MenuEntry mirrors the gridwell.v1 shape with contexts for targets: one of the
+// plugin's collections, which the node stamps onto every grid it serves for
+// this plugin.
 message MenuEntry {
   string id           = 1;
   string label        = 2;
   string glyph        = 3;
   string color        = 4;
-  reserved 5, 6;
+  reserved 5, 6; // kind, param_schema
   string context      = 7; // the target context key
 }
 
 // ─── Listing ───────────────────────────────────────────────────────────────
 
-// List enumerates one context, carrying no presentation facts. A context is
-// the plugin's word for a grid; the node maps context keys to grid ids in
-// the plugin's namespace of its store.
+// List enumerates one context, carrying no presentation facts. A context is the
+// plugin's word for a grid, and the node maps context keys to grid ids in the
+// plugin's namespace of its store.
 message ListRequest {
   string context = 1;
 }
 message ListResponse {
   repeated Entry entries = 1;
-  // authoritative: this listing definitively enumerates the context, so a
-  // key absent from it is gone. That is the case for a readable directory.
-  // When false, absence only means not seen this pass, as with the process
-  // table, and the node keeps serving remembered entries until Probe
-  // answers GONE. It is the one sweep fact only the plugin knows.
+  // authoritative: this listing enumerates the context definitively, so a key
+  // absent from it is gone, as for a readable directory. When false, absence
+  // only means not seen this pass, as with the process table, and the node
+  // keeps serving remembered entries until Probe answers GONE. It is the one
+  // sweep fact only the plugin knows.
   bool authoritative = 2;
-  // source_label is the human name of the backing source, such as the
-  // directory path or the pid. The node surface has no field for it since
-  // Grid.source_id was retired, so nothing reads it today; it is kept
-  // because plugins already declare it and a name for the source is the
-  // obvious thing for a future bar to show.
+  // source_label is the name of the backing source, such as the directory path
+  // or the pid. The node surface has no field for it, so nothing reads it.
   string source_label = 3;
 }
 
@@ -116,14 +110,14 @@ message Entry {
   string status_detail     = 7;
   // url entries: the address itself.
   string url_string = 8;
-  // placement_hint, when set, seeds the entry's first placement — a
+  // placement_hint, when set, seeds the entry's first placement, such as a
   // calendar putting an event at its date. The user's arrangement wins from
-  // then on; a hint never moves a placed tile.
+  // then on, and a hint never moves a placed tile.
   PlacementHint placement_hint = 9;
-  // preview_stamp is a cheap generation number for the entry's preview,
-  // such as an image file's mtime in fs. The client keys its thumbnail
-  // cache by it, so an edited image invalidates naturally. 0 means no
-  // stamp. It becomes Tile.preview_blob_id on the node surface.
+  // preview_stamp is a generation number for the entry's preview, such as an
+  // image file's mtime in fs. The client keys its thumbnail cache by it, so an
+  // edited image invalidates. 0 means no stamp. It becomes
+  // Tile.preview_blob_id on the node surface.
   int64 preview_stamp = 10;
 }
 
@@ -136,9 +130,8 @@ message PlacementHint {
 
 // ─── Content ───────────────────────────────────────────────────────────────
 
-// ReadContent streams an entry's content bytes. Chunk 1 carries
-// media_type. Plugin content is not version-edited; versions are a node
-// fact.
+// ReadContent streams an entry's content bytes. Chunk 1 carries media_type.
+// Plugin content is not version-edited; a version is a node fact.
 message ReadContentRequest {
   string key = 1;
 }
@@ -147,18 +140,18 @@ message ContentChunk {
   string media_type = 2; // chunk 1 only
 }
 
-// WriteContent streams an entry's new content up; the first message binds
-// the key. It commits at close, like every Gridwell write, so a broken
-// stream leaves the old value intact. Plugins that are pure projections
-// leave it unimplemented.
+// WriteContent streams an entry's new content up, and the first message binds
+// the key. It commits at close, like every Gridwell write, so a broken stream
+// leaves the old value intact. A plugin that only projects a source leaves it
+// unimplemented.
 message WriteContentRequest {
   string key  = 1;
   bytes  data = 2;
 }
 message WriteContentResponse {}
 
-// ServeContent is the web-content door's plugin half: GET-only,
-// subpath "" is the entry's root page. Sandboxing happens at the node.
+// ServeContent is the web-content door's plugin half. GET-only, and subpath ""
+// is the entry's root page. Sandboxing happens at the node.
 message ServeContentRequest {
   string key     = 1;
   string subpath = 2;
@@ -178,9 +171,9 @@ message GetPreviewResponse {
 
 // ─── Existence ─────────────────────────────────────────────────────────────
 
-// Probe reports one entry's definitive presence: the arbiter for
-// non-authoritative listings. UNSPECIFIED means cannot say right now; a
-// failed read must never read as GONE.
+// Probe reports one entry's definitive presence, and arbitrates a
+// non-authoritative listing. UNSPECIFIED means cannot say right now; a failed
+// read must never read as GONE.
 message ProbeRequest {
   string key = 1;
 }
@@ -193,9 +186,9 @@ message ProbeResponse {
   Presence presence = 1;
 }
 
-// Delete asks the plugin to delete the source thing behind an entry: trash
-// the file, signal the process. The node handles the id and layout side,
-// and presence catches up through List and Probe as usual.
+// Delete asks the plugin to delete the source thing behind an entry: trash the
+// file, signal the process. The node handles the id and layout side, and
+// presence catches up through List and Probe.
 message DeleteRequest {
   string key = 1;
 }
@@ -209,8 +202,8 @@ message SearchRequest {
 }
 message SearchResult {
   Entry entry = 1;
-  // context_path is the containing-context chain from the root, outermost
-  // first. The node resolves it to a navigable tile path.
+  // context_path is the containing-context chain from the root, outermost first.
+  // The node resolves it to a navigable tile path.
   repeated string context_path = 2;
   string snippet = 3;
   double score   = 4;

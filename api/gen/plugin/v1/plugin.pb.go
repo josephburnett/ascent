@@ -1,22 +1,22 @@
-// plugin.proto is the plugin interface. A plugin holds no node fact: it
-// answers from its source — a directory tree, the process table, a mail
-// account — in its own stable string keys, and never sees ids, layout, or a
-// database. The node owns all of those. It mints ids against keys, keeps the
-// arrangement as a namespace of its own store, and serves the full Gridwell
-// surface to clients, so a plugin is invisible to a connection.
+// plugin.proto is the plugin interface. A plugin holds no node fact. It answers
+// from its source, such as a directory tree or the process table, in its own
+// stable string keys, and never sees ids, layout or a database. The node owns
+// all of those: it mints ids against keys, keeps the arrangement as a namespace
+// of its own store, and serves the full Gridwell surface to clients, so a
+// plugin is invisible to a connection.
 //
-// What a plugin MAY keep is its own memory of its source, in the private
-// directory the node hands it at spawn (`state_dir`), under cache.db's
-// contract: disposable, safe to delete, rewarmed by use.
+// A plugin may keep its own memory of its source, in the private directory the
+// node hands it at spawn (`state_dir`), under cache.db's contract: disposable,
+// safe to delete, rewarmed by use.
 //
-// Key stability is the plugin's one hard contract: a key names the same
-// logical thing forever — a path relative to the configured root, a
-// message-id, "pid:1234". Changing the key scheme orphans every stored
-// reference, exactly as re-minting ids would.
+// Key stability is the plugin's one hard contract. A key names the same logical
+// thing forever, such as a path relative to the configured root, a message-id
+// or "pid:1234". Changing the key scheme orphans every stored reference, as
+// re-minting ids would.
 //
-// Unimplemented is always polite: Search means no results, ServeContent a
-// 404, Watch no events, WriteContent read-only, GetPreview no thumbnail,
-// and Delete refused. A minimal plugin is Info, List, and ReadContent.
+// Unimplemented is always polite: Search means no results, ServeContent a 404,
+// Watch no events, WriteContent read-only, GetPreview no thumbnail, and Delete
+// refused. A minimal plugin is Info, List and ReadContent.
 //
 // docs/plugin-authoring.md is this contract from the plugin's side.
 
@@ -133,39 +133,37 @@ type InfoResponse struct {
 	Kind        string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"` // e.g. "fs", "proc", "mail"
 	DisplayName string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	Glyph       string                 `protobuf:"bytes,3,opt,name=glyph,proto3" json:"glyph,omitempty"` // declared glyph vocabulary; "" = the generic globe
-	// root_context is RETIRED. The field number is kept forever rather than
-	// reused. A plugin is not a place: it contributes doorways, one
-	// menu_entries row per collection, and the node has no landing to choose
-	// among them. Leave it empty and declare your collections.
+	// root_context is retired and its field number is kept rather than reused.
+	// A plugin contributes doorways, one menu_entries row per collection, and
+	// the node has no landing to choose among them. Leave it empty and declare
+	// your collections.
 	//
-	// The node reads it in exactly one case, so a binary built against the
-	// older proto keeps presenting without a rebuild: a plugin that answers a
-	// root_context and NO menu_entries gets one derived entry onto it, wearing
-	// the plugin's own name and face. Declare both and the entries win
-	// outright — the root gets no privilege, because there is no privileged
-	// collection.
+	// The node reads it in one case, so a binary built against the older proto
+	// keeps presenting without a rebuild: a plugin that answers a root_context
+	// and no menu_entries gets one derived entry onto it, wearing the plugin's
+	// own name and face. Declare both and the entries win; there is no
+	// privileged collection.
 	RootContext string `protobuf:"bytes,4,opt,name=root_context,json=rootContext,proto3" json:"root_context,omitempty"`
 	// watch: the plugin implements Watch (live change events).
 	Watch bool `protobuf:"varint,5,opt,name=watch,proto3" json:"watch,omitempty"`
-	// writable: the plugin accepts WriteContent on (some of) its
-	// entries. Presentation writes never reach a plugin, so this is
-	// purely a content capability.
+	// writable: the plugin accepts WriteContent on some of its entries.
+	// Presentation writes never reach a plugin, so this is a content capability
+	// only.
 	Writable bool `protobuf:"varint,6,opt,name=writable,proto3" json:"writable,omitempty"`
-	// menu_entries: the plugin's collections, one row each — this is how a
-	// plugin is reached. Each becomes a (+) menu swatch, and the node stamps
-	// them onto every grid it serves for this plugin. Keyed by context instead
-	// of grid id. Declaring none is legal and means the plugin contributes
-	// nothing to the menu; it is not an error.
+	// menu_entries: the plugin's collections, one row each, and the way a plugin
+	// is reached. Each becomes a (+) menu swatch, and the node stamps them onto
+	// every grid it serves for this plugin. Keyed by context instead of grid id.
+	// Declaring none is legal and means the plugin contributes nothing to the
+	// menu.
 	MenuEntries []*MenuEntry `protobuf:"bytes,7,rep,name=menu_entries,json=menuEntries,proto3" json:"menu_entries,omitempty"`
-	// host_content: this plugin's contexts PROJECT host state — a directory
-	// tree, the process table — rather than holding content of their own.
-	// Their rows are summaries the node cannot re-arrange across contexts, and
-	// the client renders them with the host treatment: the outside tint on
-	// every tile, the exit border family on a descent. It is a DECLARATION,
-	// never inferred from kind: the node has no list of which kinds are
-	// host-backed, so a third-party plugin gets the same treatment by saying
-	// so. It becomes Grid.host_content on every grid the node serves for this
-	// plugin.
+	// host_content: this plugin's contexts project host state, such as a
+	// directory tree or the process table, rather than holding content of their
+	// own. Their rows are summaries the node cannot re-arrange across contexts,
+	// and the client renders them with the host treatment: the outside tint on
+	// every tile and the exit border family on a descent. The node has no list of
+	// which kinds are host-backed, so a third-party plugin gets the same
+	// treatment by declaring it here. It becomes Grid.host_content on every grid
+	// the node serves for this plugin.
 	HostContent   bool `protobuf:"varint,8,opt,name=host_content,json=hostContent,proto3" json:"host_content,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -257,10 +255,9 @@ func (x *InfoResponse) GetHostContent() bool {
 	return false
 }
 
-// MenuEntry mirrors the gridwell.v1 shape with contexts for targets: one of
-// the plugin's collections, which the node stamps onto every grid it serves
-// for this plugin. 5 and 6 were kind and param_schema, the creation-entry
-// half; the node never saw one.
+// MenuEntry mirrors the gridwell.v1 shape with contexts for targets: one of the
+// plugin's collections, which the node stamps onto every grid it serves for
+// this plugin.
 type MenuEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
@@ -337,9 +334,9 @@ func (x *MenuEntry) GetContext() string {
 	return ""
 }
 
-// List enumerates one context, carrying no presentation facts. A context is
-// the plugin's word for a grid; the node maps context keys to grid ids in
-// the plugin's namespace of its store.
+// List enumerates one context, carrying no presentation facts. A context is the
+// plugin's word for a grid, and the node maps context keys to grid ids in the
+// plugin's namespace of its store.
 type ListRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Context       string                 `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
@@ -387,17 +384,14 @@ func (x *ListRequest) GetContext() string {
 type ListResponse struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	Entries []*Entry               `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
-	// authoritative: this listing definitively enumerates the context, so a
-	// key absent from it is gone. That is the case for a readable directory.
-	// When false, absence only means not seen this pass, as with the process
-	// table, and the node keeps serving remembered entries until Probe
-	// answers GONE. It is the one sweep fact only the plugin knows.
+	// authoritative: this listing enumerates the context definitively, so a key
+	// absent from it is gone, as for a readable directory. When false, absence
+	// only means not seen this pass, as with the process table, and the node
+	// keeps serving remembered entries until Probe answers GONE. It is the one
+	// sweep fact only the plugin knows.
 	Authoritative bool `protobuf:"varint,2,opt,name=authoritative,proto3" json:"authoritative,omitempty"`
-	// source_label is the human name of the backing source, such as the
-	// directory path or the pid. The node surface has no field for it since
-	// Grid.source_id was retired, so nothing reads it today; it is kept
-	// because plugins already declare it and a name for the source is the
-	// obvious thing for a future bar to show.
+	// source_label is the name of the backing source, such as the directory path
+	// or the pid. The node surface has no field for it, so nothing reads it.
 	SourceLabel   string `protobuf:"bytes,3,opt,name=source_label,json=sourceLabel,proto3" json:"source_label,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -466,14 +460,14 @@ type Entry struct {
 	StatusDetail     string `protobuf:"bytes,7,opt,name=status_detail,json=statusDetail,proto3" json:"status_detail,omitempty"`
 	// url entries: the address itself.
 	UrlString string `protobuf:"bytes,8,opt,name=url_string,json=urlString,proto3" json:"url_string,omitempty"`
-	// placement_hint, when set, seeds the entry's first placement — a
+	// placement_hint, when set, seeds the entry's first placement, such as a
 	// calendar putting an event at its date. The user's arrangement wins from
-	// then on; a hint never moves a placed tile.
+	// then on, and a hint never moves a placed tile.
 	PlacementHint *PlacementHint `protobuf:"bytes,9,opt,name=placement_hint,json=placementHint,proto3" json:"placement_hint,omitempty"`
-	// preview_stamp is a cheap generation number for the entry's preview,
-	// such as an image file's mtime in fs. The client keys its thumbnail
-	// cache by it, so an edited image invalidates naturally. 0 means no
-	// stamp. It becomes Tile.preview_blob_id on the node surface.
+	// preview_stamp is a generation number for the entry's preview, such as an
+	// image file's mtime in fs. The client keys its thumbnail cache by it, so an
+	// edited image invalidates. 0 means no stamp. It becomes
+	// Tile.preview_blob_id on the node surface.
 	PreviewStamp  int64 `protobuf:"varint,10,opt,name=preview_stamp,json=previewStamp,proto3" json:"preview_stamp,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -647,9 +641,8 @@ func (x *PlacementHint) GetH() int64 {
 	return 0
 }
 
-// ReadContent streams an entry's content bytes. Chunk 1 carries
-// media_type. Plugin content is not version-edited; versions are a node
-// fact.
+// ReadContent streams an entry's content bytes. Chunk 1 carries media_type.
+// Plugin content is not version-edited; a version is a node fact.
 type ReadContentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -746,10 +739,10 @@ func (x *ContentChunk) GetMediaType() string {
 	return ""
 }
 
-// WriteContent streams an entry's new content up; the first message binds
-// the key. It commits at close, like every Gridwell write, so a broken
-// stream leaves the old value intact. Plugins that are pure projections
-// leave it unimplemented.
+// WriteContent streams an entry's new content up, and the first message binds
+// the key. It commits at close, like every Gridwell write, so a broken stream
+// leaves the old value intact. A plugin that only projects a source leaves it
+// unimplemented.
 type WriteContentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -838,8 +831,8 @@ func (*WriteContentResponse) Descriptor() ([]byte, []int) {
 	return file_plugin_v1_plugin_proto_rawDescGZIP(), []int{10}
 }
 
-// ServeContent is the web-content door's plugin half: GET-only,
-// subpath "" is the entry's root page. Sandboxing happens at the node.
+// ServeContent is the web-content door's plugin half. GET-only, and subpath ""
+// is the entry's root page. Sandboxing happens at the node.
 type ServeContentRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -1040,9 +1033,9 @@ func (x *GetPreviewResponse) GetJpeg() []byte {
 	return nil
 }
 
-// Probe reports one entry's definitive presence: the arbiter for
-// non-authoritative listings. UNSPECIFIED means cannot say right now; a
-// failed read must never read as GONE.
+// Probe reports one entry's definitive presence, and arbitrates a
+// non-authoritative listing. UNSPECIFIED means cannot say right now; a failed
+// read must never read as GONE.
 type ProbeRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -1131,9 +1124,9 @@ func (x *ProbeResponse) GetPresence() ProbeResponse_Presence {
 	return ProbeResponse_PRESENCE_UNSPECIFIED
 }
 
-// Delete asks the plugin to delete the source thing behind an entry: trash
-// the file, signal the process. The node handles the id and layout side,
-// and presence catches up through List and Probe as usual.
+// Delete asks the plugin to delete the source thing behind an entry: trash the
+// file, signal the process. The node handles the id and layout side, and
+// presence catches up through List and Probe.
 type DeleteRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
@@ -1269,8 +1262,8 @@ func (x *SearchRequest) GetLimit() int32 {
 type SearchResult struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Entry *Entry                 `protobuf:"bytes,1,opt,name=entry,proto3" json:"entry,omitempty"`
-	// context_path is the containing-context chain from the root, outermost
-	// first. The node resolves it to a navigable tile path.
+	// context_path is the containing-context chain from the root, outermost first.
+	// The node resolves it to a navigable tile path.
 	ContextPath   []string `protobuf:"bytes,2,rep,name=context_path,json=contextPath,proto3" json:"context_path,omitempty"`
 	Snippet       string   `protobuf:"bytes,3,opt,name=snippet,proto3" json:"snippet,omitempty"`
 	Score         float64  `protobuf:"fixed64,4,opt,name=score,proto3" json:"score,omitempty"`

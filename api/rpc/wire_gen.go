@@ -20,12 +20,11 @@ type Tile struct {
 	Y       int64  `json:"y,omitempty"`
 	W       int64  `json:"w,omitempty"`
 	H       int64  `json:"h,omitempty"`
-	// well-only: the child grid's framing, which is at once the preview
-	// frame, the descent target, and the ascent return value. One shape: a
-	// float center in the child grid's coordinates (view_cx, view_cy) plus
-	// the pane-size-independent intrinsic zoom (live over overtake), the same
-	// three numbers a root grid keeps on its own row. view_zoom == 0 means
-	// never visited.
+	// well-only: the child grid's framing, which is at once the preview frame,
+	// the descent target and the ascent return value. A float center in the
+	// child grid's coordinates (view_cx, view_cy) plus the pane-size-independent
+	// intrinsic zoom (live over overtake), the same three numbers a root grid
+	// keeps on its own row. view_zoom == 0 means never visited.
 	ViewZoom    float64 `json:"view_zoom,omitempty"`
 	ViewCx      float64 `json:"view_cx,omitempty"`
 	ViewCy      float64 `json:"view_cy,omitempty"`
@@ -47,20 +46,18 @@ type Tile struct {
 	// client. Stamped at insert time (for plugin-owned tiles, the entry name;
 	// for an exit well, the mounted plugin's label).
 	AltText string `json:"alt_text,omitempty"`
-	// reference reports that this well is a link, not owned content: its
-	// child_grid_id is a qualified cross-plugin reference rather than a bare
-	// local child grid. It is the single authoritative "is a link" signal.
-	// The client renders a dashed border from it, and delete and clone treat
-	// a qualified child_grid_id as unlink-only and share, never cascade. Set
-	// by the server in qualifyTiles, from a child that arrived already
-	// qualified, so render and the store cannot disagree on what a link is.
-	// Wire-only, derived, never a stored column.
+	// reference reports that this well is a link: its child_grid_id is a
+	// qualified cross-plugin reference rather than a bare local child grid. It
+	// is the one signal for that. The client renders a dashed border from it,
+	// and delete and clone treat a qualified child_grid_id as unlink-only and
+	// share, never cascade. The server sets it in qualifyTiles, from a child
+	// that arrived already qualified, so render and the store cannot disagree
+	// on what a link is. Wire-only, derived, never a stored column.
 	Reference bool `json:"reference,omitempty"`
-	// content_zoom scales the content rendered inside a text, shell, or url
-	// tile: the text font, the terminal font, the page zoom. It is framing,
-	// not content — persisted per tile, and it never bumps version. 0 means
-	// unset and renders at 1.0. Written by the SetTile content_zoom arm
-	// only.
+	// content_zoom scales the content rendered inside a text, shell or url tile:
+	// the text font, the terminal font, the page zoom. It is framing, persisted
+	// per tile, and it never bumps version. 0 means unset and renders at 1.0.
+	// Written by the SetTile content_zoom arm only.
 	ContentZoom float64 `json:"content_zoom,omitempty"`
 	// url_history is a url tile's persisted navigation back-stack, JSON
 	// {index, entries:[{url,title}]} and capped, captured at freeze so a
@@ -70,45 +67,42 @@ type Tile struct {
 	URLHistory string `json:"url_history,omitempty"`
 	// link_target_id makes a leaf tile (text, url, shell, pane) a link: a
 	// qualified "<plugin-uuid>/<tile-id>" reference to the tile that owns the
-	// content. The link row stores no content of its own — no blob, no url,
-	// no preview — and readers resolve bytes, preview, and session through
-	// the target id, which the router routes anywhere, including through
-	// transit chains that prepend one hop segment exactly as they do for a
-	// well's qualified child_grid_id. Kind stays the target's kind;
-	// link-ness is orthogonal metadata. A well's link variant is a qualified
-	// child_grid_id instead, and reference is the single derived "is a link"
-	// bit over both shapes. Deleting a link only unlinks.
+	// content. The link row stores no blob, no url and no preview, and readers
+	// resolve bytes, preview and session through the target id, which the router
+	// routes anywhere, including through transit chains that prepend one hop
+	// segment as they do for a well's qualified child_grid_id. Kind stays the
+	// target's kind. A well's link variant is a qualified child_grid_id instead,
+	// and reference is the derived bit over both shapes. Deleting a link only
+	// unlinks.
 	LinkTargetID string `json:"link_target_id,omitempty"`
 	// url_frozen is the user's standing freeze on a url tile: set by the
 	// explicit freeze gesture, cleared by the reconnect button. While set,
-	// descending does not auto-go-live, unlike the transient navigate-away
-	// freeze, which auto-revives on return. Framing-class: written by the
-	// SetTile url_frozen arm only, and it never bumps version.
+	// descending does not auto-go-live. The transient navigate-away freeze is
+	// separate and auto-revives on return. Framing-class: written by the SetTile
+	// url_frozen arm only, and it never bumps version.
 	URLFrozen bool `json:"url_frozen,omitempty"`
-	// serves_page: the owning plugin serves this tile's content as web
-	// content through the /content/ door, over the ServeContent RPC — an
-	// image file, an HTML page. The client gives the descent url-tile
-	// semantics (a live native view on a desktop host, open-in-new-tab on a
-	// browser host) at the derived address
-	// /content/<content-token>/<tile-id>/, built at render time from the
-	// current origin and never persisted, because ports are ephemeral.
-	// Plugin-declared, derived from the content itself, such as the
-	// filename's media type in fs. Never a stored column.
+	// serves_page: the owning plugin serves this tile's content as web content
+	// through the /content/ door, over the ServeContent RPC. The client gives
+	// the descent url-tile semantics, a live native view on a desktop host and
+	// open-in-new-tab on a browser host, at the derived address
+	// /content/<content-token>/<tile-id>/. That address is built at render time
+	// from the current origin and never persisted, because ports are ephemeral.
+	// Plugin-declared, derived from the content itself, such as the filename's
+	// media type in fs. Never a stored column.
 	ServesPage bool `json:"serves_page,omitempty"`
-	// text_presentation is the owning plugin's declaration of how a text
-	// tile's body presents: "plain" (monospace, no markdown interpretation —
-	// source code, logs), "rendered" (document renderer only), or "both"
-	// (rendered by default, and the user may toggle to the raw source). ""
-	// means no declaration, and the stored user text_mode rules, which is the
-	// case for the home's own documents. Plugin-derived from the content
-	// itself, such as the filename or a sniff in fs. Wire-only, never a
-	// stored column.
+	// text_presentation is the owning plugin's declaration of how a text tile's
+	// body presents: "plain" for monospace with no markdown interpretation,
+	// "rendered" for the document renderer only, or "both" for rendered by
+	// default with a toggle to the raw source. "" means no declaration and the
+	// stored user text_mode rules, which is the case for the home's own
+	// documents. Plugin-derived from the content itself, such as the filename or
+	// a sniff in fs. Wire-only, never a stored column.
 	TextPresentation string `json:"text_presentation,omitempty"`
-	// status_detail is the owning plugin's current trouble with this tile,
-	// for the client to display verbatim. A connection well whose last dial
-	// failed carries that error until the connection comes up, so the failure
-	// surfaces instead of presenting as a tile that is merely waiting.
-	// Wire-only, derived. Never a stored column, never set by clients.
+	// status_detail is the owning plugin's current trouble with this tile, for
+	// the client to display verbatim. A connection well whose last dial failed
+	// carries that error until the connection comes up, so the failure surfaces
+	// instead of presenting as a tile that is waiting. Wire-only, derived.
+	// Never a stored column, never set by clients.
 	StatusDetail string `json:"status_detail,omitempty"`
 }
 
@@ -130,36 +124,33 @@ type Grid struct {
 	// writable. "" only when the owning plugin's Info was unreachable.
 	// Wire-only.
 	ScratchGridID string `json:"scratch_grid_id,omitempty"`
-	// stale marks a remembered answer, not a live one: the source could not
-	// answer, or has not confirmed this answer within the cache's freshness
-	// window — a refresh is in flight and a GridChanged follows if it finds
-	// drift. Two node-side stampers share the one meaning —
-	// internal/sourcecache on its serve-first and dark paths, and a plugin
-	// adapter answering a dark source from the rows it minted. Wire-only,
-	// never persisted. The cache also obeys it: an answer already stamped
-	// stale is never remembered.
+	// stale marks a remembered answer: the source could not answer, or has not
+	// confirmed this answer within the cache's freshness window, and a refresh
+	// is in flight whose GridChanged follows if it finds drift. Two node-side
+	// stampers share the meaning, internal/sourcecache on its serve-first and
+	// dark paths and a plugin adapter answering a dark source from the rows it
+	// minted. An answer already stamped stale is never remembered. Wire-only,
+	// never persisted.
 	Stale bool `json:"stale,omitempty"`
 	// node_ns is the namespace chain of the node serving this grid, from the
-	// receiver's perspective: "" for a grid served by the node you are
-	// talking to, "<transit>/<conn>" or deeper through mounts, each transit
-	// hop prepending its segment exactly like scratch_grid_id. It is the one
-	// owner of "which node is this pane inside": the client keys its per-pane
-	// + menu context by it and routes Handshake with it. Wire-only, never
-	// persisted.
+	// receiver's perspective: "" for a grid served by the node you are talking
+	// to, "<transit>/<conn>" or deeper through mounts, each transit hop
+	// prepending its segment as scratch_grid_id does. It is the one owner of
+	// which node a pane is inside: the client keys its per-pane + menu context
+	// by it and routes Handshake with it. Wire-only, never persisted.
 	NodeNS string `json:"node_ns,omitempty"`
 	// menu_entries is the owning plugin's declared (+) menu additions for
 	// this grid. Stamped from Info by the serving node, and verbatim through
 	// transit with grid_id prefixed per hop. Wire-only.
 	MenuEntries []MenuEntry `json:"menu_entries,omitempty"`
-	// host_content says this grid PROJECTS host state — a directory, the
-	// process table — instead of holding content of its own: read-only rows
-	// the client renders with the host treatment (the outside tint, the exit
-	// border family). Declared by the owning plugin (plugin.v1
-	// InfoResponse.host_content), stamped onto the grid by the adapter that
-	// serves it, and carried verbatim through transit like writable. It is
-	// what a reader consults instead of learning a kind's name; it replaced
-	// source_kind.
-	// Wire-only, never persisted.
+	// host_content says this grid projects host state, such as a directory or
+	// the process table, instead of holding content of its own. Its rows are
+	// read-only and the client renders them with the host treatment: the
+	// outside tint and the exit border family. The owning plugin declares it
+	// (plugin.v1 InfoResponse.host_content), the adapter that serves the grid
+	// stamps it, and transit carries it verbatim as it does writable. A reader
+	// consults it instead of learning a kind's name. Wire-only, never
+	// persisted.
 	HostContent bool `json:"host_content,omitempty"`
 	// glyph is the owning plugin's declared identity glyph for this grid, from
 	// the same vocabulary as InfoResponse.glyph ("" = no declaration, and the
@@ -170,26 +161,23 @@ type Grid struct {
 	Glyph string `json:"glyph,omitempty"`
 }
 
-// MenuEntry is one declared (+) menu entry: a doorway onto one collection —
-// the home's trashcan, a mail plugin's Feed. Declared in Info, stamped per
-// grid by the serving node exactly like writable, and passed verbatim
-// through transit hops, where grid_id gains the hop prefix like every id.
-// The swatch behaves like a menu row's over grid_id: click descends, drag
-// drops an exit-well link.
-//
-// 5 and 6 were kind and param_schema, the creation-entry half. No client
-// could ever receive one.
+// MenuEntry is one declared (+) menu entry: a doorway onto one collection,
+// such as the home's trashcan or a mail plugin's Feed. Declared in Info,
+// stamped per grid by the serving node as writable is, and passed verbatim
+// through transit hops, where grid_id gains the hop prefix like every id. The
+// swatch behaves like a menu row's over grid_id: click descends, drag drops an
+// exit-well link.
 type MenuEntry struct {
 	ID     string `json:"id,omitempty"`
 	Label  string `json:"label,omitempty"`
 	Glyph  string `json:"glyph,omitempty"`
 	Color  string `json:"color,omitempty"`
 	GridID string `json:"grid_id,omitempty"`
-	// view_cx/cy/zoom is grid_id's last-saved viewport, the same shape and the
-	// same meaning as PluginInfo.root_view_*. An entry is a doorway, and a
-	// doorway carries the framing of the grid behind it, so re-entering a
-	// collection lands where it was left. Zero zoom means never visited and the
-	// client substitutes its calibrated default.
+	// view_cx/cy/zoom is grid_id's last-saved viewport, the same shape and
+	// meaning as PluginInfo.root_view_*. A doorway carries the framing of the
+	// grid behind it, so re-entering a collection lands where it was left. Zero
+	// zoom means never visited and the client substitutes its calibrated
+	// default.
 	ViewCx   float64 `json:"view_cx,omitempty"`
 	ViewCy   float64 `json:"view_cy,omitempty"`
 	ViewZoom float64 `json:"view_zoom,omitempty"`
@@ -255,26 +243,20 @@ type GetGridResponse struct {
 
 // CloneTileRequest mirrors gridwell/v1/data.proto's CloneTileRequest.
 type CloneTileRequest struct {
-	// insert, so no cycle can form and no client-supplied
-	// location is needed
-	TileID string `json:"tile_id,omitempty"`
-	// layout carries no claim
+	TileID     string `json:"tile_id,omitempty"`
 	DestGridID string `json:"dest_grid_id,omitempty"`
 	X          int64  `json:"x,omitempty"`
 	Y          int64  `json:"y,omitempty"`
 }
 
-// PlaceTile is the single placement writeback: placement is one fact,
-// (grid_id, x, y, w, h), and one verb owns it. grid_id is the destination
-// grid, the same as the tile's current grid for a pure resize. The server
-// refuses overlap, and refuses placing a well inside its own subtree by
-// walking ancestors from grid_id — a server-derived check, with no
-// client-supplied path. Placement never crosses a plugin boundary; there is
-// no cross-plugin move, only link or clone.
+// PlaceTile is the single placement writeback. Placement is one fact,
+// (grid_id, x, y, w, h), and one verb owns it. grid_id is the destination grid,
+// the same as the tile's current grid for a pure resize. The server refuses
+// overlap, and refuses placing a well inside its own subtree by walking
+// ancestors from grid_id, with no client-supplied path. Placement never crosses
+// a plugin boundary; there is no cross-plugin move, only link or clone.
 type PlaceTileRequest struct {
 	TileID string `json:"tile_id,omitempty"`
-	// claim. Overlap is still refused server-side, in the same
-	// transaction.
 	GridID string `json:"grid_id,omitempty"`
 	X      int64  `json:"x,omitempty"`
 	Y      int64  `json:"y,omitempty"`
@@ -319,12 +301,12 @@ type TileRemoved struct {
 	TileID string `json:"tile_id,omitempty"`
 }
 
-// EventPluginHealth reports a transition in a plugin's event-stream health,
-// as seen by the router's fan-in (fanInEvents and watchPlugin in
-// internal/server/router.go). Emitted on the down transition (healthy=false,
-// detail carrying the dial, recv, or Info error that caused it) and again on
-// recovery (healthy=true, detail=""). Only on a change of state, never per
-// retry attempt, so a flapping plugin does not spam the client.
+// EventPluginHealth reports a transition in a plugin's event-stream health, as
+// the router's fan-in sees it (fanInEvents and watchPlugin in
+// internal/server/router.go). It is emitted on the down transition, with
+// healthy=false and detail carrying the dial, recv or Info error that caused
+// it, and again on recovery with healthy=true and detail="". Only on a change
+// of state, so a flapping plugin does not spam the client.
 type PluginHealth struct {
 	PluginUUID string `json:"plugin_uuid,omitempty"`
 	Healthy    bool   `json:"healthy,omitempty"`

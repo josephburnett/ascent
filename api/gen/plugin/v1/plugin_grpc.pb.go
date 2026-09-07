@@ -1,22 +1,22 @@
-// plugin.proto is the plugin interface. A plugin holds no node fact: it
-// answers from its source — a directory tree, the process table, a mail
-// account — in its own stable string keys, and never sees ids, layout, or a
-// database. The node owns all of those. It mints ids against keys, keeps the
-// arrangement as a namespace of its own store, and serves the full Gridwell
-// surface to clients, so a plugin is invisible to a connection.
+// plugin.proto is the plugin interface. A plugin holds no node fact. It answers
+// from its source, such as a directory tree or the process table, in its own
+// stable string keys, and never sees ids, layout or a database. The node owns
+// all of those: it mints ids against keys, keeps the arrangement as a namespace
+// of its own store, and serves the full Gridwell surface to clients, so a
+// plugin is invisible to a connection.
 //
-// What a plugin MAY keep is its own memory of its source, in the private
-// directory the node hands it at spawn (`state_dir`), under cache.db's
-// contract: disposable, safe to delete, rewarmed by use.
+// A plugin may keep its own memory of its source, in the private directory the
+// node hands it at spawn (`state_dir`), under cache.db's contract: disposable,
+// safe to delete, rewarmed by use.
 //
-// Key stability is the plugin's one hard contract: a key names the same
-// logical thing forever — a path relative to the configured root, a
-// message-id, "pid:1234". Changing the key scheme orphans every stored
-// reference, exactly as re-minting ids would.
+// Key stability is the plugin's one hard contract. A key names the same logical
+// thing forever, such as a path relative to the configured root, a message-id
+// or "pid:1234". Changing the key scheme orphans every stored reference, as
+// re-minting ids would.
 //
-// Unimplemented is always polite: Search means no results, ServeContent a
-// 404, Watch no events, WriteContent read-only, GetPreview no thumbnail,
-// and Delete refused. A minimal plugin is Info, List, and ReadContent.
+// Unimplemented is always polite: Search means no results, ServeContent a 404,
+// Watch no events, WriteContent read-only, GetPreview no thumbnail, and Delete
+// refused. A minimal plugin is Info, List and ReadContent.
 //
 // docs/plugin-authoring.md is this contract from the plugin's side.
 
