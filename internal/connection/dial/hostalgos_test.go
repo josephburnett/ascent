@@ -1,9 +1,7 @@
 package dial
 
-// The knownhosts key-mismatch class: the file holds the host's ed25519 key,
-// what ssh saved on first contact, but the handshake negotiates a different
-// host-key algorithm, so strict verification reports "key mismatch" on a good
-// host. OpenSSH offers the known algorithms first, and so must this dialer.
+// Pins the algorithm preference hostalgos.go owns: without it a known host
+// whose negotiated key type is absent from the file fails as a key mismatch.
 
 import (
 	"crypto/ed25519"
@@ -39,8 +37,6 @@ func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
 		t.Fatalf("algorithms for a known ed25519 host = %v, want ssh-ed25519 first — "+
 			"without this the handshake negotiates a key type the file cannot verify (key mismatch)", got)
 	}
-	// An unknown host constrains nothing: the default negotiation runs
-	// and the unknown-host error surfaces normally.
 	if got := hostKeyAlgorithmsFor(cb, "stranger.example:22"); got != nil {
 		t.Fatalf("unknown host must not constrain algorithms, got %v", got)
 	}

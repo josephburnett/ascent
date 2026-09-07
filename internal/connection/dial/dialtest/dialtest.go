@@ -1,9 +1,7 @@
-// Package dialtest provides a minimal but real ssh server for tests: public-key
-// auth against exactly one authorized key, host-key verification material, and
-// direct-streamlocal channel forwarding — everything the dial path needs and
-// nothing else. Shared by the sshdial seam test, in-process, and the
-// connections spawn gate (production binaries), so there is one implementation
-// of "a throwaway sshd" instead of a hand-rolled copy per smoke.
+// Package dialtest provides a real ssh server for tests: public-key auth against
+// exactly one authorized key, host-key verification material, and
+// direct-streamlocal channel forwarding. The sshdial seam test and the
+// connections spawn gate share it rather than hand-rolling an sshd each.
 package dialtest
 
 import (
@@ -21,39 +19,33 @@ import (
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
-// directStreamLocal is the direct-streamlocal@openssh.com channel-open
-// payload, what x/crypto/ssh's Client.Dial("unix", path) sends. It is the only
-// forwarding the connection dial uses, because the connection door is a unix
-// socket.
+// directStreamLocal is the direct-streamlocal@openssh.com channel-open payload,
+// what x/crypto/ssh's Client.Dial("unix", path) sends.
 type directStreamLocal struct {
 	SocketPath string
 	Reserved0  string
 	Reserved1  uint32
 }
 
-// Creds is everything a dialer needs to reach the test sshd: the file paths
-// connection params document wants, plus the sshd's address.
+// Creds is everything a dialer needs to reach the test sshd.
 type Creds struct {
 	Addr           string // the sshd's "host:port"
 	KeyPath        string // client private key file
 	KnownHostsPath string // known_hosts file trusting the sshd's host key
 }
 
-// Server starts a real x/crypto ssh server on a loopback port that accepts
-// exactly one freshly-minted client key and forwards direct-streamlocal channels to
-// their requested destinations. Key material is written under dir (a
-// t.TempDir()); the listener is torn down with the test.
+// Server starts a real x/crypto ssh server on a loopback port that accepts one
+// freshly-minted client key and forwards direct-streamlocal channels. Key
+// material goes under dir, and the listener is torn down with the test.
 func Server(t *testing.T, dir string) Creds {
 	creds, _ := Restartable(t, dir)
 	return creds
 }
 
-// Handle controls a restartable test sshd: Kill drops the listener AND every
-// live ssh session (a listener close alone leaves established sessions
-// running — a real outage kills both), Resume rebinds the same address with
-// the same host key. This is how a test simulates the tunnel dying — laptop
-// sleep, network change, remote sshd restart — the failure the redialer in
-// sshdial exists to recover from.
+// Handle controls a restartable test sshd. Kill drops the listener and every
+// live ssh session, since closing the listener alone leaves established sessions
+// running and a real outage kills both. That is how a test simulates the tunnel
+// dying, the failure the redialer in internal/connection/dial recovers from.
 type Handle struct {
 	addr string
 	conf *ssh.ServerConfig
@@ -119,8 +111,7 @@ func Restartable(t *testing.T, dir string) (Creds, *Handle) {
 	return Creds{Addr: h.addr, KeyPath: keyPath, KnownHostsPath: khPath}, h
 }
 
-// Kill closes the listener and every live connection — the whole sshd is
-// gone, established tunnels included. Idempotent.
+// Kill closes the listener and every live connection. Idempotent.
 func (h *Handle) Kill() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -134,8 +125,7 @@ func (h *Handle) Kill() {
 	h.conns = map[net.Conn]struct{}{}
 }
 
-// Resume rebinds the SAME address (so existing creds/known_hosts stay valid)
-// and serves again.
+// Resume rebinds the same address, keeping existing creds valid, and serves again.
 func (h *Handle) Resume(t *testing.T) {
 	t.Helper()
 	h.mu.Lock()
