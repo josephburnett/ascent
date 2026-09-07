@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// everyKey is the blunt scope: what a broken client-to-server link means.
+// everyKey is the scope of a broken client-to-server link.
 func everyKey(string) bool { return true }
 
 func TestBeginDedupesAndDoneReleases(t *testing.T) {
@@ -39,9 +39,8 @@ func TestDoneCancelsItsContext(t *testing.T) {
 }
 
 func TestDeadlineBoundsAFetchThatNeverAnswers(t *testing.T) {
-	// The backstop: a request lost to a dead socket, with no reconnect to
-	// cancel it, must still end. Without this the claim is held forever and
-	// nothing ever asks again.
+	// A request lost to a dead socket, with no reconnect to cancel it,
+	// still ends, so the claim is not held forever.
 	s := New(10 * time.Millisecond)
 	ctx, _, _ := s.Begin("g1")
 	select {
@@ -75,8 +74,7 @@ func TestCancelIfOverEveryKeyCancelsAndNamesEveryFetch(t *testing.T) {
 }
 
 // One source going dark kills only the fetches that rode through it. The
-// others are still owed an answer over a link that never broke, and
-// cancelling them abandons a request nothing re-asks.
+// others are still owed an answer over a link that never broke.
 func TestCancelIfLeavesTheFetchesThatKeptTheirLink(t *testing.T) {
 	s := New(time.Minute)
 	dark, _, _ := s.Begin("n1abcde/laptop/far9xyz/1")
@@ -98,11 +96,9 @@ func TestCancelIfLeavesTheFetchesThatKeptTheirLink(t *testing.T) {
 }
 
 func TestZombieReleaseKeepsTheFreshClaim(t *testing.T) {
-	// The order that actually happens: the reconnect cancels the fetch, the
-	// caller re-asks at once, and only then does the cancelled fetch return
-	// and release. If that release freed the key, the fresh fetch would be
-	// dogpiled by every frame that draws while it runs — and worse, it would
-	// be the zombie's cancelled context that got released.
+	// The reconnect cancels the fetch, the caller re-asks at once, and
+	// only then does the cancelled fetch return and release. Freeing the
+	// key there would dogpile the fresh fetch on every frame that draws.
 	s := New(time.Minute)
 	_, zombieDone, _ := s.Begin("g1")
 	s.CancelIf(everyKey)
@@ -142,9 +138,8 @@ func TestContextIsBoundedAndClaimFree(t *testing.T) {
 	}
 }
 
-// TestBoundedCarriesTheDeadline pins the one bound, without waiting on it: a
-// caller with no Set of its own — a write, a nav walk's read, a probe, the
-// boot handshake — gets Deadline and nothing it chose for itself.
+// TestBoundedCarriesTheDeadline pins that a caller with no Set of its own
+// gets Deadline and nothing it chose for itself.
 func TestBoundedCarriesTheDeadline(t *testing.T) {
 	before := time.Now()
 	ctx, cancel := Bounded()
