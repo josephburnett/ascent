@@ -6,6 +6,9 @@
 /web/gridwell.wasm
 /web/gridwell.wasm.gz
 /web/wasm_exec.js
+# The temp names the wasm recipe renames into place (see the Makefile); a
+# killed build can leave one behind.
+/web/*.tmp
 *.db
 *.db-journal
 *.db-shm

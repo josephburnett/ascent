@@ -96,30 +96,51 @@ plugins:
 # gzip runs after the build so the sidecar is always at least as new as
 # the raw file; the server refuses a stale one.
 #
-# The last step proves the pair. `go build` rewrites its output incrementally
-# over about a second, so a gzip reading that file while it grows writes a
-# VALID gzip of a PREFIX and exits 0 — and the browser then gets a clean 200
-# of a truncated module. Decompressing the sidecar and byte-comparing it here
-# means a short one can never reach an embed. web/embed_test.go owns the same
-# property from the other end, over the bytes actually embedded.
+# Both embedded artifacts are written the same way: to a private temp name in
+# the same directory, then renamed into place. Rename is atomic on one
+# filesystem, so the published name only ever holds a complete file. This
+# matters because `go build` rewrites its output incrementally over about a
+# second: whoever reads the growing file — the `gzip` on the next line, a
+# concurrent `make` in the same tree, a `go build` of the server doing the
+# go:embed, a --static file server — used to see a prefix. A gzip of a prefix
+# is a VALID gzip and exits 0, so nothing complained and the browser got a
+# clean 200 of a truncated module.
+#
+# The temp name carries the shell's pid, so two concurrent makes in one tree
+# do not share it either; no flock, which would buy only the sub-millisecond
+# window between the two renames below and is not portable off Linux. The
+# byte-comparison stays as the invariant: it is what makes a bad pair
+# impossible rather than merely unlikely, and web/embed_test.go holds the same
+# property over the bytes actually embedded.
 wasm: $(WASM_EXEC)
 	mkdir -p web
-	GOOS=js GOARCH=wasm go build -o $(WASM) ./client/wasm
-	gzip -9 -kf $(WASM)
-	@gzip -dc $(WASM).gz | cmp -s - $(WASM) || { \
-		echo "$(WASM).gz does not decompress to $(WASM) — the sidecar is short (a concurrent build in this tree?); rerun make wasm"; \
+	@set -e; \
+	tmp=$(WASM).$$$$.tmp; \
+	trap 'rm -f "$$tmp" "$$tmp.gz"' EXIT; \
+	echo "GOOS=js GOARCH=wasm go build -o $(WASM) ./client/wasm"; \
+	GOOS=js GOARCH=wasm go build -o "$$tmp" ./client/wasm; \
+	echo "gzip -9 $(WASM) -> $(WASM).gz"; \
+	gzip -9 -c "$$tmp" > "$$tmp.gz"; \
+	gzip -dc "$$tmp.gz" | cmp -s - "$$tmp" || { \
+		echo "$(WASM).gz does not decompress to $(WASM) — the sidecar is short; rerun make wasm"; \
 		exit 1; \
-	}
+	}; \
+	mv -f "$$tmp.gz" $(WASM).gz; \
+	mv -f "$$tmp" $(WASM)
 
 $(WASM_EXEC):
 	mkdir -p web
-	@if [ -f $(GOROOT)/lib/wasm/wasm_exec.js ]; then \
-		cp $(GOROOT)/lib/wasm/wasm_exec.js $(WASM_EXEC); \
+	@set -e; \
+	tmp=$(WASM_EXEC).$$$$.tmp; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	if [ -f $(GOROOT)/lib/wasm/wasm_exec.js ]; then \
+		cp $(GOROOT)/lib/wasm/wasm_exec.js "$$tmp"; \
 	elif [ -f $(GOROOT)/misc/wasm/wasm_exec.js ]; then \
-		cp $(GOROOT)/misc/wasm/wasm_exec.js $(WASM_EXEC); \
+		cp $(GOROOT)/misc/wasm/wasm_exec.js "$$tmp"; \
 	else \
 		echo "wasm_exec.js not found in GOROOT"; exit 1; \
-	fi
+	fi; \
+	mv -f "$$tmp" $(WASM_EXEC)
 
 # fmt-check fails if any hand-written Go file isn't gofmt-clean (generated code
 # under api/gen is excluded — it's regenerated, not hand-edited). It is the
