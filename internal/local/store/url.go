@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -22,47 +23,47 @@ import (
 //
 // Freezing is an in-place edit of this url tile: tiles are unshared, so the
 // frozen frame and address write straight to the tile's own row.
-func (s *Store) SetURLState(ctx context.Context, req *rpc.SetURLStateRequest) (*rpc.Tile, error) {
-	tileID, err := parseID(req.TileID)
+func (s *Store) SetURLState(ctx context.Context, tileIDStr string, jpeg []byte, url, title, history string) (*gridwellv1.Tile, error) {
+	tileID, err := parseID(tileIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tile_id", ErrInvalidArgument)
 	}
-	var out *rpc.Tile
-	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		if _, err := s.loadForWrite(ctx, tx, tileID, rpc.KindURL, ErrNotURLTile); err != nil {
 			return err
 		}
 
 		// An empty JPEG is skipped, so a partial capture cannot clobber a good
 		// frozen frame. The blob swap handles dedup and refcounting.
-		if len(req.JPEG) > 0 {
-			if _, _, err := s.swapTileBlob(ctx, tx, tileID, "preview_blob_id", req.JPEG, mediaJPEG); err != nil {
+		if len(jpeg) > 0 {
+			if _, _, err := s.swapTileBlob(ctx, tx, tileID, "preview_blob_id", jpeg, mediaJPEG); err != nil {
 				return err
 			}
 		}
-		if req.URL != "" {
+		if url != "" {
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE tiles SET url_string = ?, updated_at = ? WHERE id = ?`,
-				req.URL, s.now().Unix(), tileID); err != nil {
+				url, s.now().Unix(), tileID); err != nil {
 				return err
 			}
 		}
-		if req.Title != "" {
+		if title != "" {
 			// The page-title capture defers to a user-set name, the alt_user
 			// latch, so renaming a url tile survives every freeze.
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE tiles SET alt_text = ?, updated_at = ? WHERE id = ? AND alt_user = 0`,
-				req.Title, s.now().Unix(), tileID); err != nil {
+				title, s.now().Unix(), tileID); err != nil {
 				return err
 			}
 		}
-		if req.History != "" {
+		if history != "" {
 			// The navigation back-stack captured at freeze. Empty is skipped
 			// like the JPEG, so a partial capture cannot clobber a good
 			// stored history.
 			if _, err := tx.ExecContext(ctx,
 				`UPDATE tiles SET url_history = ?, updated_at = ? WHERE id = ?`,
-				req.History, s.now().Unix(), tileID); err != nil {
+				history, s.now().Unix(), tileID); err != nil {
 				return err
 			}
 		}
@@ -84,7 +85,7 @@ func (s *Store) SetURLState(ctx context.Context, req *rpc.SetURLStateRequest) (*
 // versioned user rename on the wire is RenameTile, in content.go, which shares
 // setAltTx so the latch arbitration has exactly one implementation.
 func (s *Store) SetTileAlt(ctx context.Context, tileID int64, alt string, user bool) error {
-	return s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	return s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		if _, err := s.loadTile(ctx, tx, tileID); err != nil {
 			return err
 		}
@@ -101,7 +102,7 @@ func (s *Store) SetTileAlt(ctx context.Context, tileID int64, alt string, user b
 // bumps, while the automatic capture is an observation and rides the tile
 // event unversioned. A bumping capture would cost whichever client was
 // mid-edit its claim.
-func (s *Store) setAltTx(ctx context.Context, tx *sql.Tx, tileID int64, alt string, user bool, events *[]rpc.Event) error {
+func (s *Store) setAltTx(ctx context.Context, tx *sql.Tx, tileID int64, alt string, user bool, events *[]*gridwellv1.Event) error {
 	q := `UPDATE tiles SET alt_text = ?, alt_user = 1, updated_at = ? WHERE id = ?`
 	if !user {
 		q = `UPDATE tiles SET alt_text = ?, updated_at = ? WHERE id = ? AND alt_user = 0`
@@ -127,16 +128,16 @@ func (s *Store) setAltTx(ctx context.Context, tx *sql.Tx, tileID int64, alt stri
 // terminal font, the page zoom. It is framing, so no claim and no version
 // bump. Wells are refused: their view_zoom is the grid viewport, a different
 // concept with its own writer.
-func (s *Store) SetContentZoom(ctx context.Context, req *rpc.SetContentZoomRequest) (*rpc.Tile, error) {
-	tileID, err := parseID(req.TileID)
+func (s *Store) SetContentZoom(ctx context.Context, tileIDStr string, contentZoom float64) (*gridwellv1.Tile, error) {
+	tileID, err := parseID(tileIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tile_id", ErrInvalidArgument)
 	}
-	if req.ContentZoom < 0 {
+	if contentZoom < 0 {
 		return nil, fmt.Errorf("%w: content_zoom must be >= 0", ErrInvalidArgument)
 	}
-	var out *rpc.Tile
-	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		n, err := s.loadForWrite(ctx, tx, tileID, "", nil)
 		if err != nil {
 			return err
@@ -146,7 +147,7 @@ func (s *Store) SetContentZoom(ctx context.Context, req *rpc.SetContentZoomReque
 		}
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE tiles SET content_zoom = ?, updated_at = ? WHERE id = ?`,
-			req.ContentZoom, s.now().Unix(), tileID); err != nil {
+			contentZoom, s.now().Unix(), tileID); err != nil {
 			return err
 		}
 		out, err = s.emitTileChanged(ctx, tx, tileID, events)
@@ -159,13 +160,13 @@ func (s *Store) SetContentZoom(ctx context.Context, req *rpc.SetContentZoomReque
 // means descending must not auto-go-live until the reconnect gesture clears
 // it. It is framing, so no claim and no version bump. Refused for every other
 // kind: the fact only means something for a url tile.
-func (s *Store) SetURLFrozen(ctx context.Context, req *rpc.SetURLFrozenRequest) (*rpc.Tile, error) {
-	tileID, err := parseID(req.TileID)
+func (s *Store) SetURLFrozen(ctx context.Context, tileIDStr string, frozen bool) (*gridwellv1.Tile, error) {
+	tileID, err := parseID(tileIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tile_id", ErrInvalidArgument)
 	}
-	var out *rpc.Tile
-	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		n, err := s.loadForWrite(ctx, tx, tileID, "", nil)
 		if err != nil {
 			return err
@@ -175,7 +176,7 @@ func (s *Store) SetURLFrozen(ctx context.Context, req *rpc.SetURLFrozenRequest) 
 		}
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE tiles SET url_frozen = ?, updated_at = ? WHERE id = ?`,
-			boolToInt(req.Frozen), s.now().Unix(), tileID); err != nil {
+			boolToInt(frozen), s.now().Unix(), tileID); err != nil {
 			return err
 		}
 		out, err = s.emitTileChanged(ctx, tx, tileID, events)

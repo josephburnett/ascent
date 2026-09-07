@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -29,7 +30,7 @@ var leafLinkKinds = map[string]bool{
 // since readers resolve bytes, preview, and session through the target id, so
 // deleting it only unlinks: tileRefs says a link owns nothing. alt is the
 // link's local label.
-func (s *Store) CreateLeafLink(ctx context.Context, gridID string, x, y, w, h int64, kind, linkTargetID, alt string) (*rpc.Tile, error) {
+func (s *Store) CreateLeafLink(ctx context.Context, gridID string, x, y, w, h int64, kind, linkTargetID, alt string) (*gridwellv1.Tile, error) {
 	if !leafLinkKinds[kind] {
 		return nil, fmt.Errorf("%w: kind %q has no leaf-link variant", ErrInvalidArgument, kind)
 	}

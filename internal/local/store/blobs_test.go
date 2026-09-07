@@ -5,8 +5,6 @@ import (
 	"errors"
 	"testing"
 	"time"
-
-	"github.com/josephburnett/gridwell/api/rpc"
 )
 
 func TestGetBlobReturnsBytes(t *testing.T) {
@@ -14,15 +12,12 @@ func TestGetBlobReturnsBytes(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	f, err := s.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root,
-		X:      0, Y: 0, W: 1, H: 1, Data: []byte("payload"),
-	})
+	f, err := s.CreateText(ctx, root, 0, 0, 1, 1, []byte("payload"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	data, err := s.GetBlob(ctx, f.BlobID)
+	data, err := s.GetBlob(ctx, f.BlobId)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,29 +50,23 @@ func TestBlobSelfDescribing(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	txt, err := s.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte("# hi"),
-	})
+	txt, err := s.CreateText(ctx, root, 0, 0, 1, 1, []byte("# hi"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, mt := blobMedia(t, s, txt.BlobID); mt != mediaMarkdown {
+	if _, mt := blobMedia(t, s, txt.BlobId); mt != mediaMarkdown {
 		t.Errorf("text blob media = %q, want %q", mt, mediaMarkdown)
 	}
 
-	url, err := s.CreateURL(ctx, &rpc.CreateURLRequest{
-		GridID: root, X: 2, Y: 0, W: 1, H: 1, URL: "https://example.com",
-	})
+	url, err := s.CreateURL(ctx, root, 2, 0, 1, 1, "https://example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
-	frozen, err := s.SetURLState(ctx, &rpc.SetURLStateRequest{
-		TileID: url.ID, JPEG: []byte{0xFF, 0xD8, 0xFF},
-	})
+	frozen, err := s.SetURLState(ctx, url.Id, []byte{0xFF, 0xD8, 0xFF}, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, mt := blobMedia(t, s, frozen.PreviewBlobID); mt != mediaJPEG {
+	if _, mt := blobMedia(t, s, frozen.PreviewBlobId); mt != mediaJPEG {
 		t.Errorf("preview blob media = %q, want %q", mt, mediaJPEG)
 	}
 }
@@ -99,9 +88,7 @@ func TestGridUpdatedAtStamped(t *testing.T) {
 	}
 
 	s.SetClock(func() time.Time { return time.Unix(1000, 0) })
-	if _, err := s.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte("a"),
-	}); err != nil {
+	if _, err := s.CreateText(ctx, root, 0, 0, 1, 1, []byte("a")); err != nil {
 		t.Fatal(err)
 	}
 	if got := gridUpdatedAt(); got != 1000 {
@@ -115,15 +102,13 @@ func TestSubscribeEventsReceivesPublish(t *testing.T) {
 	ctx := context.Background()
 	ch, cancel := s.SubscribeEvents()
 	defer cancel()
-	if _, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	}); err != nil {
+	if _, err := s.CreateWell(ctx, root, 0, 0, 1, 1, ""); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case ev := <-ch:
-		if ev.Kind != rpc.EventTileChanged {
-			t.Errorf("kind = %v, want TileChanged", ev.Kind)
+		if ev.GetTileChanged() == nil {
+			t.Errorf("event = %v, want TileChanged", ev)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("no event received")

@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"time"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/gwerr"
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/internal/eventhub"
@@ -46,7 +47,7 @@ type Store struct {
 	db    *sql.DB
 	now   func() time.Time // overridden in tests
 	newID func() string    // overridden in tests
-	hub   *eventhub.Hub[rpc.Event]
+	hub   *eventhub.Hub[*gridwellv1.Event]
 	// pluginID is the plugin identity, injected after verification by
 	// SetPluginID. "" is a bare test store, and PluginUUID then falls back
 	// to the bootstrap mint.
@@ -285,16 +286,16 @@ func (s *Store) GridFraming(gridID string) (f rpc.Framing, ok bool, err error) {
 // Framing is not a content edit: it carries no version claim and does not
 // bump the tile version. It is an in-place write to the owning row, and
 // clones are already independent, so there is nothing to fork.
-func (s *Store) SetFraming(ctx context.Context, req *rpc.SetFramingRequest) (*rpc.Tile, error) {
-	if req.RootGridID != "" {
+func (s *Store) SetFraming(ctx context.Context, req *gridwellv1.SetFramingRequest) (*gridwellv1.Tile, error) {
+	if req.RootGridId != "" {
 		return nil, s.setRootFraming(ctx, req)
 	}
-	tileID, err := parseID(req.TileID)
+	tileID, err := parseID(req.TileId)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tile_id", ErrInvalidArgument)
 	}
-	var out *rpc.Tile
-	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		n, err := s.loadForWrite(ctx, tx, tileID, "", nil)
 		if err != nil {
 			return err
@@ -302,7 +303,7 @@ func (s *Store) SetFraming(ctx context.Context, req *rpc.SetFramingRequest) (*rp
 		if !isWellKind(n.Kind) {
 			return ErrNotWellTile
 		}
-		if _, err := updateFraming(ctx, tx, "", tileID, 0, req.Framing, s.now().Unix()); err != nil {
+		if _, err := updateFraming(ctx, tx, "", tileID, 0, rpc.Framing{Cx: req.Cx, Cy: req.Cy, Zoom: req.Zoom}, s.now().Unix()); err != nil {
 			return err
 		}
 		out, err = s.emitTileChanged(ctx, tx, tileID, events)
@@ -314,13 +315,13 @@ func (s *Store) SetFraming(ctx context.Context, req *rpc.SetFramingRequest) (*rp
 // setRootFraming is SetFraming's root arm: the write lands on the grid row
 // and announces itself as a grid change, because a root has no tile to
 // change.
-func (s *Store) setRootFraming(ctx context.Context, req *rpc.SetFramingRequest) error {
-	gridID, err := parseID(req.RootGridID)
+func (s *Store) setRootFraming(ctx context.Context, req *gridwellv1.SetFramingRequest) error {
+	gridID, err := parseID(req.RootGridId)
 	if err != nil {
 		return fmt.Errorf("%w: invalid root_grid_id", ErrInvalidArgument)
 	}
 	err = s.withTx(ctx, func(tx *sql.Tx) error {
-		n, err := updateFraming(ctx, tx, "", 0, gridID, req.Framing, s.now().Unix())
+		n, err := updateFraming(ctx, tx, "", 0, gridID, rpc.Framing{Cx: req.Cx, Cy: req.Cy, Zoom: req.Zoom}, s.now().Unix())
 		if err != nil {
 			return err
 		}
@@ -332,7 +333,7 @@ func (s *Store) setRootFraming(ctx context.Context, req *rpc.SetFramingRequest) 
 	if err != nil {
 		return err
 	}
-	s.publish(rpc.Event{Kind: rpc.EventGridChanged, GridChanged: &rpc.GridChanged{GridID: req.RootGridID}})
+	s.publish(&gridwellv1.Event{Payload: &gridwellv1.Event_GridChanged{GridChanged: &gridwellv1.GridChanged{GridId: req.RootGridId}}})
 	return nil
 }
 
@@ -365,8 +366,8 @@ func (s *Store) withTx(ctx context.Context, fn func(*sql.Tx) error) error {
 
 // withMutation runs fn in a transaction. fn appends to the provided events
 // slice; on commit, withMutation publishes them in order.
-func (s *Store) withMutation(ctx context.Context, fn func(tx *sql.Tx, events *[]rpc.Event) error) error {
-	var events []rpc.Event
+func (s *Store) withMutation(ctx context.Context, fn func(tx *sql.Tx, events *[]*gridwellv1.Event) error) error {
+	var events []*gridwellv1.Event
 	err := s.withTx(ctx, func(tx *sql.Tx) error { return fn(tx, &events) })
 	if err != nil {
 		return err

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
 // This file is the one pin on what a tile row's `version` means:
@@ -58,52 +58,52 @@ func tileVersion(t *testing.T, s *Store, tileID string) int64 {
 // says whether that arm actually reads it.
 type versionCase struct {
 	name       string
-	subject    func(t *testing.T, s *Store, ctx context.Context, root string) *rpc.Tile
-	mutate     func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error
-	staleClaim func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error
+	subject    func(t *testing.T, s *Store, ctx context.Context, root string) *gridwellv1.Tile
+	mutate     func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error
+	staleClaim func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error
 	// bumps: the write advances the row's version.
 	bumps bool
 	// claims: staleClaim is refused with ErrVersionConflict.
 	claims bool
 }
 
-func textSubject(t *testing.T, s *Store, ctx context.Context, root string) *rpc.Tile {
+func textSubject(t *testing.T, s *Store, ctx context.Context, root string) *gridwellv1.Tile {
 	t.Helper()
-	tile, err := s.CreateText(ctx, &rpc.CreateTextRequest{GridID: root, X: 0, Y: 0, W: 2, H: 2, Data: []byte("# hi")})
+	tile, err := s.CreateText(ctx, root, 0, 0, 2, 2, []byte("# hi"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return tile
 }
 
-func urlSubject(t *testing.T, s *Store, ctx context.Context, root string) *rpc.Tile {
+func urlSubject(t *testing.T, s *Store, ctx context.Context, root string) *gridwellv1.Tile {
 	t.Helper()
-	tile, err := s.CreateURL(ctx, &rpc.CreateURLRequest{GridID: root, X: 0, Y: 0, W: 2, H: 2, URL: "https://example.com"})
+	tile, err := s.CreateURL(ctx, root, 0, 0, 2, 2, "https://example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return tile
 }
 
-func shellSubject(t *testing.T, s *Store, ctx context.Context, root string) *rpc.Tile {
+func shellSubject(t *testing.T, s *Store, ctx context.Context, root string) *gridwellv1.Tile {
 	t.Helper()
-	tile, err := s.CreateShell(ctx, &rpc.CreateShellRequest{GridID: root, X: 0, Y: 0, W: 2, H: 2})
+	tile, err := s.CreateShell(ctx, root, 0, 0, 2, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return tile
 }
 
-func wellSubject(t *testing.T, s *Store, ctx context.Context, root string) *rpc.Tile {
+func wellSubject(t *testing.T, s *Store, ctx context.Context, root string) *gridwellv1.Tile {
 	t.Helper()
-	tile, err := s.CreateWell(ctx, &rpc.CreateWellRequest{GridID: root, X: 0, Y: 0, W: 2, H: 2})
+	tile, err := s.CreateWell(ctx, root, 0, 0, 2, 2, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	return tile
 }
 
-func paneSubject(t *testing.T, s *Store, ctx context.Context, root string) *rpc.Tile {
+func paneSubject(t *testing.T, s *Store, ctx context.Context, root string) *gridwellv1.Tile {
 	t.Helper()
 	tile, err := s.CreatePane(ctx, root, 0, 0, 2, 2, "ws", nil)
 	if err != nil {
@@ -116,12 +116,12 @@ var versionCases = []versionCase{
 	// ── Content: the user's own bytes. Bumps, and claims. ──────────────
 	{
 		name: "WriteContent/text body", subject: textSubject, bumps: true, claims: true,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.WriteContent(ctx, tile.ID, tile.Version, []byte("# edited"))
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.WriteContent(ctx, tile.Id, tile.Version, []byte("# edited"))
 			return err
 		},
-		staleClaim: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.WriteContent(ctx, tile.ID, tile.Version+7, []byte("# edited"))
+		staleClaim: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.WriteContent(ctx, tile.Id, tile.Version+7, []byte("# edited"))
 			return err
 		},
 	},
@@ -129,23 +129,23 @@ var versionCases = []versionCase{
 		// Byte-identical bytes are a true no-op: reading and no-op writes
 		// never mutate (the primary rule). The claim is still checked.
 		name: "WriteContent/text body unchanged", subject: textSubject, bumps: false, claims: true,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.WriteContent(ctx, tile.ID, tile.Version, []byte("# hi"))
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.WriteContent(ctx, tile.Id, tile.Version, []byte("# hi"))
 			return err
 		},
-		staleClaim: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.WriteContent(ctx, tile.ID, tile.Version+7, []byte("# hi"))
+		staleClaim: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.WriteContent(ctx, tile.Id, tile.Version+7, []byte("# hi"))
 			return err
 		},
 	},
 	{
 		name: "WriteContent/url address", subject: urlSubject, bumps: true, claims: true,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.WriteContent(ctx, tile.ID, tile.Version, []byte("https://elsewhere.example"))
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.WriteContent(ctx, tile.Id, tile.Version, []byte("https://elsewhere.example"))
 			return err
 		},
-		staleClaim: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.WriteContent(ctx, tile.ID, tile.Version+7, []byte("https://elsewhere.example"))
+		staleClaim: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.WriteContent(ctx, tile.Id, tile.Version+7, []byte("https://elsewhere.example"))
 			return err
 		},
 	},
@@ -153,12 +153,12 @@ var versionCases = []versionCase{
 		// alt_text IS content when the USER types it (it changes the
 		// markdown a drop produces), and the rename latches alt_user.
 		name: "RenameTile/user rename", subject: urlSubject, bumps: true, claims: true,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.RenameTile(ctx, tile.ID, tile.Version, "a name I typed")
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.RenameTile(ctx, tile.Id, tile.Version, "a name I typed")
 			return err
 		},
-		staleClaim: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.RenameTile(ctx, tile.ID, tile.Version+7, "a name I typed")
+		staleClaim: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.RenameTile(ctx, tile.Id, tile.Version+7, "a name I typed")
 			return err
 		},
 	},
@@ -167,27 +167,21 @@ var versionCases = []versionCase{
 	{
 		// The shell detach path baking in the tmux foreground command.
 		name: "SetTileAlt/automatic capture", subject: shellSubject, bumps: false,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			return s.SetTileAlt(ctx, mustParseID(t, tile.ID), "vim CLAUDE.md", false)
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			return s.SetTileAlt(ctx, mustParseID(t, tile.Id), "vim CLAUDE.md", false)
 		},
 	},
 	{
 		name: "SetURLState/freeze capture", subject: urlSubject, bumps: false,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.SetURLState(ctx, &rpc.SetURLStateRequest{
-				TileID: tile.ID,
-				JPEG:   []byte("jpegbytes"), URL: "https://example.com/deep",
-				Title: "Example", History: `["https://example.com"]`,
-			})
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.SetURLState(ctx, tile.Id, []byte("jpegbytes"), "https://example.com/deep", "Example", `["https://example.com"]`)
 			return err
 		},
 	},
 	{
 		name: "SetShellPreview/frozen frame", subject: shellSubject, bumps: false,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{
-				TileID: tile.ID, JPEG: []byte("jpegbytes"),
-			})
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.SetShellPreview(ctx, tile.Id, []byte("jpegbytes"))
 			return err
 		},
 	},
@@ -195,38 +189,31 @@ var versionCases = []versionCase{
 	// ── Framing: how it looked. No bump, no claim. ─────────────────────
 	{
 		name: "SetTextView/window and mode", subject: textSubject, bumps: false,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.SetTextView(ctx, &rpc.SetTextViewRequest{
-				TileID: tile.ID,
-				TextX:  10, TextY: 20, TextW: 300, TextH: 400, TextMode: "rendered",
-			})
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.SetTextView(ctx, tile.Id, 10, 20, 300, 400, "rendered")
 			return err
 		},
 	},
 	{
 		name: "SetContentZoom/content scale", subject: shellSubject, bumps: false,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.SetContentZoom(ctx, &rpc.SetContentZoomRequest{
-				TileID: tile.ID, ContentZoom: 1.5,
-			})
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.SetContentZoom(ctx, tile.Id, 1.5)
 			return err
 		},
 	},
 	{
 		name: "SetURLFrozen/standing freeze", subject: urlSubject, bumps: false,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.SetURLFrozen(ctx, &rpc.SetURLFrozenRequest{
-				TileID: tile.ID, Frozen: true,
-			})
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.SetURLFrozen(ctx, tile.Id, true)
 			return err
 		},
 	},
 	{
 		name: "SetFraming/doorway viewport", subject: wellSubject, bumps: false,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.SetFraming(ctx, &rpc.SetFramingRequest{
-				TileID:  tile.ID,
-				Framing: rpc.Framing{Cx: 3, Cy: 4, Zoom: 1.25},
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.SetFraming(ctx, &gridwellv1.SetFramingRequest{
+				TileId: tile.Id,
+				Cx:     3, Cy: 4, Zoom: 1.25,
 			})
 			return err
 		},
@@ -236,13 +223,13 @@ var versionCases = []versionCase{
 		// rides WriteContent's kind dispatch, whose signature carries one
 		// for the text and url arms. This arm must ignore it.
 		name: "SetPaneLayout/workspace arrangement", subject: paneSubject, bumps: false, claims: false,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.SetPaneLayout(ctx, mustParseID(t, tile.ID), tile.Version,
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.SetPaneLayout(ctx, mustParseID(t, tile.Id), tile.Version,
 				[]byte(`{"v":1,"root":{"pane":{"id":"p1","zoom":1}},"focus":"p1"}`))
 			return err
 		},
-		staleClaim: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.SetPaneLayout(ctx, mustParseID(t, tile.ID), tile.Version+7,
+		staleClaim: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.SetPaneLayout(ctx, mustParseID(t, tile.Id), tile.Version+7,
 				[]byte(`{"v":1,"root":{"pane":{"id":"p1","zoom":1}},"focus":"p1"}`))
 			return err
 		},
@@ -251,9 +238,9 @@ var versionCases = []versionCase{
 	// ── Layout: where it sits. No bump, no claim. ──────────────────────
 	{
 		name: "PlaceTile/move and resize", subject: textSubject, bumps: false,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.PlaceTile(ctx, &rpc.PlaceTileRequest{
-				TileID: tile.ID, GridID: tile.GridID, X: 6, Y: 7, W: 3, H: 3,
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+				TileId: tile.Id, GridId: tile.GridId, X: 6, Y: 7, W: 3, H: 3,
 			})
 			return err
 		},
@@ -262,9 +249,9 @@ var versionCases = []versionCase{
 		// The SOURCE row is untouched by a clone; the copy carries its
 		// version so the two stay "the same content" until one diverges.
 		name: "CloneTile/source row", subject: textSubject, bumps: false,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			_, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-				TileID: tile.ID, DestGridID: tile.GridID, X: 6, Y: 6,
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			_, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+				TileId: tile.Id, DestGridId: tile.GridId, X: 6, Y: 6,
 			})
 			return err
 		},
@@ -273,8 +260,8 @@ var versionCases = []versionCase{
 		// A delete on an ordinary grid MOVES the row into the trash (same
 		// id, same row) — layout, so the version is untouched there too.
 		name: "DeleteTile/move to trash", subject: textSubject, bumps: false,
-		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *rpc.Tile) error {
-			return s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: tile.ID})
+		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
+			return s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: tile.Id})
 		},
 	},
 }
@@ -291,7 +278,7 @@ func TestVersionRuleBump(t *testing.T) {
 			if err := c.mutate(t, s, ctx, tile); err != nil {
 				t.Fatalf("mutate: %v", err)
 			}
-			got := tileVersion(t, s, tile.ID)
+			got := tileVersion(t, s, tile.Id)
 			want := v0
 			if c.bumps {
 				want = v0 + 1
@@ -349,13 +336,11 @@ func TestContentZoomRefusesWells(t *testing.T) {
 	ctx := context.Background()
 	root := rootID(t, s)
 
-	well, err := s.CreateWell(ctx, &rpc.CreateWellRequest{GridID: root, X: 3, Y: 3, W: 1, H: 1})
+	well, err := s.CreateWell(ctx, root, 3, 3, 1, 1, "")
 	if err != nil {
 		t.Fatalf("CreateWell: %v", err)
 	}
-	if _, err := s.SetContentZoom(ctx, &rpc.SetContentZoomRequest{
-		TileID: well.ID, ContentZoom: 2,
-	}); err == nil {
+	if _, err := s.SetContentZoom(ctx, well.Id, 2); err == nil {
 		t.Error("SetContentZoom on a well must be refused")
 	}
 }

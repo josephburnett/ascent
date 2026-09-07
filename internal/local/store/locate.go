@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -20,7 +21,7 @@ const searchDefaultLimit = 20
 // surface, because a result is a promise you can go there and they die on
 // ascent. A query that matches nothing returns empty results, never an
 // error.
-func (s *Store) Search(ctx context.Context, query string, limit int) ([]rpc.SearchResult, error) {
+func (s *Store) Search(ctx context.Context, query string, limit int) ([]*gridwellv1.SearchResult, error) {
 	if limit <= 0 {
 		limit = searchDefaultLimit
 	}
@@ -37,7 +38,7 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]rpc.Sear
 		if err != nil {
 			return nil, err
 		}
-		return []rpc.SearchResult{{Tile: *t, Path: path, Score: 1}}, nil
+		return []*gridwellv1.SearchResult{{Tile: t, Path: path, Score: 1}}, nil
 	}
 	needle := strings.ToLower(strings.TrimSpace(q.Text))
 	if needle == "" {
@@ -45,22 +46,22 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]rpc.Sear
 	}
 	scratch := s.searchScratchGrid(ctx)
 
-	var out []rpc.SearchResult
+	var out []*gridwellv1.SearchResult
 	seen := map[string]bool{}
 	appendHit := func(id int64, snippet string, score float64) error {
 		t, err := s.loadTile(ctx, s.db, id)
 		if err != nil {
 			return err
 		}
-		if seen[t.ID] || t.GridID == scratch {
+		if seen[t.Id] || t.GridId == scratch {
 			return nil
 		}
-		seen[t.ID] = true
+		seen[t.Id] = true
 		path, err := s.wellChainFor(ctx, t)
 		if err != nil {
 			return err
 		}
-		out = append(out, rpc.SearchResult{Tile: *t, Path: path, Snippet: snippet, Score: score})
+		out = append(out, &gridwellv1.SearchResult{Tile: t, Path: path, Snippet: snippet, Score: score})
 		return nil
 	}
 
@@ -167,12 +168,12 @@ func searchSnippet(text, needle string) string {
 // and empty for a tile at a root. The upward walk is the same server-derived
 // parent chain wellWouldContainItself trusts: each interior child grid hangs
 // off exactly one well by construction.
-func (s *Store) wellChainFor(ctx context.Context, t *rpc.Tile) ([]rpc.Tile, error) {
-	grid, err := parseID(t.GridID)
+func (s *Store) wellChainFor(ctx context.Context, t *gridwellv1.Tile) ([]*gridwellv1.Tile, error) {
+	grid, err := parseID(t.GridId)
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	var wells []rpc.Tile
+	var wells []*gridwellv1.Tile
 	for {
 		var wellID int64
 		err := s.db.QueryRowContext(ctx,
@@ -188,8 +189,8 @@ func (s *Store) wellChainFor(ctx context.Context, t *rpc.Tile) ([]rpc.Tile, erro
 		if err != nil {
 			return nil, err
 		}
-		wells = append(wells, *w)
-		grid, err = parseID(w.GridID)
+		wells = append(wells, w)
+		grid, err = parseID(w.GridId)
 		if err != nil {
 			return nil, ErrNotFound
 		}
@@ -197,7 +198,7 @@ func (s *Store) wellChainFor(ctx context.Context, t *rpc.Tile) ([]rpc.Tile, erro
 }
 
 // reverse flips the collected leaf-first walk into outermost-first order.
-func reverse(ts []rpc.Tile) {
+func reverse(ts []*gridwellv1.Tile) {
 	for i, j := 0, len(ts)-1; i < j; i, j = i+1, j-1 {
 		ts[i], ts[j] = ts[j], ts[i]
 	}

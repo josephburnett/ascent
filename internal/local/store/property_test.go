@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -34,16 +35,14 @@ func TestPropertyRefcountAndOverlap(t *testing.T) {
 		childGridID string
 	}
 	var tiles []liveTile
-	addTile := func(n *rpc.Tile) {
+	addTile := func(n *gridwellv1.Tile) {
 		tiles = append(tiles, liveTile{
-			id: n.ID, kind: n.Kind, gridID: n.GridID,
-			w: n.W, h: n.H, x: n.X, y: n.Y, childGridID: n.ChildGridID,
+			id: n.Id, kind: n.Kind, gridID: n.GridId,
+			w: n.W, h: n.H, x: n.X, y: n.Y, childGridID: n.ChildGridId,
 		})
 	}
 
-	w0, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	w0, err := s.CreateWell(ctx, root, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,28 +80,18 @@ func TestPropertyRefcountAndOverlap(t *testing.T) {
 			w := int64(1 + rng.IntN(2))
 			h := int64(1 + rng.IntN(2))
 			var (
-				n   *rpc.Tile
+				n   *gridwellv1.Tile
 				err error
 			)
 			switch rng.IntN(4) {
 			case 0:
-				n, err = s.CreateWell(ctx, &rpc.CreateWellRequest{
-					GridID: gridID, X: x, Y: y, W: w, H: h,
-				})
+				n, err = s.CreateWell(ctx, gridID, x, y, w, h, "")
 			case 1:
-				n, err = s.CreateText(ctx, &rpc.CreateTextRequest{
-					GridID: gridID, X: x, Y: y, W: w, H: h,
-					Data: []byte(fmt.Sprintf("# tile %d", i)),
-				})
+				n, err = s.CreateText(ctx, gridID, x, y, w, h, []byte(fmt.Sprintf("# tile %d", i)))
 			case 2:
-				n, err = s.CreateURL(ctx, &rpc.CreateURLRequest{
-					GridID: gridID, X: x, Y: y, W: w, H: h,
-					URL: fmt.Sprintf("https://example.com/%d", i),
-				})
+				n, err = s.CreateURL(ctx, gridID, x, y, w, h, fmt.Sprintf("https://example.com/%d", i))
 			case 3:
-				n, err = s.CreateShell(ctx, &rpc.CreateShellRequest{
-					GridID: gridID, X: x, Y: y, W: w, H: h,
-				})
+				n, err = s.CreateShell(ctx, gridID, x, y, w, h)
 			}
 			if err != nil {
 				if !isBenignPropError(err) {
@@ -122,9 +111,9 @@ func TestPropertyRefcountAndOverlap(t *testing.T) {
 			}
 			x := int64(rng.IntN(20))*2 + 100
 			y := int64(rng.IntN(20)) * 2
-			n, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-				TileID:     src.id,
-				DestGridID: root, X: x, Y: y,
+			n, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+				TileId:     src.id,
+				DestGridId: root, X: x, Y: y,
 			})
 			if err != nil {
 				if !isBenignPropError(err) {
@@ -145,9 +134,9 @@ func TestPropertyRefcountAndOverlap(t *testing.T) {
 			}
 			w := int64(1 + rng.IntN(3))
 			h := int64(1 + rng.IntN(3))
-			n, err := s.PlaceTile(ctx, &rpc.PlaceTileRequest{
-				TileID: pick.id,
-				GridID: pick.gridID, X: pick.x, Y: pick.y, W: w, H: h,
+			n, err := s.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+				TileId: pick.id,
+				GridId: pick.gridID, X: pick.x, Y: pick.y, W: w, H: h,
 			})
 			if err != nil {
 				if !isBenignPropError(err) {
@@ -155,8 +144,8 @@ func TestPropertyRefcountAndOverlap(t *testing.T) {
 				}
 				continue
 			}
-			tiles[pickIdx].id = n.ID
-			tiles[pickIdx].gridID = n.GridID
+			tiles[pickIdx].id = n.Id
+			tiles[pickIdx].gridID = n.GridId
 			tiles[pickIdx].w = n.W
 			tiles[pickIdx].h = n.H
 		case 3:
@@ -171,8 +160,8 @@ func TestPropertyRefcountAndOverlap(t *testing.T) {
 				tiles = append(tiles[:pickIdx], tiles[pickIdx+1:]...)
 				continue
 			}
-			err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{
-				TileID: pick.id,
+			err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{
+				TileId: pick.id,
 			})
 			if err != nil && !isBenignPropError(err) {
 				t.Fatalf("iter %d delete: %v", i, err)
@@ -207,15 +196,15 @@ func TestPropertyRefcountAndOverlap(t *testing.T) {
 			if !stillLive(pick.id) {
 				continue
 			}
-			n, err := s.SetFraming(ctx, &rpc.SetFramingRequest{
-				TileID:  pick.id,
-				Framing: rpc.Framing{Cx: rng.Float64() * 50, Cy: rng.Float64() * 50, Zoom: 1.0},
+			n, err := s.SetFraming(ctx, &gridwellv1.SetFramingRequest{
+				TileId: pick.id,
+				Cx:     rng.Float64() * 50, Cy: rng.Float64() * 50, Zoom: 1.0,
 			})
 			if err != nil && !isBenignPropError(err) {
 				t.Fatalf("iter %d set well view: %v", i, err)
 			}
 			if err == nil {
-				tiles[pickIdx].id = n.ID
+				tiles[pickIdx].id = n.Id
 			}
 		case 5:
 			// Freeze a preview onto a shell tile so preview_blob_id
@@ -233,15 +222,12 @@ func TestPropertyRefcountAndOverlap(t *testing.T) {
 			if !stillLive(pick.id) {
 				continue
 			}
-			n, err := s.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{
-				TileID: pick.id,
-				JPEG:   []byte{byte('a' + rng.IntN(3))},
-			})
+			n, err := s.SetShellPreview(ctx, pick.id, []byte{byte('a' + rng.IntN(3))})
 			if err != nil && !isBenignPropError(err) {
 				t.Fatalf("iter %d set shell preview: %v", i, err)
 			}
 			if err == nil {
-				tiles[pickIdx].id = n.ID
+				tiles[pickIdx].id = n.Id
 			}
 		}
 

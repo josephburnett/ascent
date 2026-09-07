@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -17,15 +18,13 @@ func TestSwapTileBlob(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	tile, err := s.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte("orig"),
-	})
+	tile, err := s.CreateText(ctx, root, 0, 0, 1, 1, []byte("orig"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	origBlob := tile.BlobID
+	origBlob := tile.BlobId
 
-	tileIDInt, _ := parseID(tile.ID)
+	tileIDInt, _ := parseID(tile.Id)
 	swap := func(bytes []byte) (int64, bool) {
 		t.Helper()
 		tx, err := s.db.BeginTx(ctx, nil)
@@ -68,9 +67,7 @@ func TestSwapTileBlob(t *testing.T) {
 		t.Errorf("refcount after no-op = %d, want 1 (no churn)", rc)
 	}
 
-	other, err := s.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 2, Y: 0, W: 1, H: 1, Data: []byte("shared"),
-	})
+	other, err := s.CreateText(ctx, root, 2, 0, 1, 1, []byte("shared"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,8 +75,8 @@ func TestSwapTileBlob(t *testing.T) {
 	if !changed3 {
 		t.Error("expected changed=true switching to shared content")
 	}
-	if id3 != other.BlobID {
-		t.Errorf("dedup blob id = %d, want shared %d", id3, other.BlobID)
+	if id3 != other.BlobId {
+		t.Errorf("dedup blob id = %d, want shared %d", id3, other.BlobId)
 	}
 	if rc, _ := blobRefcount(ctx, s, id3); rc != 2 {
 		t.Errorf("shared blob refcount = %d, want 2", rc)
@@ -95,34 +92,30 @@ func TestCloneCopiesChildGrid(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	w, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	w, err := s.CreateWell(ctx, root, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	inner, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: w.ChildGridID, X: 5, Y: 5, W: 1, H: 1,
-	})
+	inner, err := s.CreateWell(ctx, w.ChildGridId, 5, 5, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	clone, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     w.ID,
-		DestGridID: root, X: 10, Y: 0,
+	clone, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     w.Id,
+		DestGridId: root, X: 10, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("clone: %v", err)
 	}
-	if clone.ID == w.ID {
+	if clone.Id == w.Id {
 		t.Errorf("clone has same row id as original")
 	}
-	if clone.ChildGridID == w.ChildGridID {
-		t.Errorf("clone child grid = %s == original (expected an independent copy)", clone.ChildGridID)
+	if clone.ChildGridId == w.ChildGridId {
+		t.Errorf("clone child grid = %s == original (expected an independent copy)", clone.ChildGridId)
 	}
 
-	cloneChild, err := s.GetGrid(ctx, clone.ChildGridID)
+	cloneChild, err := s.GetGrid(ctx, clone.ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,8 +123,8 @@ func TestCloneCopiesChildGrid(t *testing.T) {
 		t.Fatalf("clone child has %d tiles, want 1", len(cloneChild.Tiles))
 	}
 	ct := cloneChild.Tiles[0]
-	if ct.ID == inner.ID {
-		t.Errorf("inner tile should be re-rowed in the copy, still has id %s", inner.ID)
+	if ct.Id == inner.Id {
+		t.Errorf("inner tile should be re-rowed in the copy, still has id %s", inner.Id)
 	}
 	verifyRefcounts(t, s)
 }
@@ -143,54 +136,50 @@ func TestCloneIndependentEdit(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	w, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	w, err := s.CreateWell(ctx, root, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	inner, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: w.ChildGridID, X: 0, Y: 0, W: 1, H: 1,
-	})
+	inner, err := s.CreateWell(ctx, w.ChildGridId, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	clone, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     w.ID,
-		DestGridID: root, X: 10, Y: 0,
+	clone, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     w.Id,
+		DestGridId: root, X: 10, Y: 0,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cloneChild, err := s.GetGrid(ctx, clone.ChildGridID)
+	cloneChild, err := s.GetGrid(ctx, clone.ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cInner := cloneChild.Tiles[0]
-	resized, err := s.PlaceTile(ctx, &rpc.PlaceTileRequest{
-		TileID: cInner.ID,
-		GridID: cInner.GridID, X: 0, Y: 0, W: 3, H: 3,
+	resized, err := s.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+		TileId: cInner.Id,
+		GridId: cInner.GridId, X: 0, Y: 0, W: 3, H: 3,
 	})
 	if err != nil {
 		t.Fatalf("resize through clone: %v", err)
 	}
-	if resized.ID != cInner.ID {
+	if resized.Id != cInner.Id {
 		t.Error("edit re-rowed the tile; copy-on-clone edits must be in place")
 	}
 	if resized.W != 3 || resized.H != 3 {
 		t.Errorf("resize did not apply: %+v", resized)
 	}
 
-	origChild, err := s.GetGrid(ctx, w.ChildGridID)
+	origChild, err := s.GetGrid(ctx, w.ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(origChild.Tiles) != 1 {
 		t.Fatalf("original child has %d tiles, want 1", len(origChild.Tiles))
 	}
-	if origChild.Tiles[0].ID != inner.ID {
-		t.Errorf("original inner re-rowed: %s -> %s", inner.ID, origChild.Tiles[0].ID)
+	if origChild.Tiles[0].Id != inner.Id {
+		t.Errorf("original inner re-rowed: %s -> %s", inner.Id, origChild.Tiles[0].Id)
 	}
 	if origChild.Tiles[0].W != 1 || origChild.Tiles[0].H != 1 {
 		t.Errorf("original child tile was mutated: %+v", origChild.Tiles[0])
@@ -205,17 +194,12 @@ func TestCloneOneLevelByteIdentity(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	outer, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	outer, err := s.CreateWell(ctx, root, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	original := []byte("# original")
-	if _, err := s.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: outer.ChildGridID,
-		X:      0, Y: 0, W: 1, H: 1, Data: original,
-	}); err != nil {
+	if _, err := s.CreateText(ctx, outer.ChildGridId, 0, 0, 1, 1, original); err != nil {
 		t.Fatal(err)
 	}
 
@@ -225,45 +209,45 @@ func TestCloneOneLevelByteIdentity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		g, err := s.GetGrid(ctx, ot.ChildGridID)
+		g, err := s.GetGrid(ctx, ot.ChildGridId)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(g.Tiles) != 1 {
 			t.Fatalf("outer child should have 1 tile; got %d", len(g.Tiles))
 		}
-		data, err := s.GetBlob(ctx, g.Tiles[0].BlobID)
+		data, err := s.GetBlob(ctx, g.Tiles[0].BlobId)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return data
 	}
 
-	clone, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     outer.ID,
-		DestGridID: root, X: 10, Y: 0,
+	clone, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     outer.Id,
+		DestGridId: root, X: 10, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("clone: %v", err)
 	}
 
-	cloneChild, err := s.GetGrid(ctx, clone.ChildGridID)
+	cloneChild, err := s.GetGrid(ctx, clone.ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
 	cText := cloneChild.Tiles[0]
-	updated, err := s.WriteContent(ctx, cText.ID, cText.Version, []byte("# mutated"))
+	updated, err := s.WriteContent(ctx, cText.Id, cText.Version, []byte("# mutated"))
 	if err != nil {
 		t.Fatalf("update through clone: %v", err)
 	}
-	if updated.ID != cText.ID {
+	if updated.Id != cText.Id {
 		t.Error("update re-rowed the clone's text; edits must be in place")
 	}
 
-	if got := snap(outer.ID); string(got) != string(original) {
+	if got := snap(outer.Id); string(got) != string(original) {
 		t.Errorf("original path = %q, want %q (mutation leaked)", got, original)
 	}
-	if got := snap(clone.ID); string(got) != "# mutated" {
+	if got := snap(clone.Id); string(got) != "# mutated" {
 		t.Errorf("clone path = %q, want # mutated", got)
 	}
 	verifyRefcounts(t, s)
@@ -276,23 +260,16 @@ func TestCloneTwoLevelByteIdentity(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	a, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	a, err := s.CreateWell(ctx, root, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: a.ChildGridID, X: 0, Y: 0, W: 1, H: 1,
-	})
+	b, err := s.CreateWell(ctx, a.ChildGridId, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	original := []byte("# original")
-	text, err := s.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: b.ChildGridID,
-		X:      0, Y: 0, W: 1, H: 1, Data: original,
-	})
+	text, err := s.CreateText(ctx, b.ChildGridId, 0, 0, 1, 1, original)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,51 +280,51 @@ func TestCloneTwoLevelByteIdentity(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		g, err := s.GetGrid(ctx, ot.ChildGridID)
+		g, err := s.GetGrid(ctx, ot.ChildGridId)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(g.Tiles) != 1 || g.Tiles[0].Kind != rpc.KindWell {
 			t.Fatalf("expected one well inside outer %s; got %+v", outerWellID, g.Tiles)
 		}
-		h, err := s.GetGrid(ctx, g.Tiles[0].ChildGridID)
+		h, err := s.GetGrid(ctx, g.Tiles[0].ChildGridId)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(h.Tiles) != 1 {
 			t.Fatalf("expected one tile in H; got %d", len(h.Tiles))
 		}
-		data, err := s.GetBlob(ctx, h.Tiles[0].BlobID)
+		data, err := s.GetBlob(ctx, h.Tiles[0].BlobId)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return data
 	}
 
-	a2, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     a.ID,
-		DestGridID: root, X: 10, Y: 0,
+	a2, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     a.Id,
+		DestGridId: root, X: 10, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("clone A: %v", err)
 	}
-	if a2.ChildGridID == a.ChildGridID {
-		t.Fatalf("clone should deep-copy the child grid; got shared %s", a2.ChildGridID)
+	if a2.ChildGridId == a.ChildGridId {
+		t.Fatalf("clone should deep-copy the child grid; got shared %s", a2.ChildGridId)
 	}
 
 	mutated := []byte("# mutated")
-	updated, err := s.WriteContent(ctx, text.ID, text.Version, mutated)
+	updated, err := s.WriteContent(ctx, text.Id, text.Version, mutated)
 	if err != nil {
 		t.Fatalf("update through [A, B]: %v", err)
 	}
-	if updated.ID != text.ID {
+	if updated.Id != text.Id {
 		t.Error("update re-rowed the original's text; edits must be in place")
 	}
 
-	if got := leafBytes(a.ID); string(got) != string(mutated) {
+	if got := leafBytes(a.Id); string(got) != string(mutated) {
 		t.Errorf("A path = %q, want %q", got, mutated)
 	}
-	if got := leafBytes(a2.ID); string(got) != string(original) {
+	if got := leafBytes(a2.Id); string(got) != string(original) {
 		t.Errorf("A2 leak: bytes = %q, want %q", got, original)
 	}
 	verifyRefcounts(t, s)
@@ -360,16 +337,12 @@ func TestCloneThreeIndependentCopies(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	a, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	a, err := s.CreateWell(ctx, root, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	original := []byte("# original")
-	text, err := s.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: a.ChildGridID, X: 0, Y: 0, W: 1, H: 1, Data: original,
-	})
+	text, err := s.CreateText(ctx, a.ChildGridId, 0, 0, 1, 1, original)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,47 +353,47 @@ func TestCloneThreeIndependentCopies(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		g, err := s.GetGrid(ctx, ot.ChildGridID)
+		g, err := s.GetGrid(ctx, ot.ChildGridId)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(g.Tiles) != 1 {
 			t.Fatalf("expected 1 tile in outer %s's child; got %d", outerWellID, len(g.Tiles))
 		}
-		data, err := s.GetBlob(ctx, g.Tiles[0].BlobID)
+		data, err := s.GetBlob(ctx, g.Tiles[0].BlobId)
 		if err != nil {
 			t.Fatal(err)
 		}
 		return data
 	}
 
-	a2, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     a.ID,
-		DestGridID: root, X: 10, Y: 0,
+	a2, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     a.Id,
+		DestGridId: root, X: 10, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("clone A -> A2: %v", err)
 	}
-	a3, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     a2.ID,
-		DestGridID: root, X: 20, Y: 0,
+	a3, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     a2.Id,
+		DestGridId: root, X: 20, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("clone A2 -> A3: %v", err)
 	}
 
 	mutated := []byte("# mutated")
-	if _, err := s.WriteContent(ctx, text.ID, text.Version, mutated); err != nil {
+	if _, err := s.WriteContent(ctx, text.Id, text.Version, mutated); err != nil {
 		t.Fatalf("update through A: %v", err)
 	}
 
-	if got := leafBytes(a.ID); string(got) != string(mutated) {
+	if got := leafBytes(a.Id); string(got) != string(mutated) {
 		t.Errorf("A: bytes = %q, want %q", got, mutated)
 	}
-	if got := leafBytes(a2.ID); string(got) != string(original) {
+	if got := leafBytes(a2.Id); string(got) != string(original) {
 		t.Errorf("A2 leak: bytes = %q, want %q", got, original)
 	}
-	if got := leafBytes(a3.ID); string(got) != string(original) {
+	if got := leafBytes(a3.Id); string(got) != string(original) {
 		t.Errorf("A3 leak: bytes = %q, want %q", got, original)
 	}
 	verifyRefcounts(t, s)
@@ -433,35 +406,32 @@ func TestRefcountGCBlobOnTileDelete(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	a, err := s.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root,
-		X:      0, Y: 0, W: 1, H: 1, Data: []byte("# blob"),
+	a, err := s.CreateText(ctx, root, 0, 0, 1, 1, []byte("# blob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     a.Id,
+		DestGridId: root, X: 5, Y: 0,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	clone, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     a.ID,
-		DestGridID: root, X: 5, Y: 0,
-	})
-	if err != nil {
-		t.Fatal(err)
+	if clone.BlobId != a.BlobId {
+		t.Fatalf("clone blob id = %d, want %d (shared)", clone.BlobId, a.BlobId)
 	}
-	if clone.BlobID != a.BlobID {
-		t.Fatalf("clone blob id = %d, want %d (shared)", clone.BlobID, a.BlobID)
-	}
-	if rc := refcount(t, s, "blobs", a.BlobID); rc != 2 {
+	if rc := refcount(t, s, "blobs", a.BlobId); rc != 2 {
 		t.Fatalf("blob refcount after clone = %d, want 2", rc)
 	}
 
-	hardDelete(t, s, clone.ID)
-	if rc := refcount(t, s, "blobs", a.BlobID); rc != 1 {
+	hardDelete(t, s, clone.Id)
+	if rc := refcount(t, s, "blobs", a.BlobId); rc != 1 {
 		t.Errorf("blob refcount after first destroy = %d, want 1", rc)
 	}
 
-	hardDelete(t, s, a.ID)
+	hardDelete(t, s, a.Id)
 	var rc int64
-	if err := s.db.QueryRow(`SELECT refcount FROM blobs WHERE id = ?`, a.BlobID).Scan(&rc); err == nil {
+	if err := s.db.QueryRow(`SELECT refcount FROM blobs WHERE id = ?`, a.BlobId).Scan(&rc); err == nil {
 		t.Errorf("blob row still present after final delete (refcount=%d)", rc)
 	}
 }
@@ -473,34 +443,27 @@ func TestDeleteGridCascadesBlobs(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	outer, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	outer, err := s.CreateWell(ctx, root, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	mdTile, err := s.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: outer.ChildGridID, X: 0, Y: 0, W: 1, H: 1,
-		Data: []byte("inside"),
-	})
+	mdTile, err := s.CreateText(ctx, outer.ChildGridId, 0, 0, 1, 1, []byte("inside"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	sub, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: outer.ChildGridID, X: 5, Y: 0, W: 1, H: 1,
-	})
+	sub, err := s.CreateWell(ctx, outer.ChildGridId, 5, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	subChildGridID, _ := parseID(sub.ChildGridID)
+	subChildGridID, _ := parseID(sub.ChildGridId)
 
-	if rc := refcount(t, s, "blobs", mdTile.BlobID); rc != 1 {
+	if rc := refcount(t, s, "blobs", mdTile.BlobId); rc != 1 {
 		t.Fatalf("md blob refcount = %d, want 1", rc)
 	}
 
-	hardDelete(t, s, outer.ID)
+	hardDelete(t, s, outer.Id)
 
-	outerChildGridID, _ := parseID(outer.ChildGridID)
+	outerChildGridID, _ := parseID(outer.ChildGridId)
 	var n int64
 	if err := s.db.QueryRow(`SELECT COUNT(1) FROM grids WHERE id = ?`, outerChildGridID).Scan(&n); err != nil {
 		t.Fatal(err)
@@ -514,7 +477,7 @@ func TestDeleteGridCascadesBlobs(t *testing.T) {
 	if n != 0 {
 		t.Errorf("sub-well child grid still present after delete")
 	}
-	if err := s.db.QueryRow(`SELECT refcount FROM blobs WHERE id = ?`, mdTile.BlobID).Scan(&n); err == nil {
+	if err := s.db.QueryRow(`SELECT refcount FROM blobs WHERE id = ?`, mdTile.BlobId).Scan(&n); err == nil {
 		t.Errorf("md blob still present after delete; refcount=%d", n)
 	}
 	verifyRefcounts(t, s)

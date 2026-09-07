@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
 const systemKeyTrashGridID = "trash_grid_id"
@@ -153,14 +153,14 @@ func gridInSubtree(ctx context.Context, tx *sql.Tx, gridID, rootID int64) (bool,
 // layout, both grid versions bumped, and TileRemoved for the source plus
 // TileChanged for the destination, so every client reconciles it as the move
 // it is.
-func (s *Store) moveTileToTrash(ctx context.Context, tx *sql.Tx, events *[]rpc.Event, t *rpc.Tile) error {
-	tileID, err := parseID(t.ID)
+func (s *Store) moveTileToTrash(ctx context.Context, tx *sql.Tx, events *[]*gridwellv1.Event, t *gridwellv1.Tile) error {
+	tileID, err := parseID(t.Id)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tile_id", ErrInvalidArgument)
 	}
-	srcGrid, err := parseID(t.GridID)
+	srcGrid, err := parseID(t.GridId)
 	if err != nil {
-		return fmt.Errorf("tile %s: bad grid_id %q: %w", t.ID, t.GridID, err)
+		return fmt.Errorf("tile %s: bad grid_id %q: %w", t.Id, t.GridId, err)
 	}
 	trashID, err := s.trashGridIDTx(ctx, tx)
 	if err != nil {
@@ -191,10 +191,10 @@ func (s *Store) moveTileToTrash(ctx context.Context, tx *sql.Tx, events *[]rpc.E
 			return err
 		}
 	}
-	*events = append(*events, rpc.Event{Kind: rpc.EventTileRemoved, TileRemoved: &rpc.TileRemoved{
-		GridID: strconv.FormatInt(srcGrid, 10),
-		TileID: t.ID,
-	}})
+	*events = append(*events, &gridwellv1.Event{Payload: &gridwellv1.Event_TileRemoved{TileRemoved: &gridwellv1.TileRemoved{
+		GridId: strconv.FormatInt(srcGrid, 10),
+		TileId: t.Id,
+	}}})
 	_, err = s.emitTileChanged(ctx, tx, tileID, events)
 	return err
 }

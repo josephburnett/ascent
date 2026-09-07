@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -116,7 +117,7 @@ func TestRootFramingRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := rpc.Framing{Cx: 3.5, Cy: -7.25, Zoom: 1.5}
-	if _, err := s.SetFraming(ctx, &rpc.SetFramingRequest{RootGridID: root, Framing: want}); err != nil {
+	if _, err := s.SetFraming(ctx, &gridwellv1.SetFramingRequest{RootGridId: root, Cx: want.Cx, Cy: want.Cy, Zoom: want.Zoom}); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	got, ok, err := s.RootFraming(ctx)

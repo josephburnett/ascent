@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
 // A tiles or grids column is described once, here. Everything that would
@@ -47,31 +47,31 @@ type column[T any] struct {
 }
 
 // tilesColumns is the tiles table, in DDL order.
-var tilesColumns = []column[rpc.Tile]{
+var tilesColumns = []column[gridwellv1.Tile]{
 	{
 		name: "id", ddl: "INTEGER PRIMARY KEY AUTOINCREMENT", since: 1,
 		comment: `AUTOINCREMENT for the same reason as grids: a reused tile id would
 collide with the client's per-tile caches (e.g. the URL preview cache
 keyed by tile id), showing a deleted tile's frozen frame on a new one.`,
-		bind:   func(t *rpc.Tile) any { return &t.ID },
+		bind:   func(t *gridwellv1.Tile) any { return &t.Id },
 		noCopy: "the copy's identity — freshly assigned, never reused",
 	},
 	{
 		name: "version", ddl: "INTEGER NOT NULL DEFAULT 0", since: 1,
-		bind: func(t *rpc.Tile) any { return &t.Version },
+		bind: func(t *gridwellv1.Tile) any { return &t.Version },
 	},
 	{
 		name: "grid_id", ddl: "INTEGER NOT NULL REFERENCES grids(id)", since: 1,
-		bind: func(t *rpc.Tile) any { return &t.GridID },
+		bind: func(t *gridwellv1.Tile) any { return &t.GridId },
 	},
 	{
 		name: "kind", ddl: "TEXT NOT NULL CHECK (kind IN ('well','text','url','shell','pane'))", since: 1,
-		bind: func(t *rpc.Tile) any { return &t.Kind },
+		bind: func(t *gridwellv1.Tile) any { return &t.Kind },
 	},
-	{name: "x", ddl: "INTEGER NOT NULL", since: 1, bind: func(t *rpc.Tile) any { return &t.X }},
-	{name: "y", ddl: "INTEGER NOT NULL", since: 1, bind: func(t *rpc.Tile) any { return &t.Y }},
-	{name: "w", ddl: "INTEGER NOT NULL DEFAULT 1 CHECK (w > 0)", since: 1, bind: func(t *rpc.Tile) any { return &t.W }},
-	{name: "h", ddl: "INTEGER NOT NULL DEFAULT 1 CHECK (h > 0)", since: 1, bind: func(t *rpc.Tile) any { return &t.H }},
+	{name: "x", ddl: "INTEGER NOT NULL", since: 1, bind: func(t *gridwellv1.Tile) any { return &t.X }},
+	{name: "y", ddl: "INTEGER NOT NULL", since: 1, bind: func(t *gridwellv1.Tile) any { return &t.Y }},
+	{name: "w", ddl: "INTEGER NOT NULL DEFAULT 1 CHECK (w > 0)", since: 1, bind: func(t *gridwellv1.Tile) any { return &t.W }},
+	{name: "h", ddl: "INTEGER NOT NULL DEFAULT 1 CHECK (h > 0)", since: 1, bind: func(t *gridwellv1.Tile) any { return &t.H }},
 	{
 		name: "view_cx", ddl: "REAL NOT NULL DEFAULT 0", since: 1,
 		comment: `well: the framing this doorway was left at — a float center in the
@@ -81,40 +81,40 @@ root_cx/cy/zoom. view_zoom = 0 is the one "never visited"
 convention: cx/cy carry no meaning then and the reader falls back
 to the preview calibration. since is 1 because the data existed at
 v1 as the integer origin view_x/view_y, which v11 converted.`,
-		bind: func(t *rpc.Tile) any { return &t.ViewCx },
+		bind: func(t *gridwellv1.Tile) any { return &t.ViewCx },
 	},
-	{name: "view_cy", ddl: "REAL NOT NULL DEFAULT 0", since: 1, bind: func(t *rpc.Tile) any { return &t.ViewCy }},
-	{name: "view_zoom", ddl: "REAL NOT NULL DEFAULT 0", since: 1, bind: func(t *rpc.Tile) any { return &t.ViewZoom }},
+	{name: "view_cy", ddl: "REAL NOT NULL DEFAULT 0", since: 1, bind: func(t *gridwellv1.Tile) any { return &t.ViewCy }},
+	{name: "view_zoom", ddl: "REAL NOT NULL DEFAULT 0", since: 1, bind: func(t *gridwellv1.Tile) any { return &t.ViewZoom }},
 	{
 		name: "child_grid_id", ddl: "INTEGER", since: 1,
 		comment: `No FK on child_grid_id: an exit well's child grid lives in another
 plugin (a qualified "<uuid>/<id>" reference), so the link is a soft
 pointer. Interior well integrity rests on the refcount machinery +
 property test.`,
-		bind: func(t *rpc.Tile) any { return nullString{&t.ChildGridID} },
+		bind: func(t *gridwellv1.Tile) any { return nullString{&t.ChildGridId} },
 	},
 	{
 		name: "text_x", ddl: "INTEGER NOT NULL DEFAULT 0", since: 1,
 		comment: `text-only: the framed window in doc-space px (scroll offset + size)
 plus rendered/text mode.`,
-		bind: func(t *rpc.Tile) any { return &t.TextX },
+		bind: func(t *gridwellv1.Tile) any { return &t.TextX },
 	},
-	{name: "text_y", ddl: "INTEGER NOT NULL DEFAULT 0", since: 1, bind: func(t *rpc.Tile) any { return &t.TextY }},
-	{name: "text_w", ddl: "INTEGER NOT NULL DEFAULT 0", since: 1, bind: func(t *rpc.Tile) any { return &t.TextW }},
-	{name: "text_h", ddl: "INTEGER NOT NULL DEFAULT 0", since: 1, bind: func(t *rpc.Tile) any { return &t.TextH }},
-	{name: "text_mode", ddl: "TEXT", since: 1, bind: func(t *rpc.Tile) any { return nullString{&t.TextMode} }},
-	{name: "blob_id", ddl: "INTEGER REFERENCES blobs(id)", since: 1, bind: func(t *rpc.Tile) any { return nullInt64{&t.BlobID} }},
+	{name: "text_y", ddl: "INTEGER NOT NULL DEFAULT 0", since: 1, bind: func(t *gridwellv1.Tile) any { return &t.TextY }},
+	{name: "text_w", ddl: "INTEGER NOT NULL DEFAULT 0", since: 1, bind: func(t *gridwellv1.Tile) any { return &t.TextW }},
+	{name: "text_h", ddl: "INTEGER NOT NULL DEFAULT 0", since: 1, bind: func(t *gridwellv1.Tile) any { return &t.TextH }},
+	{name: "text_mode", ddl: "TEXT", since: 1, bind: func(t *gridwellv1.Tile) any { return nullString{&t.TextMode} }},
+	{name: "blob_id", ddl: "INTEGER REFERENCES blobs(id)", since: 1, bind: func(t *gridwellv1.Tile) any { return nullInt64{&t.BlobId} }},
 	{
 		name: "url_string", ddl: "TEXT", since: 1,
 		comment: `url-only: the URL string. The frozen JPEG preview from last close
 lives in the blobs table; preview_blob_id points at it (NULL until
 first close). Hash-deduped across clones the same way text content
 is — clones that haven't navigated independently share one row.`,
-		bind: func(t *rpc.Tile) any { return nullString{&t.URLString} },
+		bind: func(t *gridwellv1.Tile) any { return nullString{&t.UrlString} },
 	},
 	{
 		name: "preview_blob_id", ddl: "INTEGER REFERENCES blobs(id)", since: 1,
-		bind: func(t *rpc.Tile) any { return nullInt64{&t.PreviewBlobID} },
+		bind: func(t *gridwellv1.Tile) any { return nullInt64{&t.PreviewBlobId} },
 	},
 	{
 		name: "alt_text", ddl: "TEXT NOT NULL DEFAULT ''", since: 1,
@@ -122,7 +122,7 @@ is — clones that haven't navigated independently share one row.`,
 renders alt_text verbatim, with no derivation. It is the empty string
 until something stamps it, as on a url tile before its page title is
 captured.`,
-		bind: func(t *rpc.Tile) any { return &t.AltText },
+		bind: func(t *gridwellv1.Tile) any { return &t.AltText },
 	},
 	{
 		name: "alt_user", ddl: "INTEGER NOT NULL DEFAULT 0", since: 2,
@@ -138,7 +138,7 @@ Added at schema v2, additive.`,
 tile: the text font, the terminal font, the page zoom. It is framing
 and never bumps version; 0 is unset and renders at 1.0. Added at
 schema v3, additive.`,
-		bind: func(t *rpc.Tile) any { return &t.ContentZoom },
+		bind: func(t *gridwellv1.Tile) any { return &t.ContentZoom },
 	},
 	{
 		name: "url_history", ddl: "TEXT", since: 4,
@@ -146,7 +146,7 @@ schema v3, additive.`,
 {index, entries:[{url,title}]}, capped — captured at freeze so a
 revived tile can still go back. Content; it rides the freeze
 writeback. Added at schema v4, additive.`,
-		bind: func(t *rpc.Tile) any { return nullString{&t.URLHistory} },
+		bind: func(t *gridwellv1.Tile) any { return nullString{&t.UrlHistory} },
 	},
 	{
 		name: "link_target_id", ddl: "TEXT", since: 6,
@@ -158,14 +158,14 @@ resolve bytes, preview, and session through the target id. The well
 kind's link variant is a qualified child_grid_id, the exit well, so
 this column is never set on wells. Added at schema v6, by rebuild:
 the CHECK gained the link branch.`,
-		bind: func(t *rpc.Tile) any { return nullString{&t.LinkTargetID} },
+		bind: func(t *gridwellv1.Tile) any { return nullString{&t.LinkTargetId} },
 	},
 	{
 		name: "url_frozen", ddl: "INTEGER NOT NULL DEFAULT 0", since: 7,
 		comment: `url_frozen=1 is the user's standing freeze on a url tile: descending
 does not auto-go-live until the reconnect gesture clears it. Framing;
 it never bumps version. Added at schema v7, additive.`,
-		bind: func(t *rpc.Tile) any { return intBool{&t.URLFrozen} },
+		bind: func(t *gridwellv1.Tile) any { return intBool{&t.UrlFrozen} },
 	},
 	{
 		name: "ns", ddl: "TEXT NOT NULL DEFAULT ''", since: 9,
@@ -189,7 +189,7 @@ schema v9, additive.`,
 }
 
 // gridsColumns is the grids table, in DDL order.
-var gridsColumns = []column[rpc.Grid]{
+var gridsColumns = []column[gridwellv1.Grid]{
 	{
 		name: "id", ddl: "INTEGER PRIMARY KEY AUTOINCREMENT", since: 1,
 		comment: `AUTOINCREMENT so a deleted grid's id is never reused. Without it,
@@ -201,9 +201,9 @@ keep the client cache (keyed by id) honest.
 
 No refcount: grids are owned 1:1 by their parent well (copy-on-clone
 never shares a grid), so only blobs are reference-counted.`,
-		bind: func(g *rpc.Grid) any { return &g.ID },
+		bind: func(g *gridwellv1.Grid) any { return &g.Id },
 	},
-	{name: "version", ddl: "INTEGER NOT NULL DEFAULT 0", since: 1, bind: func(g *rpc.Grid) any { return &g.Version }},
+	{name: "version", ddl: "INTEGER NOT NULL DEFAULT 0", since: 1, bind: func(g *gridwellv1.Grid) any { return &g.Version }},
 	{name: "created_at", ddl: "INTEGER NOT NULL", since: 1},
 	{name: "updated_at", ddl: "INTEGER NOT NULL DEFAULT 0", since: 1},
 	{

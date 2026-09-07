@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -29,7 +30,7 @@ func trashMonthGrid(t *testing.T, s *Store, month string) string {
 	}
 	for _, tl := range g.Tiles {
 		if tl.Kind == rpc.KindWell && tl.AltText == month {
-			return tl.ChildGridID
+			return tl.ChildGridId
 		}
 	}
 	t.Fatalf("no %q month well in trash root: %+v", month, g.Tiles)
@@ -42,11 +43,11 @@ func trashMonthGrid(t *testing.T, s *Store, month string) string {
 func primeTrash(t *testing.T, s *Store) {
 	t.Helper()
 	ctx := context.Background()
-	txt, err := s.CreateText(ctx, &rpc.CreateTextRequest{GridID: rootID(t, s), X: 7, Y: 6, W: 1, H: 1})
+	txt, err := s.CreateText(ctx, rootID(t, s), 7, 6, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	hardDelete(t, s, txt.ID)
+	hardDelete(t, s, txt.Id)
 }
 
 // hardDelete collapses the two-stage gesture for tests that assert
@@ -58,7 +59,7 @@ func hardDelete(t *testing.T, s *Store, tileID string) {
 		if _, err := s.GetTile(ctx, tileID); err != nil {
 			t.Fatalf("hardDelete load (round %d): %v", i+1, err)
 		}
-		if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: tileID}); err != nil {
+		if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: tileID}); err != nil {
 			t.Fatalf("hardDelete (round %d): %v", i+1, err)
 		}
 	}
@@ -68,22 +69,22 @@ func TestDeleteMovesToMonthTrashGrid(t *testing.T) {
 	s := newTestStore(t) // clock fixed at 2026-01-01
 	root := rootID(t, s)
 	ctx := context.Background()
-	txt, err := s.CreateText(ctx, &rpc.CreateTextRequest{GridID: root, X: 3, Y: 3, W: 2, H: 1, Data: []byte("keep me")})
+	txt, err := s.CreateText(ctx, root, 3, 3, 2, 1, []byte("keep me"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: txt.ID}); err != nil {
+	if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: txt.Id}); err != nil {
 		t.Fatal(err)
 	}
 	// The SAME tile — id continues, content intact. The version does NOT
 	// move: a trash filing is a move, and a move is layout, not content.
-	got, err := s.GetTile(ctx, txt.ID)
+	got, err := s.GetTile(ctx, txt.Id)
 	if err != nil {
 		t.Fatalf("trashed tile must still exist: %v", err)
 	}
 	month := trashMonthGrid(t, s, "2026-01")
-	if got.GridID != month {
-		t.Errorf("trashed tile grid = %s, want month grid %s", got.GridID, month)
+	if got.GridId != month {
+		t.Errorf("trashed tile grid = %s, want month grid %s", got.GridId, month)
 	}
 	if got.Version != txt.Version {
 		t.Errorf("move moved the version %d -> %d; layout does not bump", txt.Version, got.Version)
@@ -91,7 +92,7 @@ func TestDeleteMovesToMonthTrashGrid(t *testing.T) {
 	if got.W != 2 || got.H != 1 {
 		t.Errorf("footprint must ride along: got %dx%d", got.W, got.H)
 	}
-	body, _, _, err := s.ReadContent(ctx, txt.ID)
+	body, _, _, err := s.ReadContent(ctx, txt.Id)
 	if err != nil || string(body) != "keep me" {
 		t.Errorf("content after trash = %q (%v), want intact", body, err)
 	}
@@ -101,7 +102,7 @@ func TestDeleteMovesToMonthTrashGrid(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tl := range rg.Tiles {
-		if tl.ID == txt.ID {
+		if tl.Id == txt.Id {
 			t.Error("trashed tile still listed in the source grid")
 		}
 	}
@@ -111,49 +112,49 @@ func TestDeleteInsideTrashIsReal(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
 	ctx := context.Background()
-	w, err := s.CreateWell(ctx, &rpc.CreateWellRequest{GridID: root, X: 0, Y: 0, W: 1, H: 1})
+	w, err := s.CreateWell(ctx, root, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	inner, err := s.CreateWell(ctx, &rpc.CreateWellRequest{GridID: w.ChildGridID, X: 0, Y: 0, W: 1, H: 1})
+	inner, err := s.CreateWell(ctx, w.ChildGridId, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	// First delete: to the trash, subtree intact.
-	if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: w.ID}); err != nil {
+	if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: w.Id}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetTile(ctx, inner.ID); err != nil {
+	if _, err := s.GetTile(ctx, inner.Id); err != nil {
 		t.Fatalf("inner well must survive the trash move: %v", err)
 	}
 	// Second delete (the tile now sits in the month grid): real, cascades.
-	if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: w.ID}); err != nil {
+	if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: w.Id}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetTile(ctx, w.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := s.GetTile(ctx, w.Id); !errors.Is(err, ErrNotFound) {
 		t.Errorf("second delete must destroy: %v", err)
 	}
-	if _, err := s.GetTile(ctx, inner.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := s.GetTile(ctx, inner.Id); !errors.Is(err, ErrNotFound) {
 		t.Errorf("second delete must cascade the subtree: %v", err)
 	}
 
 	// The same is true anywhere DEEPER in the trash tree: delete a tile
 	// while it already sits in a month grid's own subtree.
-	deep, err := s.CreateWell(ctx, &rpc.CreateWellRequest{GridID: root, X: 5, Y: 5, W: 1, H: 1})
+	deep, err := s.CreateWell(ctx, root, 5, 5, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: deep.ID}); err != nil {
+	if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: deep.Id}); err != nil {
 		t.Fatal(err)
 	}
-	kid, err := s.CreateText(ctx, &rpc.CreateTextRequest{GridID: deep.ChildGridID, X: 0, Y: 0, W: 1, H: 1})
+	kid, err := s.CreateText(ctx, deep.ChildGridId, 0, 0, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: kid.ID}); err != nil {
+	if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: kid.Id}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetTile(ctx, kid.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := s.GetTile(ctx, kid.Id); !errors.Is(err, ErrNotFound) {
 		t.Errorf("delete inside a trashed well's grid must be real: %v", err)
 	}
 }
@@ -165,10 +166,10 @@ func TestDeleteScratchTileBypassesTrash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: u.ID}); err != nil {
+	if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: u.Id}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetTile(ctx, u.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := s.GetTile(ctx, u.Id); !errors.Is(err, ErrNotFound) {
 		t.Errorf("scratch ephemerals must delete for real: %v", err)
 	}
 }
@@ -178,11 +179,11 @@ func TestTrashMonthMintingIsIdempotent(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 	for i := int64(0); i < 3; i++ {
-		txt, err := s.CreateText(ctx, &rpc.CreateTextRequest{GridID: root, X: i, Y: 0, W: 1, H: 1})
+		txt, err := s.CreateText(ctx, root, i, 0, 1, 1, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: txt.ID}); err != nil {
+		if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: txt.Id}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -194,7 +195,7 @@ func TestTrashMonthMintingIsIdempotent(t *testing.T) {
 	if len(g.Tiles) != 1 {
 		t.Fatalf("trash root = %d wells, want the one 2026-01 month", len(g.Tiles))
 	}
-	mg, err := s.GetGrid(ctx, g.Tiles[0].ChildGridID)
+	mg, err := s.GetGrid(ctx, g.Tiles[0].ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,11 +213,11 @@ func TestTrashMonthMintingIsIdempotent(t *testing.T) {
 
 	// A new month files under a NEW well.
 	s.SetClock(func() time.Time { return time.Date(2026, 2, 10, 0, 0, 0, 0, time.UTC) })
-	txt, err := s.CreateText(ctx, &rpc.CreateTextRequest{GridID: root, X: 7, Y: 7, W: 1, H: 1})
+	txt, err := s.CreateText(ctx, root, 7, 7, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: txt.ID}); err != nil {
+	if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: txt.Id}); err != nil {
 		t.Fatal(err)
 	}
 	g, _ = s.GetGrid(ctx, trash)
@@ -229,26 +230,26 @@ func TestDeleteToTrashEmitsMoveShape(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
 	ctx := context.Background()
-	txt, err := s.CreateText(ctx, &rpc.CreateTextRequest{GridID: root, X: 0, Y: 0, W: 1, H: 1})
+	txt, err := s.CreateText(ctx, root, 0, 0, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ch, cancel := s.SubscribeEvents()
 	defer cancel()
-	if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: txt.ID}); err != nil {
+	if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: txt.Id}); err != nil {
 		t.Fatal(err)
 	}
 	evs := drainEvents(t, ch)
 	got := countKinds(evs)
 	// PlaceTile's cross-grid shape exactly: remove-from-source +
 	// appear-at-destination — the shape every client already reconciles.
-	assertCounts(t, "DeleteTile(to trash)", got, map[rpc.EventKind]int{
-		rpc.EventTileRemoved: 1,
-		rpc.EventTileChanged: 1,
+	assertCounts(t, "DeleteTile(to trash)", got, map[string]int{
+		"tile_removed": 1,
+		"tile_changed": 1,
 	})
 	for _, ev := range evs {
-		if ev.Kind == rpc.EventTileRemoved && ev.TileRemoved.GridID != root {
-			t.Errorf("TileRemoved grid = %s, want source %s", ev.TileRemoved.GridID, root)
+		if r := ev.GetTileRemoved(); r != nil && r.GridId != root {
+			t.Errorf("TileRemoved grid = %s, want source %s", r.GridId, root)
 		}
 	}
 }
@@ -257,28 +258,28 @@ func TestRestoreFromTrashIsAPlainMove(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
 	ctx := context.Background()
-	txt, err := s.CreateText(ctx, &rpc.CreateTextRequest{GridID: root, X: 0, Y: 0, W: 1, H: 1})
+	txt, err := s.CreateText(ctx, root, 0, 0, 1, 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: txt.ID}); err != nil {
+	if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: txt.Id}); err != nil {
 		t.Fatal(err)
 	}
-	back, err := s.PlaceTile(ctx, &rpc.PlaceTileRequest{
-		TileID: txt.ID, GridID: root, X: 4, Y: 4, W: 1, H: 1,
+	back, err := s.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+		TileId: txt.Id, GridId: root, X: 4, Y: 4, W: 1, H: 1,
 	})
 	if err != nil {
 		t.Fatalf("restore (PlaceTile out of trash): %v", err)
 	}
-	if back.GridID != root {
-		t.Errorf("restored tile grid = %s, want root", back.GridID)
+	if back.GridId != root {
+		t.Errorf("restored tile grid = %s, want root", back.GridId)
 	}
 	// And a delete AFTER restore trashes again (the route is by location,
 	// not history).
-	if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: back.ID}); err != nil {
+	if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: back.Id}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetTile(ctx, back.ID); err != nil {
+	if _, err := s.GetTile(ctx, back.Id); err != nil {
 		t.Errorf("re-deleted tile must be back in the trash, not destroyed: %v", err)
 	}
 }

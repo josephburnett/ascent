@@ -36,7 +36,7 @@ intact.
 
 - `columns.go` (`tilesColumns`, `gridsColumns`, `connectionsColumns`) is the
   one description of a column: name, SQL type and constraints, comment, the
-  version whose data it carries (`since`), the `rpc.Tile`/`rpc.Grid` field it
+  version whose data it carries (`since`), the `gridwellv1.Tile`/`gridwellv1.Grid` field it
   binds to when on the wire, and a `noCopy` reason when a clone skips it. The
   DDL, the SELECT, the scan, the clone INSERT, and every rebuild copy list
   derive from it. Only the tiles kind `CHECK` (`tilesCheck`) is literal text.

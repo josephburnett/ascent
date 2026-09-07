@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -55,7 +56,7 @@ func TestScratchGridHoldsEphemeralURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetGrid scratch: %v", err)
 	}
-	if len(got.Tiles) != 1 || got.Tiles[0].ID != tile.ID || got.Tiles[0].URLString != "https://example.com/ephemeral" {
+	if len(got.Tiles) != 1 || got.Tiles[0].Id != tile.Id || got.Tiles[0].UrlString != "https://example.com/ephemeral" {
 		t.Errorf("scratch grid tiles = %+v, want the one ephemeral url", got.Tiles)
 	}
 
@@ -96,16 +97,14 @@ func TestScratchTileMutationsNeedNoPath(t *testing.T) {
 		t.Fatalf("create ephemeral url: %v", err)
 	}
 	// A content writeback with an EMPTY path succeeds.
-	if _, err := s.SetURLState(ctx, &rpc.SetURLStateRequest{
-		TileID: tile.ID, URL: "https://example.com/eph2",
-	}); err != nil {
+	if _, err := s.SetURLState(ctx, tile.Id, nil, "https://example.com/eph2", "", ""); err != nil {
 		t.Fatalf("SetURLState on a scratch tile: %v", err)
 	}
 	// And so does delete.
-	if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: tile.ID}); err != nil {
+	if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: tile.Id}); err != nil {
 		t.Fatalf("DeleteTile on a scratch tile: %v", err)
 	}
-	if _, err := s.GetTile(ctx, tile.ID); err == nil {
+	if _, err := s.GetTile(ctx, tile.Id); err == nil {
 		t.Fatal("scratch tile still readable after delete")
 	}
 }
@@ -126,19 +125,19 @@ func TestCreateScratchShell(t *testing.T) {
 		t.Fatalf("kind = %q, want shell", tile.Kind)
 	}
 	scratch, _ := s.ScratchGridID(ctx)
-	if tile.GridID != scratch {
-		t.Fatalf("tile grid = %q, want scratch %q", tile.GridID, scratch)
+	if tile.GridId != scratch {
+		t.Fatalf("tile grid = %q, want scratch %q", tile.GridId, scratch)
 	}
 	rootGrid, err := s.GetGrid(ctx, root)
 	if err != nil {
 		t.Fatalf("GetGrid(root): %v", err)
 	}
 	for _, rt := range rootGrid.Tiles {
-		if rt.ID == tile.ID {
+		if rt.Id == tile.Id {
 			t.Fatal("ephemeral shell leaked onto the root grid")
 		}
 	}
-	if err := s.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: tile.ID}); err != nil {
+	if err := s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: tile.Id}); err != nil {
 		t.Fatalf("DeleteTile: %v", err)
 	}
 }

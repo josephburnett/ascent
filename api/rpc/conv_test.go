@@ -28,21 +28,27 @@ func TestTilesSliceProto(t *testing.T) {
 	}
 }
 
-// TestEventProtoRoundTrip covers all four event kinds through the proto
-// oneof and back: the discriminator and the one populated payload must
-// survive.
-func TestEventProtoRoundTrip(t *testing.T) {
-	cases := []Event{
-		{Kind: EventGridChanged, GridChanged: &GridChanged{GridID: "g-1"}},
-		{Kind: EventTileChanged, TileChanged: &TileChanged{Tile: *exhaustiveTile(t)}},
-		{Kind: EventTileRemoved, TileRemoved: &TileRemoved{GridID: "g-2", TileID: "t-3"}},
-		{Kind: EventPluginHealth, PluginHealth: &PluginHealth{PluginUUID: "u-1", Healthy: false, Detail: "dial tcp: connection refused"}},
-		{Kind: EventPluginHealth, PluginHealth: &PluginHealth{PluginUUID: "u-1", Healthy: true}},
+// TestEventFromProto covers all four event kinds: the wire oneof arm must
+// decode to the matching discriminator and the one populated payload.
+func TestEventFromProto(t *testing.T) {
+	cases := []struct {
+		wire *pb.Event
+		want Event
+	}{
+		{&pb.Event{Payload: &pb.Event_GridChanged{GridChanged: &pb.GridChanged{GridId: "g-1"}}},
+			Event{Kind: EventGridChanged, GridChanged: &GridChanged{GridID: "g-1"}}},
+		{&pb.Event{Payload: &pb.Event_TileChanged{TileChanged: &pb.TileChanged{Tile: TileToProto(exhaustiveTile(t))}}},
+			Event{Kind: EventTileChanged, TileChanged: &TileChanged{Tile: *exhaustiveTile(t)}}},
+		{&pb.Event{Payload: &pb.Event_TileRemoved{TileRemoved: &pb.TileRemoved{GridId: "g-2", TileId: "t-3"}}},
+			Event{Kind: EventTileRemoved, TileRemoved: &TileRemoved{GridID: "g-2", TileID: "t-3"}}},
+		{&pb.Event{Payload: &pb.Event_PluginHealth{PluginHealth: &pb.EventPluginHealth{PluginUuid: "u-1", Detail: "dial tcp: connection refused"}}},
+			Event{Kind: EventPluginHealth, PluginHealth: &PluginHealth{PluginUUID: "u-1", Detail: "dial tcp: connection refused"}}},
+		{&pb.Event{Payload: &pb.Event_PluginHealth{PluginHealth: &pb.EventPluginHealth{PluginUuid: "u-1", Healthy: true}}},
+			Event{Kind: EventPluginHealth, PluginHealth: &PluginHealth{PluginUUID: "u-1", Healthy: true}}},
 	}
-	for _, in := range cases {
-		got := EventFromProto(EventToProto(in))
-		if !reflect.DeepEqual(in, got) {
-			t.Errorf("event round-trip (%v) diverged:\n in = %+v\nout = %+v", in.Kind, in, got)
+	for _, c := range cases {
+		if got := EventFromProto(c.wire); !reflect.DeepEqual(c.want, got) {
+			t.Errorf("event decode (%v) diverged:\n want = %+v\n got  = %+v", c.want.Kind, c.want, got)
 		}
 	}
 }

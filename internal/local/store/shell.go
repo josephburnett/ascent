@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -14,14 +15,14 @@ import (
 // gridwell-private tmux session keyed by the tile id and survives ascents
 // until the tile is deleted, or the machine reboots and takes the whole tmux
 // server with it.
-func (s *Store) CreateShell(ctx context.Context, req *rpc.CreateShellRequest) (*rpc.Tile, error) {
-	return s.createTile(ctx, req.GridID, req.X, req.Y, req.W, req.H,
-		func(tx *sql.Tx, gridID, now int64) (int64, error) {
+func (s *Store) CreateShell(ctx context.Context, gridID string, x, y, w, h int64) (*gridwellv1.Tile, error) {
+	return s.createTile(ctx, gridID, x, y, w, h,
+		func(tx *sql.Tx, gid, now int64) (int64, error) {
 			res, err := tx.ExecContext(ctx, `
 				INSERT INTO tiles (grid_id, kind, x, y, w, h,
 					alt_text, created_at, updated_at)
 				VALUES (?, 'shell', ?, ?, ?, ?, ?, ?, ?)`,
-				gridID, req.X, req.Y, req.W, req.H, "shell", now, now)
+				gid, x, y, w, h, "shell", now, now)
 			if err != nil {
 				return 0, fmt.Errorf("insert shell tile: %w", err)
 			}
@@ -38,13 +39,13 @@ func (s *Store) CreateShell(ctx context.Context, req *rpc.CreateShellRequest) (*
 // bump. It rides the tile event to every client as last-writer-wins state,
 // which is the right answer for a tile whose real concurrency primitive is the
 // live PTY session, one per tile at a time.
-func (s *Store) SetShellPreview(ctx context.Context, req *rpc.SetShellPreviewRequest) (*rpc.Tile, error) {
-	tileID, err := parseID(req.TileID)
+func (s *Store) SetShellPreview(ctx context.Context, tileIDStr string, jpeg []byte) (*gridwellv1.Tile, error) {
+	tileID, err := parseID(tileIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tile_id", ErrInvalidArgument)
 	}
-	var out *rpc.Tile
-	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		n, err := s.loadTile(ctx, tx, tileID)
 		if err != nil {
 			return err
@@ -53,8 +54,8 @@ func (s *Store) SetShellPreview(ctx context.Context, req *rpc.SetShellPreviewReq
 			return ErrNotShellTile
 		}
 
-		if len(req.JPEG) > 0 {
-			if _, _, err := s.swapTileBlob(ctx, tx, tileID, "preview_blob_id", req.JPEG, mediaJPEG); err != nil {
+		if len(jpeg) > 0 {
+			if _, _, err := s.swapTileBlob(ctx, tx, tileID, "preview_blob_id", jpeg, mediaJPEG); err != nil {
 				return err
 			}
 		} else {
@@ -69,8 +70,8 @@ func (s *Store) SetShellPreview(ctx context.Context, req *rpc.SetShellPreviewReq
 				s.now().Unix(), tileID); err != nil {
 				return err
 			}
-			if n.PreviewBlobID != 0 {
-				if err := s.decBlobRefcount(ctx, tx, n.PreviewBlobID); err != nil {
+			if n.PreviewBlobId != 0 {
+				if err := s.decBlobRefcount(ctx, tx, n.PreviewBlobId); err != nil {
 					return err
 				}
 			}

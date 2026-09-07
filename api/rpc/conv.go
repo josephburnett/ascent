@@ -6,7 +6,8 @@
 // from the wire shape and a human has to say how:
 //
 //   - Event: the proto's oneof payload becomes a discriminator string
-//     plus optional pointers on the Go side.
+//     plus optional pointers on the Go side (decode only; home publishes
+//     the wire form itself).
 //   - The per-kind CREATE helpers: the wire has one CreateTile carrying a
 //     Tile whose kind selects the meaningful fields; these map each
 //     primitive's typed create onto it.
@@ -16,24 +17,6 @@ package rpc
 import (
 	pb "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
-
-// EventToProto converts an Event to its wire form. The wire Event uses
-// a oneof payload; the Go Event uses a discriminator string + optional
-// pointer fields — only one is non-nil at a time, matching oneof's
-// semantics on the wire.
-func EventToProto(e Event) *pb.Event {
-	switch e.Kind {
-	case EventGridChanged:
-		return &pb.Event{Payload: &pb.Event_GridChanged{GridChanged: GridChangedToProto(e.GridChanged)}}
-	case EventTileChanged:
-		return &pb.Event{Payload: &pb.Event_TileChanged{TileChanged: TileChangedToProto(e.TileChanged)}}
-	case EventTileRemoved:
-		return &pb.Event{Payload: &pb.Event_TileRemoved{TileRemoved: TileRemovedToProto(e.TileRemoved)}}
-	case EventPluginHealth:
-		return &pb.Event{Payload: &pb.Event_PluginHealth{PluginHealth: PluginHealthToProto(e.PluginHealth)}}
-	}
-	return &pb.Event{}
-}
 
 // EventFromProto converts a wire Event back.
 func EventFromProto(e *pb.Event) Event {

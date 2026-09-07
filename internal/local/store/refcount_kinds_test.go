@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -28,25 +29,21 @@ func TestCloneShellCarriesScreenshot(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	sh, err := s.CreateShell(ctx, &rpc.CreateShellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	sh, err := s.CreateShell(ctx, root, 0, 0, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	framed, err := s.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{
-		TileID: sh.ID, JPEG: []byte("frozen-shell"),
-	})
+	framed, err := s.SetShellPreview(ctx, sh.Id, []byte("frozen-shell"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if framed.PreviewBlobID == 0 {
+	if framed.PreviewBlobId == 0 {
 		t.Fatal("shell has no preview blob after SetShellPreview")
 	}
 
-	clone, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     framed.ID,
-		DestGridID: root, X: 50, Y: 0,
+	clone, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     framed.Id,
+		DestGridId: root, X: 50, Y: 0,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -54,9 +51,9 @@ func TestCloneShellCarriesScreenshot(t *testing.T) {
 	if clone.Kind != rpc.KindShell {
 		t.Errorf("clone kind = %q, want shell", clone.Kind)
 	}
-	if clone.PreviewBlobID != framed.PreviewBlobID {
+	if clone.PreviewBlobId != framed.PreviewBlobId {
 		t.Errorf("clone preview blob = %d, want %d (screenshot must be carried)",
-			clone.PreviewBlobID, framed.PreviewBlobID)
+			clone.PreviewBlobId, framed.PreviewBlobId)
 	}
 	// Two tiles now reference the one preview blob.
 	verifyRefcounts(t, s)
@@ -71,44 +68,38 @@ func TestCloneCopiesShellPreviewBlob(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	well, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	well, err := s.CreateWell(ctx, root, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	sh, err := s.CreateShell(ctx, &rpc.CreateShellRequest{
-		GridID: well.ChildGridID, X: 0, Y: 0, W: 1, H: 1,
-	})
+	sh, err := s.CreateShell(ctx, well.ChildGridId, 0, 0, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{
-		TileID: sh.ID, JPEG: []byte("frozen-shell"),
-	}); err != nil {
+	if _, err := s.SetShellPreview(ctx, sh.Id, []byte("frozen-shell")); err != nil {
 		t.Fatal(err)
 	}
 
 	// Clone the well: copy-on-clone deep-copies its child grid, re-rowing the
 	// shell-with-preview. The copy shares the immutable preview blob, so its
 	// refcount must rise to 2 — the case cloneSubtree must get right.
-	clone, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     well.ID,
-		DestGridID: root, X: 50, Y: 0,
+	clone, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     well.Id,
+		DestGridId: root, X: 50, Y: 0,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Two shell rows (original + copy) now share one preview blob.
-	cloneChild, err := s.GetGrid(ctx, clone.ChildGridID)
+	cloneChild, err := s.GetGrid(ctx, clone.ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(cloneChild.Tiles) != 1 || cloneChild.Tiles[0].Kind != rpc.KindShell {
 		t.Fatalf("clone child = %+v, want one shell tile", cloneChild.Tiles)
 	}
-	previewBlob := cloneChild.Tiles[0].PreviewBlobID
+	previewBlob := cloneChild.Tiles[0].PreviewBlobId
 	if previewBlob == 0 {
 		t.Fatal("cloned shell lost its preview blob")
 	}
@@ -126,26 +117,20 @@ func TestDeleteGridReleasesAllKindRefs(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	well, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	well, err := s.CreateWell(ctx, root, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	sh, err := s.CreateShell(ctx, &rpc.CreateShellRequest{
-		GridID: well.ChildGridID, X: 2, Y: 0, W: 1, H: 1,
-	})
+	sh, err := s.CreateShell(ctx, well.ChildGridId, 2, 0, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	framed, err := s.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{
-		TileID: sh.ID, JPEG: []byte("frozen-shell"),
-	})
+	framed, err := s.SetShellPreview(ctx, sh.Id, []byte("frozen-shell"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	previewBlob := framed.PreviewBlobID
+	previewBlob := framed.PreviewBlobId
 	if previewBlob == 0 {
 		t.Fatalf("setup: previewBlob=%d", previewBlob)
 	}
@@ -153,7 +138,7 @@ func TestDeleteGridReleasesAllKindRefs(t *testing.T) {
 	// Destroy the only well pointing at the child grid, collapsing the
 	// two-stage gesture: the child grid is collected, cascading through the
 	// shell inside it.
-	hardDelete(t, s, well.ID)
+	hardDelete(t, s, well.Id)
 
 	verifyRefcounts(t, s)
 	if blobExists(t, s, previewBlob) {

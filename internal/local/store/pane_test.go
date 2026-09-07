@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/panelayout"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
@@ -22,20 +23,20 @@ func TestCreatePaneDefaultsAndGuards(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePane: %v", err)
 	}
-	if pt.Kind != rpc.KindPane || pt.BlobID != 0 || pt.AltText != "workbench" {
+	if pt.Kind != rpc.KindPane || pt.BlobId != 0 || pt.AltText != "workbench" {
 		t.Fatalf("fresh pane tile: %+v", pt)
 	}
-	id, err := parseID(pt.ID)
+	id, err := parseID(pt.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Kind guard: a text tile refuses the layout verb.
-	txt, err := s.CreateText(ctx, &rpc.CreateTextRequest{GridID: root, X: 4, Y: 0, W: 1, H: 1, Data: []byte("x")})
+	txt, err := s.CreateText(ctx, root, 4, 0, 1, 1, []byte("x"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	txtID, _ := parseID(txt.ID)
+	txtID, _ := parseID(txt.Id)
 	if _, err := s.SetPaneLayout(ctx, txtID, txt.Version, []byte(`{"v":1}`)); !errors.Is(err, ErrNotPaneTile) {
 		t.Errorf("SetPaneLayout on text tile: err = %v, want ErrNotPaneTile", err)
 	}
@@ -63,18 +64,18 @@ func TestSetPaneLayoutStoresTypedBlob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, _ := parseID(pt.ID)
+	id, _ := parseID(pt.Id)
 	layout := []byte(`{"v":1,"root":{"pane":{"id":"p1","zoom":1}},"focus":"p1"}`)
 	out, err := s.SetPaneLayout(ctx, id, pt.Version, layout)
 	if err != nil {
 		t.Fatalf("SetPaneLayout: %v", err)
 	}
-	if out.BlobID == 0 {
+	if out.BlobId == 0 {
 		t.Fatal("layout write left blob_id NULL")
 	}
 	var data []byte
 	var mt string
-	if err := s.db.QueryRow(`SELECT data, media_type FROM blobs WHERE id = ?`, out.BlobID).Scan(&data, &mt); err != nil {
+	if err := s.db.QueryRow(`SELECT data, media_type FROM blobs WHERE id = ?`, out.BlobId).Scan(&data, &mt); err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != string(layout) {
@@ -99,41 +100,41 @@ func TestPaneCloneSharesBlobThenDiverges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if orig.BlobID == 0 {
+	if orig.BlobId == 0 {
 		t.Fatal("initial layout not stored")
 	}
-	clone, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     orig.ID,
-		DestGridID: root, X: 10, Y: 0,
+	clone, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     orig.Id,
+		DestGridId: root, X: 10, Y: 0,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if clone.Kind != rpc.KindPane || clone.BlobID != orig.BlobID {
+	if clone.Kind != rpc.KindPane || clone.BlobId != orig.BlobId {
 		t.Fatalf("clone must share the layout blob: %+v", clone)
 	}
 
-	cloneID, _ := parseID(clone.ID)
+	cloneID, _ := parseID(clone.Id)
 	edited, err := s.SetPaneLayout(ctx, cloneID, clone.Version,
 		[]byte(`{"v":1,"root":{"split":{"dir":"h","ratio":0.5,"a":{"pane":{"id":"p1","zoom":1}},"b":{"pane":{"id":"p2","zoom":1}}}},"focus":"p2"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if edited.BlobID == orig.BlobID {
+	if edited.BlobId == orig.BlobId {
 		t.Fatal("edit did not diverge the clone's blob")
 	}
 	// The original still reads its own bytes and its blob survives.
-	if !blobExists(t, s, orig.BlobID) {
+	if !blobExists(t, s, orig.BlobId) {
 		t.Error("original's blob was released by the clone's edit")
 	}
 
 	// Deleting both tiles releases both blobs (tileRefs owns the mapping —
 	// without the pane arm the kind would silently own nothing and the blobs
 	// would leak forever).
-	for _, tile := range []*rpc.Tile{orig, edited} {
-		hardDelete(t, s, tile.ID)
+	for _, tile := range []*gridwellv1.Tile{orig, edited} {
+		hardDelete(t, s, tile.Id)
 	}
-	if blobExists(t, s, orig.BlobID) || blobExists(t, s, edited.BlobID) {
+	if blobExists(t, s, orig.BlobId) || blobExists(t, s, edited.BlobId) {
 		t.Error("layout blobs leaked after both tiles were deleted")
 	}
 }
@@ -160,7 +161,7 @@ func TestWorkspaceRefsMatchTheInjectedIdentity(t *testing.T) {
 	// A layout blob referencing scratch tile 41, qualified by the CONFIG id
 	// — exactly what the client persister writes.
 	layout := `{"v":1,"root":{"pane":{"id":"p1","anchor":"k3x9m2q/` + root + `","cx":0.5,"cy":0.5,"zoom":1,"text_focus":"k3x9m2q/41"}},"focus":"p1"}`
-	if _, err := s.WriteContent(ctx, pt.ID, pt.Version, []byte(layout)); err != nil {
+	if _, err := s.WriteContent(ctx, pt.Id, pt.Version, []byte(layout)); err != nil {
 		t.Fatalf("write layout: %v", err)
 	}
 

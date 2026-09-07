@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/panelayout"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
@@ -19,7 +20,7 @@ import (
 // empty leaves blob_id NULL, meaning never arranged, and descent installs the
 // default single pane. alt is the user-given name, which the bar's crumb
 // reads.
-func (s *Store) CreatePane(ctx context.Context, gridID string, x, y, w, h int64, alt string, data []byte) (*rpc.Tile, error) {
+func (s *Store) CreatePane(ctx context.Context, gridID string, x, y, w, h int64, alt string, data []byte) (*gridwellv1.Tile, error) {
 	if int64(len(data)) > MaxBlobBytes {
 		return nil, fmt.Errorf("%w: layout too large", ErrInvalidArgument)
 	}
@@ -62,15 +63,15 @@ func (s *Store) CreatePane(ctx context.Context, gridID string, x, y, w, h int64,
 // parameter survives as WriteContent's kind-dispatched signature and this arm
 // ignores it. Identical bytes are a pure no-op, since swapTileBlob dedups, so
 // the client's hash-diff persister and a pure re-save cannot churn the DB.
-func (s *Store) SetPaneLayout(ctx context.Context, tileID, version int64, data []byte) (*rpc.Tile, error) {
+func (s *Store) SetPaneLayout(ctx context.Context, tileID, version int64, data []byte) (*gridwellv1.Tile, error) {
 	if len(data) == 0 {
 		return nil, fmt.Errorf("%w: empty layout", ErrInvalidArgument)
 	}
 	if int64(len(data)) > MaxBlobBytes {
 		return nil, fmt.Errorf("%w: layout too large", ErrInvalidArgument)
 	}
-	var out *rpc.Tile
-	err := s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err := s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		n, err := s.loadForWrite(ctx, tx, tileID, "", nil)
 		if err != nil {
 			return err

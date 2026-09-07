@@ -15,9 +15,7 @@ import (
 func TestCreateShellCreatesFrozenTile(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
-	tile, err := s.CreateShell(context.Background(), &rpc.CreateShellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	tile, err := s.CreateShell(context.Background(), root, 0, 0, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,8 +25,8 @@ func TestCreateShellCreatesFrozenTile(t *testing.T) {
 	if tile.AltText != "shell" {
 		t.Errorf("AltText = %q, want shell", tile.AltText)
 	}
-	if tile.PreviewBlobID != 0 {
-		t.Errorf("PreviewBlobID = %d, want 0 (no JPEG yet)", tile.PreviewBlobID)
+	if tile.PreviewBlobId != 0 {
+		t.Errorf("PreviewBlobID = %d, want 0 (no JPEG yet)", tile.PreviewBlobId)
 	}
 }
 
@@ -39,23 +37,19 @@ func TestSetShellPreviewStoresAndDedupes(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
 	ctx := context.Background()
-	tile, err := s.CreateShell(ctx, &rpc.CreateShellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	tile, err := s.CreateShell(ctx, root, 0, 0, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	jpeg := []byte("fake-jpeg-bytes")
-	v1, err := s.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{
-		TileID: tile.ID, JPEG: jpeg,
-	})
+	v1, err := s.SetShellPreview(ctx, tile.Id, jpeg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v1.PreviewBlobID == 0 {
+	if v1.PreviewBlobId == 0 {
 		t.Fatalf("PreviewBlobID still 0 after SetShellPreview")
 	}
-	got, err := s.GetTilePreview(ctx, tile.ID)
+	got, err := s.GetTilePreview(ctx, tile.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,14 +58,12 @@ func TestSetShellPreviewStoresAndDedupes(t *testing.T) {
 	}
 
 	// Identical second write — blob row should dedupe.
-	v2, err := s.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{
-		TileID: v1.ID, JPEG: jpeg,
-	})
+	v2, err := s.SetShellPreview(ctx, v1.Id, jpeg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v2.PreviewBlobID != v1.PreviewBlobID {
-		t.Errorf("PreviewBlobID changed across identical writes: %d -> %d", v1.PreviewBlobID, v2.PreviewBlobID)
+	if v2.PreviewBlobId != v1.PreviewBlobId {
+		t.Errorf("PreviewBlobID changed across identical writes: %d -> %d", v1.PreviewBlobId, v2.PreviewBlobId)
 	}
 }
 
@@ -85,25 +77,19 @@ func TestSetShellPreviewOverwritesFrozenFrame(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
 	ctx := context.Background()
-	tile, err := s.CreateShell(ctx, &rpc.CreateShellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	tile, err := s.CreateShell(ctx, root, 0, 0, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A first capture, then a second one over it.
-	if _, err := s.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{
-		TileID: tile.ID, JPEG: []byte("first"),
-	}); err != nil {
+	if _, err := s.SetShellPreview(ctx, tile.Id, []byte("first")); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{
-		TileID: tile.ID, JPEG: []byte("frozen"),
-	})
+	got, err := s.SetShellPreview(ctx, tile.Id, []byte("frozen"))
 	if err != nil {
 		t.Fatalf("second SetShellPreview: %v", err)
 	}
-	if got.PreviewBlobID == 0 {
+	if got.PreviewBlobId == 0 {
 		t.Errorf("preview did not land")
 	}
 }
@@ -115,26 +101,20 @@ func TestSetShellPreviewClearsOnEmpty(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
 	ctx := context.Background()
-	tile, err := s.CreateShell(ctx, &rpc.CreateShellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	tile, err := s.CreateShell(ctx, root, 0, 0, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	v1, err := s.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{
-		TileID: tile.ID, JPEG: []byte("abc"),
-	})
+	v1, err := s.SetShellPreview(ctx, tile.Id, []byte("abc"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	v2, err := s.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{
-		TileID: v1.ID, JPEG: nil,
-	})
+	v2, err := s.SetShellPreview(ctx, v1.Id, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v2.PreviewBlobID != 0 {
-		t.Errorf("PreviewBlobID after clear = %d, want 0", v2.PreviewBlobID)
+	if v2.PreviewBlobId != 0 {
+		t.Errorf("PreviewBlobID after clear = %d, want 0", v2.PreviewBlobId)
 	}
 }
 
@@ -145,19 +125,15 @@ func TestDeleteShellDropsPreviewBlob(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
 	ctx := context.Background()
-	tile, err := s.CreateShell(ctx, &rpc.CreateShellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	tile, err := s.CreateShell(ctx, root, 0, 0, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	stamped, err := s.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{
-		TileID: tile.ID, JPEG: []byte("frozen-frame"),
-	})
+	stamped, err := s.SetShellPreview(ctx, tile.Id, []byte("frozen-frame"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	blobID := stamped.PreviewBlobID
+	blobID := stamped.PreviewBlobId
 	if blobID == 0 {
 		t.Fatal("preview blob never stored; setup broken")
 	}
@@ -168,7 +144,7 @@ func TestDeleteShellDropsPreviewBlob(t *testing.T) {
 	if rc != 1 {
 		t.Errorf("refcount after SetShellPreview = %d, want 1", rc)
 	}
-	hardDelete(t, s, stamped.ID)
+	hardDelete(t, s, stamped.Id)
 	rc, err = blobRefcount(ctx, s, blobID)
 	if errors.Is(err, errBlobGone) {
 		return // blob row collected on rc=0, fine
@@ -201,13 +177,11 @@ func TestUpdateTextRejectsShell(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
 	ctx := context.Background()
-	tile, err := s.CreateShell(ctx, &rpc.CreateShellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-	})
+	tile, err := s.CreateShell(ctx, root, 0, 0, 1, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.WriteContent(ctx, tile.ID, tile.Version, []byte("nope"))
+	_, err = s.WriteContent(ctx, tile.Id, tile.Version, []byte("nope"))
 	if !errors.Is(err, ErrInvalidArgument) {
 		t.Errorf("got %v, want ErrInvalidArgument (shell content is the frozen preview)", err)
 	}

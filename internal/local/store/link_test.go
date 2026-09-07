@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -36,11 +37,11 @@ func TestCreateLeafLinkStoresQualifiedReference(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create %s link: %v", kind, err)
 		}
-		if ln.Kind != kind || ln.LinkTargetID != remoteTarget {
-			t.Errorf("%s link round-trip: kind=%q target=%q", kind, ln.Kind, ln.LinkTargetID)
+		if ln.Kind != kind || ln.LinkTargetId != remoteTarget {
+			t.Errorf("%s link round-trip: kind=%q target=%q", kind, ln.Kind, ln.LinkTargetId)
 		}
-		if ln.BlobID != 0 || ln.URLString != "" || ln.PreviewBlobID != 0 {
-			t.Errorf("%s link carries content of its own: blob=%d url=%q preview=%d", kind, ln.BlobID, ln.URLString, ln.PreviewBlobID)
+		if ln.BlobId != 0 || ln.UrlString != "" || ln.PreviewBlobId != 0 {
+			t.Errorf("%s link carries content of its own: blob=%d url=%q preview=%d", kind, ln.BlobId, ln.UrlString, ln.PreviewBlobId)
 		}
 	}
 	verifyRefcounts(t, s)
@@ -74,7 +75,7 @@ func TestDeleteLeafLinkUnlinksOnly(t *testing.T) {
 	}
 	primeTrash(t, s) // count the delete, not first-use trash minting
 	gridsBefore, blobsBefore := gridRowCount(t, s), blobRowCount(t, s)
-	hardDelete(t, s, ln.ID)
+	hardDelete(t, s, ln.Id)
 	if g, b := gridRowCount(t, s), blobRowCount(t, s); g != gridsBefore || b != blobsBefore {
 		t.Errorf("deleting a leaf link touched owned storage: grids %d→%d blobs %d→%d", gridsBefore, g, blobsBefore, b)
 	}
@@ -90,18 +91,18 @@ func TestCloneLeafLinkCopiesReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	clone, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     ln.ID,
-		DestGridID: root, X: 2, Y: 0,
+	clone, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     ln.Id,
+		DestGridId: root, X: 2, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("clone leaf link: %v", err)
 	}
-	if clone.ID == ln.ID {
+	if clone.Id == ln.Id {
 		t.Error("clone reused the source row id")
 	}
-	if clone.LinkTargetID != remoteTarget {
-		t.Errorf("clone target = %q, want the shared reference %q", clone.LinkTargetID, remoteTarget)
+	if clone.LinkTargetId != remoteTarget {
+		t.Errorf("clone target = %q, want the shared reference %q", clone.LinkTargetId, remoteTarget)
 	}
 	verifyRefcounts(t, s)
 }
@@ -118,7 +119,7 @@ func TestContentMutationOnLeafLinkRejected(t *testing.T) {
 	// A link owns no bytes: writing content through the link's own id must be
 	// refused (the client routes content mutations by the TARGET id), or the
 	// link and the thing it names silently diverge.
-	_, err = s.WriteContent(ctx, ln.ID, ln.Version, []byte("smuggled"))
+	_, err = s.WriteContent(ctx, ln.Id, ln.Version, []byte("smuggled"))
 	if err == nil {
 		t.Fatal("UpdateText on a leaf link succeeded; content lives in the target")
 	}
@@ -142,10 +143,7 @@ func TestSetTextViewOnLinkKeepsModeNull(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.SetTextView(ctx, &rpc.SetTextViewRequest{
-		TileID: link.ID,
-		TextX:  3, TextY: 40, TextW: 300, TextH: 200, TextMode: rpc.TextModeRendered,
-	})
+	got, err := s.SetTextView(ctx, link.Id, 3, 40, 300, 200, rpc.TextModeRendered)
 	if err != nil {
 		t.Fatalf("SetTextView on a link: %v", err)
 	}
