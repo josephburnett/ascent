@@ -13,16 +13,16 @@ import (
 	"github.com/josephburnett/gridwell/api/compose"
 )
 
-// A plugin's subprocess is supervised: it is spawned here, watched here, and
-// respawned here when it dies. This is the ONE owner of "is this plugin
-// alive" — the adapter asks nothing and remembers nothing, the pluginhost
-// event stream announces what the supervisor says, and while the process is
-// gone every call fails honestly rather than being answered from a memory of
-// what the plugin used to say.
+// A plugin's subprocess is spawned here, watched here, and respawned here when
+// it dies. This package is the one owner of whether a plugin is alive. The
+// adapter asks nothing and remembers nothing, the pluginhost event stream
+// announces what the supervisor says, and while the process is gone every call
+// fails rather than being answered from a memory of what the plugin used to
+// say.
 //
 // go-plugin offers no exit signal to select on, only Exited(), so the watch
 // looks on a tick. The respawn is backed off, capped, and reset only after a
-// process has proved it can stay up: a binary that dies on start must not
+// process has proved it can stay up, so a binary that dies on start does not
 // become a spawn loop.
 
 const (
@@ -33,15 +33,14 @@ const (
 	firstBackoff = 250 * time.Millisecond
 	maxBackoff   = 30 * time.Second
 	// stableFor is how long a process must have run for its exit to count as
-	// a one-off rather than a crash loop: exit sooner and the backoff keeps
-	// growing.
+	// a one-off. Exit sooner and the backoff keeps growing.
 	stableFor = 30 * time.Second
 )
 
-// Supervisor owns one plugin's subprocess. It is a grpc.ClientConnInterface,
-// so ONE plugin.v1 client is built over it for the life of the plugin
-// (pluginv1.NewPluginClient) and every call is routed to whichever process is
-// up at that moment — nothing upstream ever holds a handle to a dead one.
+// Supervisor owns one plugin's subprocess. It is a grpc.ClientConnInterface, so
+// a single plugin.v1 client is built over it for the life of the plugin
+// (pluginv1.NewPluginClient) and every call routes to whichever process is up at
+// that moment. Nothing upstream ever holds a handle to a dead one.
 type Supervisor struct {
 	uuid   string
 	kind   string
@@ -69,9 +68,9 @@ type Supervisor struct {
 // The supervisor is the connection every plugin.v1 call rides.
 var _ grpc.ClientConnInterface = (*Supervisor)(nil)
 
-// Supervise spawns the plugin binary and starts watching it. A spawn that
-// fails at BOOT is the caller's error — a plugin the node cannot start does
-// not come up as an empty grid — so nothing is watched until the first spawn
+// Supervise spawns the plugin binary and starts watching it. A spawn that fails
+// at boot is the caller's error, because a plugin the node cannot start must not
+// come up as an empty grid, so nothing is watched until the first spawn
 // succeeds.
 func Supervise(uuid, kind, binary string, cfg map[string]string) (*Supervisor, error) {
 	s := &Supervisor{
@@ -105,9 +104,8 @@ func (s *Supervisor) NewStream(ctx context.Context, desc *grpc.StreamDesc, metho
 	return conn.NewStream(ctx, desc, method, opts...)
 }
 
-// conn is the live connection, or the honest reason there is none. Unavailable
-// is a transport class, so a caller that degrades on "not right now" degrades
-// here and one that surfaces the failure surfaces it.
+// conn is the live connection, or the reason there is none. The code is
+// Unavailable, so a caller that degrades on a transport failure degrades here.
 func (s *Supervisor) conn() (grpc.ClientConnInterface, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -243,10 +241,10 @@ func (s *Supervisor) sleep(d time.Duration) bool {
 	}
 }
 
-// setHealth records the state and tells the listeners when it CHANGED: down
-// on the first failure, up on the recovery, never once per retry, so a
+// setHealth records the state and tells the listeners only when it changed:
+// down on the first failure, up on the recovery, never once per retry, so a
 // flapping plugin does not spam the strip. The detail always takes the latest
-// reason, so a down that is still down for a new reason reads true.
+// reason, so a plugin that is still down for a new reason reads true.
 func (s *Supervisor) setHealth(healthy bool, detail string) {
 	s.mu.Lock()
 	changed := s.healthy != healthy

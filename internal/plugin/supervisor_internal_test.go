@@ -5,10 +5,9 @@ import (
 	"time"
 )
 
-// The respawn policy is what stands between a plugin that cannot start and a
-// spawn loop hammering the machine, and it is pure, so it is tested as such —
-// the seam test (respawn_e2e_test.go) crashes a real subprocess and proves the
-// loop uses it.
+// The respawn policy is pure, so it is pinned directly here.
+// respawn_e2e_test.go crashes a real subprocess and proves the watch loop uses
+// it.
 func TestRespawnPauseBacksOffTheYoungAndForgivesTheOld(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

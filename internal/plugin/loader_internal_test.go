@@ -1,8 +1,8 @@
 package plugin
 
-// The config map a plugin is spawned with, pinned from inside the package:
-// what the loader hands the guest, without a subprocess. The spawn itself is
-// crossed in plugin_e2e_test.go, over the real binary.
+// The config map a plugin is spawned with, pinned from inside the package
+// without a subprocess. The spawn itself is crossed in plugin_e2e_test.go, over
+// the real binary.
 
 import (
 	"os"
@@ -12,9 +12,9 @@ import (
 	"github.com/josephburnett/gridwell/internal/config"
 )
 
-// TestSpawnConfig_StateDir pins the private directory: minted 0700 at
-// <home>/plugins/<id> and named to the plugin as state_dir, beside uuid and
-// kind, with the plugin's own keys untouched.
+// The private directory is minted 0700 at <home>/plugins/<id> and named to the
+// plugin as state_dir, beside uuid and kind, with the plugin's own keys left
+// alone.
 func TestSpawnConfig_StateDir(t *testing.T) {
 	home := t.TempDir()
 	pc := &config.PluginConfig{ID: "p1abcde", Kind: "fs", Config: map[string]string{"root": "/srv"}}
@@ -40,15 +40,13 @@ func TestSpawnConfig_StateDir(t *testing.T) {
 	if perm := fi.Mode().Perm(); perm != 0o700 {
 		t.Errorf("state dir mode = %04o, want 0700", perm)
 	}
-	// The plugin's config map is its own: nothing was written back into the
-	// server.yaml entry.
+	// Nothing is written back into the server.yaml entry.
 	if _, ok := pc.Config["state_dir"]; ok {
 		t.Error("state_dir leaked into the config entry")
 	}
 }
 
-// TestSpawnConfig_KeepsWhatIsThere pins that a second load leaves an existing
-// state directory and its contents alone. Nothing auto-deletes one.
+// A second load leaves an existing state directory and its contents alone.
 func TestSpawnConfig_KeepsWhatIsThere(t *testing.T) {
 	home := t.TempDir()
 	pc := &config.PluginConfig{ID: "p1abcde", Kind: "fs"}
@@ -69,8 +67,8 @@ func TestSpawnConfig_KeepsWhatIsThere(t *testing.T) {
 	}
 }
 
-// TestSpawnConfig_NoHome pins that an empty home is an error the launch
-// carries, never a relative directory written wherever the node started.
+// An empty home is an error the launch carries, never a relative directory
+// written wherever the node started.
 func TestSpawnConfig_NoHome(t *testing.T) {
 	if _, err := spawnConfig(&config.PluginConfig{ID: "p1abcde", Kind: "fs"}, ""); err == nil {
 		t.Fatal("spawnConfig with no home = nil error, want a refusal")

@@ -14,13 +14,12 @@ import (
 type Registry struct {
 	mu      sync.RWMutex
 	clients map[string]namespace.Namespace
-	// kinds maps a plugin UUID to its kind, carried for Ordered's listing
-	// only. There is deliberately no by-kind lookup: the host never switches
-	// on a plugin kind.
+	// kinds maps a plugin UUID to its kind, for Ordered's listing. There is
+	// deliberately no by-kind lookup.
 	kinds map[string]string
-	// labels maps a plugin UUID to its server.yaml display name. This is the
-	// authoritative label shown in the + menu and stamped on a mounted well,
-	// so the two always agree and never depend on a plugin-derived string.
+	// labels maps a plugin UUID to its server.yaml display name. It is the
+	// label shown in the + menu and stamped on a mounted well, so the two
+	// agree and neither depends on a plugin-derived string.
 	labels map[string]string
 	// order is the registration order of plugin UUIDs, which is config order,
 	// so the + menu presents plugins exactly as configured.
@@ -28,7 +27,7 @@ type Registry struct {
 	// closers holds the cleanup function for each managed subprocess plugin.
 	closers map[string]func()
 	// transport is the node's connection namespace, "<id>/<conn>/…", installed
-	// by SetTransport. It is not a plugin: it has no uuid of its own, since
+	// by SetTransport. It is not a plugin: it has no uuid of its own, because
 	// the node's id qualifies it, and it never lists in Ordered.
 	transport      namespace.Namespace
 	transportRows  func(context.Context) []ConnectionRow

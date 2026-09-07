@@ -6,12 +6,11 @@ import (
 	"github.com/josephburnett/gridwell/internal/plugin"
 )
 
-// The gridwell.v1 codec round trip — a namespace written onto the wire and
-// read back — lives in internal/namespace, the one place a real gRPC loopback
-// belongs. Everything here is the registry, which holds Go values; the loader
-// is exercised over the real subprocess door in plugin_e2e_test.go.
+// Everything here is the registry, which holds Go values. The gridwell.v1 codec
+// round trip lives in internal/namespace, the one place a real gRPC loopback
+// belongs, and the loader is crossed over the real subprocess door in
+// plugin_e2e_test.go.
 
-// TestRegistry_GetMissing verifies that a missing plugin returns (nil, false).
 func TestRegistry_GetMissing(t *testing.T) {
 	reg := plugin.NewRegistry()
 	_, ok := reg.Get("nonexistent")
@@ -20,8 +19,7 @@ func TestRegistry_GetMissing(t *testing.T) {
 	}
 }
 
-// TestRegistry_Label round-trips the configured display name and returns ""
-// for an unlabelled plugin, so callers fall back to Info or kind.
+// An unlabelled plugin answers "", so callers fall back to Info or kind.
 func TestRegistry_Label(t *testing.T) {
 	reg := plugin.NewRegistry()
 	reg.SetLabel("p1", "files")
@@ -33,8 +31,8 @@ func TestRegistry_Label(t *testing.T) {
 	}
 }
 
-// Close is terminal for the namespaces, and must be for every per-plugin
-// fact: a label that survives Close would be inherited by a re-Register.
+// Close is terminal for the namespaces and must be for every per-plugin fact.
+// A label that survived Close would be inherited by a re-Register.
 func TestRegistry_CloseForgetsEveryFact(t *testing.T) {
 	reg := plugin.NewRegistry()
 	reg.Register("p1", "fs", nil, nil)

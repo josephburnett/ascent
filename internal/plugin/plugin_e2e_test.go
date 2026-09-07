@@ -1,11 +1,10 @@
 package plugin_test
 
-// The plugin spawn path, end to end: a separately-compiled
-// gridwell-plugin-fs binary spawned through go-plugin, serving plugin.v1. The
-// loader opens the node-owned store, wraps the adapter, and the registry
-// client sees an ordinary Gridwell namespace. Placement persists in the node's
-// file; the plugin holds no node fact, only the private directory the loader
-// mints for it.
+// The plugin spawn path, end to end: a separately compiled gridwell-plugin-fs
+// binary spawned through go-plugin, serving plugin.v1. The loader opens the
+// node-owned store, wraps the adapter, and the registry client sees an ordinary
+// Gridwell namespace. Placement persists in the node's file, and the plugin gets
+// only the private directory the loader mints for it.
 
 import (
 	"context"
@@ -90,13 +89,13 @@ func TestSubprocessPlugin_FS(t *testing.T) {
 	if got.Tile.X != 4 || got.Tile.W != 2 {
 		t.Fatalf("placement not persisted through the subprocess seam: %+v", got.Tile)
 	}
-	// The arrangement is the node's one database, and the plugin process never
-	// touches it: its config carries no db path at all.
+	// The arrangement is the node's one database, which the plugin process
+	// never touches. Its config carries no db path at all.
 	if _, err := os.Stat(dbPath); err != nil {
 		t.Fatalf("node database missing: %v", err)
 	}
-	// What the plugin does get is its own directory, minted by the loader
-	// under the home it was threaded, for its own memory of its source.
+	// The plugin gets its own directory, minted by the loader under the home
+	// it was threaded, for its memory of its source.
 	if fi, err := os.Stat(config.PluginStateDir(home, "pfsuuid")); err != nil {
 		t.Fatalf("state dir not minted through the loader: %v", err)
 	} else if perm := fi.Mode().Perm(); perm != 0o700 {
@@ -104,13 +103,11 @@ func TestSubprocessPlugin_FS(t *testing.T) {
 	}
 }
 
-// TestLoadIntoFailsOnARefusedHandshake crosses the whole refusal path in the
-// one shape that ships: a real gridwell-plugin-proc spawned with a pid the
-// plugin's FromConfig refuses. guest.Main serves the refusal as an Info that
-// answers FailedPrecondition, and LoadInto must stop the launch carrying that
-// reason and naming the plugin — never come up as an empty grid. The two
-// tests this replaces staged the refusal through the deleted in-process
-// factory door, so neither ever spawned anything.
+// The refusal path in the shape that ships: a real gridwell-plugin-proc spawned
+// with a pid the plugin's FromConfig refuses. guest.Main serves the refusal as
+// an Info that answers FailedPrecondition, and LoadInto must stop the launch
+// carrying that reason and naming the plugin, rather than coming up as an empty
+// grid.
 func TestLoadIntoFailsOnARefusedHandshake(t *testing.T) {
 	bin := plugintest.Binary(t, "proc")
 
