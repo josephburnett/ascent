@@ -47,9 +47,8 @@ func TestAcquire_SnapshotNoSessionRejected(t *testing.T) {
 	fake := shellsvctest.New() // not alive
 	m := shellsvc.NewManager(fake)
 
-	// allowCreate false, for a snapshotted tile, plus no live session gives
-	// ErrSessionGone: a fresh shell must not be fabricated behind the
-	// JPEG.
+	// allowCreate false and no live session gives ErrSessionGone, because a
+	// fresh shell must not be fabricated behind the JPEG.
 	if _, _, err := m.Acquire("1", false, 80, 24); !errors.Is(err, shellsvc.ErrSessionGone) {
 		t.Fatalf("err = %v, want ErrSessionGone", err)
 	}
@@ -66,8 +65,7 @@ func TestAcquire_TakeoverReusesPTYAndEvictsOld(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Acquire: %v", err)
 	}
-	// A second acquire, a refresh from another pane, reuses the same PTY and
-	// signals the first holder to stop.
+	// A second acquire is a refresh from another pane.
 	sess2, _, err := m.Acquire("1", true, 80, 24)
 	if err != nil {
 		t.Fatalf("second Acquire: %v", err)
@@ -80,17 +78,15 @@ func TestAcquire_TakeoverReusesPTYAndEvictsOld(t *testing.T) {
 	}
 	select {
 	case <-stopOld1:
-		// good: the first holder was evicted.
+		// The first holder was evicted.
 	default:
 		t.Error("first holder's stopOld was not closed on takeover")
 	}
 }
 
-// A takeover hands a live PTY to a terminal that has never seen a byte of it.
-// tmux cannot tell that the viewer changed — same fd, same client — so nothing
-// repaints and the new pane sits blank until some later resize shakes a redraw
-// loose. The winsize bounce is what forces it: SIGWINCH is raised only on a
-// real change, so tmux repaints for whoever is watching now.
+// Pins the winsize bounce that repaints a takeover's new, blank terminal; see
+// shellsvc.Manager.Acquire. Without the bounce there is no SIGWINCH and tmux
+// leaves the pane blank until some later resize shakes a redraw loose.
 func TestAcquire_TakeoverForcesARepaint(t *testing.T) {
 	fake := shellsvctest.New()
 	m := shellsvc.NewManager(fake)
