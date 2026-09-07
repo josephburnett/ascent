@@ -133,22 +133,37 @@
     // the server hands over in X-Uncompressed-Size, since with Content-Encoding
     // the browser knows only the compressed length. Failures paint into the same
     // overlay: a boot that dies must say so rather than sit black.
+    //
+    // The counter also checks its own arithmetic at the end of the stream. A
+    // short download is otherwise silent: the gzip response carries no
+    // Content-Length (ServeContent omits it under Content-Encoding), so a cut
+    // connection ends the body cleanly and the browser reports only whatever
+    // WebAssembly makes of the fragment — "exceeds the module's remaining
+    // size". Comparing the bytes received against the size the server declared
+    // names the real fault, and it is the one fault worth one retry.
     (async () => {
       const boot = document.getElementById("gw-boot");
       const msg = document.getElementById("gw-boot-msg");
-      try {
-        const resp = await fetch("/gridwell.wasm");
+
+      // load fetches, counts, and instantiates once. bust adds a cache-busting
+      // query and bypasses the HTTP cache, so a retry cannot be answered from
+      // the same truncated cache entry that failed.
+      async function load(bust) {
+        const resp = await fetch("/gridwell.wasm" + (bust ? "?retry=" + Date.now() : ""),
+          bust ? { cache: "reload" } : undefined);
         if (!resp.ok) throw new Error("wasm fetch failed: HTTP " + resp.status);
         let received = 0;
         // The decoded total. A gzip response carries it in X-Uncompressed-Size,
         // since its Content-Length is the compressed size, while an identity
         // response's Content-Length is already the decoded size. With a total
-        // the counter shows a percentage; without one, it counts megabytes.
+        // the counter shows a percentage; without one, it counts megabytes and
+        // there is nothing to check the end of the stream against.
         const total = Number(
           resp.headers.get("X-Uncompressed-Size") ||
           (resp.headers.get("Content-Encoding") ? 0 : resp.headers.get("Content-Length")) ||
           0
         );
+        let short = null;
         const counted = new Response(new ReadableStream({
           async start(controller) {
             const reader = resp.body.getReader();
@@ -161,14 +176,37 @@
                 : "loading gridwell… " + (received / 1048576).toFixed(1) + " MB";
               controller.enqueue(value);
             }
+            if (total > 0 && received !== total) {
+              short = new Error("truncated download (got " + received + " of " + total + " bytes)");
+              short.truncated = true;
+              controller.error(short);
+              return;
+            }
             msg.textContent = "starting…";
             controller.close();
           },
         }), { headers: { "Content-Type": resp.headers.get("Content-Type") || "application/wasm" } });
         const go = new Go();
-        const result = await WebAssembly.instantiateStreaming(counted, go.importObject);
+        try {
+          // short wins over whatever WebAssembly says about the fragment: the
+          // download is the fault, and the parse error is the symptom.
+          return { go, result: await WebAssembly.instantiateStreaming(counted, go.importObject) };
+        } catch (e) {
+          throw short || e;
+        }
+      }
+
+      try {
+        let loaded;
+        try {
+          loaded = await load(false);
+        } catch (e) {
+          if (!e || !e.truncated) throw e;
+          msg.textContent = "gridwell failed to load: " + e.message + " — retrying…";
+          loaded = await load(true);
+        }
         boot.remove();
-        go.run(result.instance);
+        loaded.go.run(loaded.result.instance);
       } catch (e) {
         boot.classList.add("failed");
         msg.textContent = "gridwell failed to load: " + (e && e.message ? e.message : e);
