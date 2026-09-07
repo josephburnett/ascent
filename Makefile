@@ -109,7 +109,10 @@ proto-check:
 
 # check is the per-commit verification gate: every commit must leave all of these
 # green. fmt-check enforces gofmt; the wasm build catches GOOS=js breakage that
-# `go build ./...` (host arch) misses; the typecheck catches Electron-side TS
+# `go build ./...` (host arch) misses, and the windows and darwin builds catch
+# the same class for the RELEASE targets — a `//go:build unix` half whose other
+# half went stale does not fail on the dev box, and the release workflow is a
+# tag away, too late; the typecheck catches Electron-side TS
 # drift; `npm test` runs the desktop main-process unit tests (menu/geometry logic
 # that never reaches the heavier display-bound gates); check-exception-owners
 # fails when a declared exception field is read outside the predicate that
@@ -136,6 +139,8 @@ check: fmt-check proto-check wasm plugins
 		(cd $$m && GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./...) || exit 1; \
 	done
 	GOOS=js GOARCH=wasm go build -o /tmp/gridwell.wasm ./client/wasm
+	GOOS=windows GOARCH=amd64 go build -o /dev/null ./...
+	GOOS=darwin GOARCH=arm64 go build -o /dev/null ./...
 	./scripts/check-tracked-binaries.sh
 	./scripts/check-vocabulary.sh
 	./scripts/check-deadcode.sh
