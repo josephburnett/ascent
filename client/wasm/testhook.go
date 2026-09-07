@@ -620,6 +620,8 @@ func pluginStatusName(pl rpc.PluginInfo) string {
 		return "broken"
 	case pluginhealth.Waiting:
 		return "waiting"
+	case pluginhealth.NoDoor:
+		return "nodoor"
 	}
 	return "enterable"
 }
@@ -660,11 +662,13 @@ func (a *App) thPalette(js.Value, []js.Value) any {
 		} else {
 			e["kind"] = templateKindName(item.primitive)
 		}
-		// A plugin-declared root entry reports its identity so a
-		// test can tell it from the declaring plugin's own row.
+		// A declared menu entry reports its identity so a test can tell a
+		// collection from a node's own row. The label stays the swatch's —
+		// door.EntryName's, the one the banner draws — because a hook that
+		// reported the raw entry label would be a second name for one
+		// doorway, and a spec would pin the wrong one.
 		if item.entry != nil {
 			e["entry"] = item.entry.ID
-			e["label"] = item.entry.Label
 		}
 		entries = append(entries, e)
 	}

@@ -39,11 +39,12 @@ export interface PaneInfo {
 
 export interface PaletteItem {
   index: number;
-  // Plugin swatches sit in the top row: a click descends into the plugin, a
-  // drag drops an exit-well link. isPlugin tells them from the primitive
-  // swatches. For a plugin, kind is the plugin kind (fs, proc, gitlab, …),
-  // label and uuid identify it, and rootGridID and status mirror the
-  // pluginhealth surface.
+  // Doorway swatches sit in the top row — one per declared doorway: a node's
+  // home, a connection's far home, and every collection a plugin declares as
+  // a menu entry. A click descends into it, a drag drops an exit-well link.
+  // isPlugin tells them from the primitive swatches. kind is the declaring
+  // row's kind (fs, proc, gitlab, connection, …), label and uuid identify it,
+  // and rootGridID and status mirror the pluginhealth surface.
   isPlugin: boolean;
   kind: string;
   label?: string;
@@ -53,9 +54,9 @@ export interface PaletteItem {
   // The swatch's declared face — the same selector the bar's crumb for this
   // row's root grid wears, so a spec can pin that the two agree.
   glyph?: string;
-  // A plugin-declared menu entry's id, such as fs "search". Creation entries
-  // are !isPlugin rows after the primitives; root entries ride a plugin-shaped
-  // row.
+  // The declared menu entry's id this swatch came from, such as the home's
+  // "trash", empty on a row's own place. Creation entries are !isPlugin rows
+  // after the primitives.
   entry?: string;
   x: number;
   y: number;

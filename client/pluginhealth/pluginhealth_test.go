@@ -8,9 +8,10 @@ import (
 	"github.com/josephburnett/gridwell/client/errsurface"
 )
 
-// The whole classification, as a table. Three statuses: enterable, waiting
-// (asked, no answer yet — only a connection row can be in it), and broken,
-// which every failure collapses into.
+// The whole classification, as a table. Four statuses: enterable, waiting
+// (asked, no answer yet — only a connection row can be in it), broken, which
+// every failure collapses into, and no-door, the plugin that answered and
+// declares doorways rather than being one.
 func TestClassifyTable(t *testing.T) {
 	cases := []struct {
 		name string
@@ -20,7 +21,13 @@ func TestClassifyTable(t *testing.T) {
 		{"rooted plugin", rpc.PluginInfo{Label: "Home", RootGridID: "u/1"}, Enterable},
 		{"rooted connection", rpc.ConnectionRow(rpc.ConnectionInfo{UUID: "c1", RootGridID: "c1/1"}), Enterable},
 		{"info failed", rpc.PluginInfo{Label: "Files", InfoError: "plugin not responding: connection refused"}, Broken},
-		{"answered, declared no root", rpc.PluginInfo{Label: "Files"}, Broken},
+		// A plugin contributes doorways; it is not one. Answering with menu
+		// entries and no root of its own is the ordinary healthy shape, and
+		// answering with neither is a plugin that contributes nothing —
+		// still healthy, still nothing to report.
+		{"answered, entries and no root", rpc.PluginInfo{Label: "Mail",
+			MenuEntries: []rpc.MenuEntry{{ID: "feed", Label: "Feed", GridID: "u/2"}}}, NoDoor},
+		{"answered, nothing declared", rpc.PluginInfo{Label: "Files"}, NoDoor},
 		{"connection not answered yet", rpc.ConnectionRow(rpc.ConnectionInfo{UUID: "c1", Label: "rtb"}), Waiting},
 		{"connection that failed to dial", rpc.ConnectionRow(rpc.ConnectionInfo{UUID: "c1", Label: "rtb",
 			StatusDetail: "dial tcp 127.0.0.1:1: connection refused"}), Broken},
@@ -36,27 +43,40 @@ func TestClassifyTable(t *testing.T) {
 	}
 }
 
-// The two failures present identically — one status, one tint, one severity —
-// and differ only in the reason text the click report carries for debugging.
+// Broken is exactly one fact — a recorded failure — and that failure is the
+// reason the click report carries. Every kind of failure collapses into the
+// one status, and the row's own text is what distinguishes them.
 func TestBrokenIsOneStatusWithTheReasonInTheText(t *testing.T) {
 	failed := rpc.PluginInfo{UUID: "u1", Label: "Files", InfoError: "plugin not responding: boom"}
-	noRoot := rpc.PluginInfo{UUID: "u2", Label: "Files"}
-	if Classify(failed) != Broken || Classify(noRoot) != Broken {
-		t.Fatalf("both failures must be Broken: %v %v", Classify(failed), Classify(noRoot))
+	dialed := rpc.ConnectionRow(rpc.ConnectionInfo{UUID: "u2", Label: "Files",
+		StatusDetail: "dial tcp 127.0.0.1:1: connection refused"})
+	if Classify(failed) != Broken || Classify(dialed) != Broken {
+		t.Fatalf("both failures must be Broken: %v %v", Classify(failed), Classify(dialed))
 	}
 	sev1, _, msg1, _ := ClickNotice(failed)
-	sev2, _, msg2, _ := ClickNotice(noRoot)
+	sev2, _, msg2, _ := ClickNotice(dialed)
 	if sev1 != errsurface.Error || sev2 != errsurface.Error {
 		t.Errorf("severities = %v %v, want both errsurface.Error", sev1, sev2)
 	}
 	if !strings.Contains(msg1, "plugin not responding: boom") {
 		t.Errorf("message = %q, want the recorded failure as the reason", msg1)
 	}
-	if !strings.Contains(msg2, "no root configured") {
-		t.Errorf("message = %q, want the missing-root reason", msg2)
+	if !strings.Contains(msg2, "connection refused") {
+		t.Errorf("message = %q, want the recorded failure as the reason", msg2)
 	}
 	if !strings.HasPrefix(msg1, "Files: ") || !strings.HasPrefix(msg2, "Files: ") {
 		t.Errorf("messages = %q / %q, want one shape: the label, then the reason", msg1, msg2)
+	}
+}
+
+// A plugin that answered and declares no doorway of its own has nothing to
+// report: it is not an error, so a click on it — there is no swatch to click,
+// but the guard is asked anyway — says nothing.
+func TestClickNotice_NoDoor_NotOk(t *testing.T) {
+	pl := rpc.PluginInfo{UUID: "u1", Label: "Mail",
+		MenuEntries: []rpc.MenuEntry{{ID: "feed", Label: "Feed", GridID: "u1/2"}}}
+	if _, _, _, ok := ClickNotice(pl); ok {
+		t.Error("a plugin with no doorway of its own must report nothing")
 	}
 }
 

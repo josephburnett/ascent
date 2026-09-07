@@ -36,12 +36,33 @@ func TestFindResolvesConnectionRows(t *testing.T) {
 	}
 }
 
-// A menu-swatch descent into a root entry resolves to the entry's pseudo
-// swatch: its label and glyph, declaration-owned (not renamable).
+// A menu-swatch descent into a declared entry resolves to the entry's pseudo
+// swatch: its EntryName and glyph, declaration-owned (not renamable). The
+// crumb wears the provenance because the entry is a top-level doorway, with
+// no level above it to say whose collection it is.
 func TestFindResolvesRootEntries(t *testing.T) {
 	got, kind := Find("loc/9", nil, plugins)
-	if kind != Entry || got.AltText != "trash" || got.ChildGridID != "loc/9" {
+	if kind != Entry || got.AltText != "home · trash" || got.ChildGridID != "loc/9" {
 		t.Fatalf("door = %+v (%v), want the trash entry swatch", got, kind)
+	}
+}
+
+// EntryName is the whole naming rule, uniform over every entry of every row:
+// the instance, then the collection. An entry that declares no label of its
+// own is the instance alone, which is the identity of a plugin with a single
+// collection.
+func TestEntryName(t *testing.T) {
+	cases := []struct{ row, entry, want string }{
+		{"hey", "Feed", "hey · Feed"},
+		{"home", "trash", "home · trash"},
+		{"files", "", "files"},
+		{"", "Feed", "Feed"},
+		{"", "", ""},
+	}
+	for _, c := range cases {
+		if got := EntryName(c.row, c.entry); got != c.want {
+			t.Errorf("EntryName(%q, %q) = %q, want %q", c.row, c.entry, got, c.want)
+		}
 	}
 }
 

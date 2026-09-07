@@ -7,6 +7,51 @@ package door
 
 import "github.com/josephburnett/gridwell/api/rpc"
 
+// EntrySeparator joins a menu row's name to one of its entries' names. See
+// EntryName.
+const EntrySeparator = " · "
+
+// EntryName is what one of a row's declared menu entries is called, wherever
+// it is shown: the + menu swatch, the drag ghost, the link tile a drag drops,
+// and the crumb of the level it opens. An entry is a collection of the
+// instance that declared it, and it stands alone on the menu with no plugin
+// row above it, so it says whose it is — "hey · Feed".
+//
+// The rule is uniform: every entry of every row is named this way, with no
+// privileged one. An entry that declares no label of its own wears the
+// instance's name alone, which is the whole identity of a plugin with a
+// single collection.
+func EntryName(row, entry string) string {
+	switch {
+	case entry == "":
+		return row
+	case row == "":
+		return entry
+	}
+	return row + EntrySeparator + entry
+}
+
+// EntryPlugin shapes one of a row's MenuEntries as a pseudo-row: the entry's
+// grid as the root and EntryName plus the entry's glyph as the face, so every
+// downstream flow (swatch, ghost, click-descend, drag-link, the bar's door
+// identity) takes the ordinary row path. The pseudo-row is a doorway, not a
+// declarer, so it carries none of the row's entries — they belong to the row,
+// and composing them again would show every collection twice.
+//
+// The handshake root view belongs to the row's own grid, so it is zeroed and
+// an entry grid opens at the default framing.
+func EntryPlugin(pl rpc.PluginInfo, e rpc.MenuEntry) rpc.PluginInfo {
+	pseudo := pl
+	pseudo.RootGridID = e.GridID
+	pseudo.RootViewCx, pseudo.RootViewCy, pseudo.RootViewZoom = 0, 0, 0
+	pseudo.MenuEntries = nil
+	pseudo.Label = EntryName(pl.Label, e.Label)
+	if e.Glyph != "" {
+		pseudo.Glyph = e.Glyph
+	}
+	return pseudo
+}
+
 // Kind says what the resolved door is, which decides renamability: a real
 // well row takes the rename gesture; a declaration (a plugin root, a root
 // menu entry) is config-owned and read-only.
@@ -59,7 +104,7 @@ func Find(anchor string, parentTiles map[string]rpc.Tile, plugins []rpc.PluginIn
 		for j := range pl.MenuEntries {
 			e := &pl.MenuEntries[j]
 			if e.GridID == anchor {
-				return rpc.PluginWellTile(rpc.EntryPlugin(*pl, *e)), Entry
+				return rpc.PluginWellTile(EntryPlugin(*pl, *e)), Entry
 			}
 		}
 	}

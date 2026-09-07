@@ -89,7 +89,7 @@ test('workspace ephemeral shell: survives ascent, reattaches on descent, dies wi
   await barAscend(gw);
   await expect.poll(async () => (await workspaceState(window)).depth).toBe(0);
   await gw.deleteTileCell(wx, wy);
-  await gw.clickPluginSwatch('trash');
+  await gw.clickPluginSwatch('home · trash');
   const troot = await gw.focused();
   const month = (await gw.getGrid(troot.gridID)).tiles!.find((t) => t.kind === 'well')!;
   await gw.descendCell(Number(month.x ?? 0), Number(month.y ?? 0));

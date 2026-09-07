@@ -1,15 +1,20 @@
 // Package pluginhealth decides how a launcher tile should draw and behave for
-// a given rpc.PluginInfo: enterable, waiting (asked, no answer yet), or broken
-// (anything that failed). It is the one place that decision is made, so
-// client/wasm's launcher rendering and click handling are both thin reads of
-// it; the wasm file contributes only pixels and event plumbing.
+// a given rpc.PluginInfo: enterable, waiting (asked, no answer yet), broken
+// (anything that failed), or no-door (answered, and it is not a place). It is
+// the one place that decision is made, so client/wasm's launcher rendering and
+// click handling are both thin reads of it; the wasm file contributes only
+// pixels and event plumbing.
 //
-// Two non-enterable states, not three: the user does not care WHY a launcher
-// will not open unless they are debugging, so every failure — Info errored,
-// the probe timed out, Info answered and declared no root grid — is one
-// status with one tint and one message shape, and the specific reason rides
-// the click report's text. Still loading is the one genuinely different
-// thing, and it presents as loading.
+// One failure state, not several: the user does not care WHY a launcher will
+// not open unless they are debugging, so every failure — Info errored, the
+// probe timed out — is one status with one tint and one message shape, and the
+// specific reason rides the click report's text. Still loading is the one
+// genuinely different thing, and it presents as loading.
+//
+// Declaring no grid of its own is not a failure. A plugin contributes + menu
+// entries; it is not itself a place. A node is: its home, and a connection's
+// far home, are what a row is enterable for. So a row that answered and named
+// no grid of its own is NoDoor — healthy, with nothing to look at.
 package pluginhealth
 
 import (
@@ -28,20 +33,24 @@ const (
 	// is what ends the wait — a timed-out connection carries its detail as
 	// InfoError and is Broken, never Waiting forever.
 	Waiting
-	// Broken: not working, whatever the reason. Info failed or timed out
-	// (InfoError is set), or Info answered and declared no root grid to
-	// enter. One status, because the difference is a debugging detail, not a
-	// different thing to look at.
+	// Broken: not working. Info failed or timed out, which is exactly
+	// InfoError being set. One status, because the difference between the
+	// failures is a debugging detail, not a different thing to look at.
 	Broken
+	// NoDoor: Info answered, nothing failed, and the row names no grid of
+	// its own. That is every plugin: it declares + menu entries, and each
+	// entry is the doorway, not the plugin. Nothing is wrong and nothing is
+	// shown for the row itself.
+	NoDoor
 )
 
 // Classify decides pl's status from the facts the server's Info handshake
-// produces: whether it failed (InfoError != ""), whether it declared a root
-// (RootGridID != ""), and, for the rootless-and-errorless case, whether the
-// row is a connection (rpc.PluginKindConnection, the row's own declaration,
-// minted by rpc.ConnectionRow — never the shape of the uuid). A connection
-// with no root has not answered yet; a plugin with no root has answered and
-// said there is nothing to enter. This is the ONE classification: no caller
+// produces: whether it failed (InfoError != ""), whether it named a grid of
+// its own (RootGridID != ""), and, for the rootless-and-errorless case,
+// whether the row is a connection (rpc.PluginKindConnection, the row's own
+// declaration, minted by rpc.ConnectionRow — never the shape of the uuid). A
+// connection with no root has not answered yet; anything else with no root
+// has answered and is not a place. This is the ONE classification: no caller
 // asks a second question about the row afterwards.
 func Classify(pl rpc.PluginInfo) Status {
 	if pl.InfoError != "" {
@@ -51,7 +60,7 @@ func Classify(pl rpc.PluginInfo) Status {
 		if pl.Kind == rpc.PluginKindConnection {
 			return Waiting
 		}
-		return Broken
+		return NoDoor
 	}
 	return Enterable
 }
@@ -68,15 +77,10 @@ func UnrootedLink(t *rpc.Tile) bool {
 }
 
 // BrokenReason is the debugging detail behind a Broken status: what the server
-// recorded, or, for the one failure that carries no error text, that the row
-// declared no root. Only the click report reads it — the tint does not, since
-// every Broken row looks the same.
-func BrokenReason(pl rpc.PluginInfo) string {
-	if pl.InfoError != "" {
-		return pl.InfoError
-	}
-	return "no root configured — set config.root in server.yaml"
-}
+// recorded. Broken is exactly "InfoError is set", so the recorded text is
+// always there and there is no second reason to invent. Only the click report
+// reads it — the tint does not, since every Broken row looks the same.
+func BrokenReason(pl rpc.PluginInfo) string { return pl.InfoError }
 
 // ClickNotice returns the errsurface.Surface.Report arguments for clicking a
 // non-enterable launcher tile: severity, a per-plugin source key (so a second

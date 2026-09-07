@@ -383,10 +383,10 @@ type paletteItem struct {
 	isPlugin  bool
 	plugin    rpc.PluginInfo // when isPlugin (also set for a root ENTRY's owner)
 	primitive templateKind   // when !isPlugin
-	// entry is the plugin-declared root menu entry this pseudo-plugin swatch
-	// came from — the home's trashcan, a plugin's second surface. Set only
-	// alongside isPlugin; it names the entry so a test can tell a declared
-	// root from the plugin's own row.
+	// entry is the declared menu entry this pseudo-plugin swatch came from —
+	// the home's trashcan, one of a plugin's collections. Set only alongside
+	// isPlugin; it names the entry so a test can tell a declared collection
+	// from a node's own row.
 	entry *rpc.MenuEntry
 	// promotePane, when set, marks a promote drag: the item is the ephemeral
 	// url visit shown in that pane, dragged off the bar's current crumb, and
@@ -438,26 +438,16 @@ func (a *App) paletteGroups(p *pane.Pane) (plugins, primitives []paletteItem) {
 	// and the shell primitive obeys that node's policy. "" — local, or a
 	// grid not yet cached — is the boot handshake.
 	ctx := a.menuCtx(p)
-	items := make([]paletteItem, 0, len(ctx.plugins))
-	for _, pl := range ctx.plugins {
-		items = append(items, paletteItem{isPlugin: true, plugin: pl})
-		// The plugin's root entries ride its row: extra doorways it declares
-		// — the home's trashcan, a plugin's second surface. Each becomes a
-		// pseudo-plugin swatch, with the entry's grid as the root and its
-		// label and glyph as the face, so every downstream flow — ghost,
-		// click-descend, drag-link, health — is the ordinary plugin path
-		// with no new arms.
-		for i := range pl.MenuEntries {
-			e := &pl.MenuEntries[i]
-			if e.GridID == "" {
-				continue
-			}
-			// The framing zero-out lives in EntryPlugin: the handshake root
-			// view belongs to the main root grid, and an entry grid opens at
-			// the default framing. persistFraming's root-arm RootGridID
-			// guard keeps its session framing off the main root's fact.
-			items = append(items, paletteItem{isPlugin: true, plugin: rpc.EntryPlugin(pl, *e), entry: e})
-		}
+	// One swatch per declared doorway. palette.Swatches is the one owner of
+	// that composition: a node's home and a connection's far home are places
+	// and get a row of their own; a plugin is not a place, and contributes a
+	// swatch per declared collection instead. Every swatch is a pseudo-plugin,
+	// so every downstream flow — ghost, click-descend, drag-link, health — is
+	// the ordinary plugin path with no new arms.
+	sw := palette.Doorways(ctx.plugins)
+	items := make([]paletteItem, 0, len(sw))
+	for _, s := range sw {
+		items = append(items, paletteItem{isPlugin: true, plugin: s.Plugin, entry: s.Entry})
 	}
 	prims := make([]paletteItem, 0, len(primitiveKinds))
 	// Unknown is not writable: the creation swatches appear once the grid

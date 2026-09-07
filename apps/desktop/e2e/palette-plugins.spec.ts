@@ -78,14 +78,16 @@ test('plugins fill the + menu top row above the primitives', async ({ gw }) => {
 
   const plugins = pal.items.filter((i) => i.isPlugin);
   const primitives = pal.items.filter((i) => !i.isPlugin);
-  // Rows in server.yaml order; each local plugin's declared trash root entry
-  // rides directly after its row.
+  // One swatch per declared doorway: the node's home and the connection's far
+  // home are places and get a row of their own, in server.yaml order, and
+  // every declared entry rides directly after the row that declared it,
+  // wearing its instance's name.
   const rows = plugins.filter((i) => !i.entry);
-  expect(rows.map((i) => i.label), 'both plugins, server.yaml order').toEqual(['home', 'second']);
+  expect(rows.map((i) => i.label), 'the two homes, server.yaml order').toEqual(['home', 'second']);
   expect(
     plugins.map((i) => i.label),
-    'each root entry rides after its declaring plugin',
-  ).toEqual(['home', 'trash', 'second']);
+    'each declared entry rides after its row, named for it',
+  ).toEqual(['home', 'home · trash', 'second']);
   expect(primitives.length, 'the primitive swatches are still there').toBeGreaterThanOrEqual(5);
 
   // Plugins come first in index order and sit strictly above the primitives.

@@ -46,7 +46,8 @@ here.
 | **dark** (`internal/sourcecache`, health events) | Declared, not answering right now. Fetched, reported, recovers on its own. |
 | **stale** (`Grid.Meta.Stale`) | This grid is a memory rather than an answer. One bar chip; it never moves or restyles a tile. |
 | **waiting** (`pluginhealth.Waiting`) | A connection row minted with no root and no error: asked, not answered yet. The click reports at `Info`, and the probe's timeout ends the wait. |
-| **broken** (`pluginhealth.Broken`) | A launcher that will not open, whatever the reason — `Info` failed, the probe timed out, or `Info` declared no root grid. One tint; the click reports at `Error` and `BrokenReason` carries the detail. |
+| **broken** (`pluginhealth.Broken`) | A launcher that will not open, whatever the reason — `Info` failed, the probe timed out. That is exactly `InfoError` being set. One tint; the click reports at `Error` and `BrokenReason` carries the detail. |
+| **no door** (`pluginhealth.NoDoor`) | Answered, and it is not a place: the row names no grid of its own. That is every plugin, since a plugin declares collections as + menu entries rather than being one. Healthy, and it contributes no swatch of its own. |
 | **unknown** | Not yet known, which is neither yes nor no. `scratch.For` and `a.gridWritable` both return `(value, known)`, so each caller picks its own safe default where the reason is visible. |
 
 ## Write classes

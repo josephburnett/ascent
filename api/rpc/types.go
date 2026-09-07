@@ -218,25 +218,6 @@ func IsWorkspaceKind(kind string) bool {
 	return kind == KindPane
 }
 
-// EntryPlugin shapes a plugin's root MenuEntry as a pseudo-plugin: the
-// entry's grid as the root and its label and glyph as the face, so every
-// downstream flow (swatch, ghost, click-descend, drag-link, the bar's door
-// identity) takes the ordinary plugin path. The handshake root view belongs
-// to the main root grid, so it is zeroed and an entry grid opens at the
-// default framing.
-func EntryPlugin(pl PluginInfo, e MenuEntry) PluginInfo {
-	pseudo := pl
-	pseudo.RootGridID = e.GridID
-	pseudo.RootViewCx, pseudo.RootViewCy, pseudo.RootViewZoom = 0, 0, 0
-	if e.Label != "" {
-		pseudo.Label = e.Label
-	}
-	if e.Glyph != "" {
-		pseudo.Glyph = e.Glyph
-	}
-	return pseudo
-}
-
 // The plugin glyph vocabulary (InfoResponse.glyph, PluginInfo.Glyph):
 // declared by the plugin, rendered by the client, with a name the client does
 // not know falling back to the generic globe, so a third-party plugin
