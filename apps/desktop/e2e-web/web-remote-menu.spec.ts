@@ -430,6 +430,9 @@ test('a menu read the network swallows does not latch the remote menu empty', as
       },
       { message: 'the far node’s menu arrives by itself', timeout: 75_000 },
     )
-    .toBe('home,trash');
+    // The far node's own menu, declared entries included — the same roster the
+    // spec above pins, because this one asks for it after a swallowed read
+    // rather than on the first try.
+    .toBe('home,home · trash');
   expect(sawNotice, 'the swallowed read surfaced rather than disappearing').toBe(true);
 });
