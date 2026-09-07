@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# check-vocabulary: retired words do not come back. A rename erodes when it is
-# left to intention — comments keep the old word, the next reader copies it, and
-# the halfway world returns. Each line of scripts/retired-words.txt is
-# "<word> [<allowed path regex>]": the word, whole and case-insensitive, may
-# appear only in paths matching the regex, such as a migration shim that must
-# still spell the old name.
+# check-vocabulary: retired words do not come back. A rename left to intention
+# erodes, because a comment keeps the old word and the next reader copies it.
+# Each line of scripts/retired-words.txt is "<word> [<allowed path regex>]",
+# and the word, whole and case-insensitive, may appear only in paths matching
+# the regex, such as a migration shim that must still spell the old name.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

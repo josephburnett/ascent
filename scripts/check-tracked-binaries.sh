@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# check-tracked-binaries: no build output may be committed. A rename of the
-# binaries can swap the .gitignore names in the same commit that leaves the old
-# names on disk, and `git add -A` then sweeps tens of megabytes of ELF into
-# history. The ignore list is a guess about names; this gate is the fact: a
-# tracked file that is an executable image, or larger than the cap, fails
-# `make check`.
+# check-tracked-binaries: no build output may be committed. The .gitignore
+# list names files, so a rename that swaps those names in the same commit that
+# leaves the old ones on disk lets `git add -A` sweep tens of megabytes of ELF
+# into history. A tracked file that is an executable image, or larger than the
+# cap, fails `make check` instead.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
