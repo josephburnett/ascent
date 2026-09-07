@@ -1,11 +1,10 @@
 package namespace
 
 // FromClient is one of the two codecs; the other is Server. It reads a
-// gridwell.v1 gRPC client as a Namespace. Exactly one place needs it,
-// internal/connection/dial, which dials another node's connection door, so
-// the
-// transport's connections are Namespace values like everything else and
-// internal/connection never touches a gRPC stream type.
+// gridwell.v1 gRPC client as a Namespace, for internal/connection/dial, which
+// dials another node's connection door. Connections are then Namespace values
+// like everything else, and internal/connection never touches a gRPC stream
+// type.
 
 import (
 	"context"
@@ -108,8 +107,9 @@ func (f fromClient) WriteContent(ctx context.Context, recv func() (*pb.WriteCont
 	for {
 		msg, rerr := recv()
 		if errors.Is(rerr, io.EOF) {
-			// Only a clean end closes the stream, and only a close commits:
-			// a broken recv returns below with nothing written.
+			// Only a clean end closes the stream, and only a close
+			// commits. A broken recv returns below, having written
+			// nothing.
 			return up.CloseAndRecv()
 		}
 		if rerr != nil {
@@ -131,11 +131,10 @@ func (f fromClient) OpenShell(ctx context.Context, recv func() (*pb.OpenShellReq
 		for {
 			msg, rerr := recv()
 			if rerr != nil {
-				// The caller has no more to say. CloseSend and let the
-				// down side finish: that half carries the far end's
-				// verdict, and returning here on a clean io.EOF would race
-				// the verdict away, so a refused attach would read as a
-				// normal detach.
+				// CloseSend and let the down side finish, because
+				// that half carries the far end's verdict. Returning
+				// here on a clean io.EOF would race the verdict away,
+				// and a refused attach would read as a normal detach.
 				_ = up.CloseSend()
 				if !errors.Is(rerr, io.EOF) {
 					errc <- rerr
@@ -155,8 +154,8 @@ func (f fromClient) OpenShell(ctx context.Context, recv func() (*pb.OpenShellReq
 	return nil
 }
 
-// pump relays a server-streaming source into a send callback, ending
-// cleanly at io.EOF. The one relay loop behind every read stream here.
+// pump relays a server-streaming source into a send callback, ending cleanly
+// at io.EOF.
 func pump[T any](recv func() (*T, error), send func(*T) error) error {
 	for {
 		msg, err := recv()

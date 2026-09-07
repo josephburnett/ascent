@@ -1,12 +1,9 @@
 package namespace
 
-// Unimplemented is the embeddable "this namespace does not offer that verb"
-// default: the in-process twin of pb.UnimplementedGridwellServer, so a
-// namespace declares only what it serves and everything else answers with the
-// same Unimplemented code the wire would. The code is load-bearing: the
-// router treats Unimplemented as a silent no-op in exactly one place,
-// SetFraming on a namespace that keeps no framing, and the client's
-// classifier reads it everywhere else.
+// Unimplemented is the in-process twin of pb.UnimplementedGridwellServer. Embed
+// it and a namespace declares only the verbs it serves, while everything else
+// answers with the same Unimplemented code the wire would. Callers read that
+// code: see server.isUnimplemented and clientsync.IsUnimplemented.
 
 import (
 	"context"
@@ -17,8 +14,7 @@ import (
 	pb "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
-// Unimplemented answers every verb with codes.Unimplemented. Embed it in a
-// Namespace implementation and override what that namespace serves.
+// Unimplemented answers every verb with codes.Unimplemented.
 type Unimplemented struct{}
 
 func unimp(method string) error {

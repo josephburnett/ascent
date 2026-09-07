@@ -1,21 +1,9 @@
-// Package namespace is the node's in-process interface: one namespace — the
-// home store, a content plugin's adapter, the transport — as a Go value the
-// router calls directly.
+// Package namespace is the node's in-process interface. One namespace, whether
+// the home store, a content plugin's adapter, or a connection to another node,
+// is a Go value the router calls directly. The two codecs here carry the same
+// method set onto the two wires that remain.
 //
-// Inside the node there is no wire: the router holds a Namespace and calls
-// it. The only two gRPC hops are the ones that cross a process or a machine
-// boundary, and so must serialize anyway:
-//
-//   - the plugin.v1 subprocess (api/compose.LoadPlugin): the third-party
-//     door, with process isolation and a separate dependency graph;
-//   - the connection door (internal/server/nodeexport.go serving
-//     gridwell.v1, internal/connection/dial consuming it): another node.
-//
-// The web door stays Connect over HTTP, because it crosses to the browser.
-//
-// # The shape of a stream
-//
-// gRPC's four stream shapes become ordinary Go control flow, decided once
+// The four gRPC stream shapes become ordinary Go control flow, decided once
 // here so no implementation invents its own:
 //
 //   - unary:            (ctx, *Request) (*Response, error)
@@ -23,31 +11,30 @@
 //   - client-streaming: (ctx, recv func() (*Msg, error)) (*Response, error)
 //   - bidirectional:    (ctx, recv func() (*Msg, error), send func(*Msg) error) error
 //
-// `recv` reports the end of the caller's messages with io.EOF, exactly as
-// a gRPC server stream's Recv does. `send` returning an error aborts the
-// call with that error. Every method returns when its stream is done; the
-// caller's ctx is what ends a stream nobody is reading any more.
+// recv reports the end of the caller's messages with io.EOF, exactly as a gRPC
+// server stream's Recv does. A send that returns an error aborts the call with
+// that error. The caller's ctx is what ends a stream nobody is reading any more.
 //
 // # Errors
 //
-// Errors are gRPC status errors (google.golang.org/grpc/status), always.
-// The client classifies by code (client/clientsync), so the code is part
-// of the contract: it must read the same whether the answer came from a
-// Go call, the Connect codec, or two connection hops away. Both codecs in
-// this package preserve codes; the Connect handler maps them through
-// gwerr's one table (server.asConnectError).
+// Errors are gRPC status errors (google.golang.org/grpc/status), always. The
+// client classifies by code (client/clientsync), so the code is part of the
+// contract: it must read the same whether the answer came from a Go call, the
+// Connect codec, or two connection hops away. Both codecs in this package
+// preserve codes, and the Connect handler maps them through gwerr's one table
+// (server.asConnectError).
 //
 // # Message ownership
 //
 // Without a wire between them, a caller and a Namespace share the proto
-// messages they pass. The contract, so no copy layer is needed:
+// messages they pass. The contract, which is why no copy layer is needed:
 //
-//   - a Namespace must not retain or mutate a request after it returns;
-//     one that rewrites ids clones first, as internal/connection does;
+//   - a Namespace must not retain or mutate a request after it returns; one
+//     that rewrites ids clones first, as internal/connection does;
 //   - a Namespace must not mutate a response after returning it;
-//   - a caller must not mutate a response in place: the qualification
-//     layer clones (api/rpc.TransitQualifyTiles, server.qualifyTiles), so
-//     two subscribers of the same event never see each other's prefix.
+//   - a caller must not mutate a response in place. The qualification layer
+//     clones (api/rpc.TransitQualifyTiles, server.qualifyTiles) so that two
+//     subscribers of the same event never see each other's prefix.
 package namespace
 
 import (
@@ -56,11 +43,10 @@ import (
 	pb "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
-// Namespace is one addressable space of grids and tiles, in-process. It is
-// the gridwell.v1 service's method set in Go: the router (internal/server)
-// resolves a qualified id to a Namespace and calls it, and the two codecs
-// in this package carry the same method set onto the two wires that remain
-// (FromClient reads one, Server writes one).
+// Namespace is one addressable space of grids and tiles, in-process. It is the
+// gridwell.v1 service's method set in Go. The router (internal/server) resolves
+// a qualified id to a Namespace and calls it; FromClient reads that method set
+// off a wire and Server writes it onto one.
 type Namespace interface {
 	// ── identity and capabilities ────────────────────────────────────────
 	Info(ctx context.Context, req *pb.InfoRequest) (*pb.InfoResponse, error)

@@ -1,10 +1,10 @@
 package namespace_test
 
-// The codec seam: a Namespace written onto gridwell.v1 by Server and read
-// back off it by FromClient is the same Namespace. This is the one test whose
-// purpose is the gRPC codec itself, since everything else in the node calls
-// the Go value directly, so it runs over a real gRPC loopback, and the
-// loopback lives here rather than in production code.
+// The codec seam: a Namespace written onto gridwell.v1 by Server and read back
+// off it by FromClient is the same Namespace. Everything else in the node calls
+// the Go value directly, so this is the one test whose subject is the gRPC
+// codec itself, and the loopback it needs lives here rather than in production
+// code.
 
 import (
 	"context"
@@ -44,8 +44,8 @@ func loopback(t *testing.T, ns namespace.Namespace) namespace.Namespace {
 	return namespace.FromClient(pb.NewGridwellClient(cc))
 }
 
-// fake is a Namespace that answers from fields, so a test can pin exactly
-// what crosses the codec.
+// fake is a Namespace that answers from fields, so a test can pin exactly what
+// crosses the codec.
 type fake struct {
 	tile    *pb.Tile
 	err     error
@@ -145,8 +145,8 @@ func (f *fake) OpenShell(_ context.Context, recv func() (*pb.OpenShellRequest, e
 	}
 }
 
-// richTile carries a value in every field shape the wire has, so an
-// omission in either codec shows up as a byte difference.
+// richTile carries a value in every field shape the wire has, so an omission in
+// either codec shows up as a byte difference.
 func richTile() *pb.Tile {
 	return &pb.Tile{
 		Id: "12", GridId: "3", Kind: "well", X: -4, Y: 9, W: 2, H: 3,
@@ -180,8 +180,8 @@ func TestTileRoundTripsBytesIdentical(t *testing.T) {
 	}
 }
 
-// The client classifies errors by code, in client/clientsync. A code that
-// collapses to Unknown at either codec turns a version conflict into an
+// The client classifies errors by code (client/clientsync). A code that
+// collapses to Unknown at either codec would turn a version conflict into an
 // unrecoverable failure, so pin every code the router hands out.
 func TestStatusCodesSurviveBothCodecs(t *testing.T) {
 	for _, code := range []gcodes.Code{
@@ -247,8 +247,8 @@ func TestWriteContentStreamRoundTrips(t *testing.T) {
 	}
 }
 
-// A recv that fails must never reach the commit: the far side sees the stream
-// break, not a clean end.
+// A failing recv must reach the far side as a broken stream, so the commit that
+// a clean end would make never runs.
 func TestWriteContentBrokenRecvNeverCommits(t *testing.T) {
 	f := &fake{tile: richTile()}
 	ns := loopback(t, f)
