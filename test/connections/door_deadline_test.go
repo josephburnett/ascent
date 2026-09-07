@@ -1,36 +1,28 @@
 //go:build connections
 
 // The connection door's deadline rule at the real-binary seam: a Subscribe
-// held through the real ssh tunnel for longer than any deadline
-// ConnectionDoorServer declares, then proven live by a remote edit's event.
+// held through a real ssh tunnel for longer than any deadline
+// ConnectionDoorServer declares, then proven live by a remote edit's event. A
+// declared timeout is a fact, and its test is a wait bound to its value.
+// internal/server/door_deadline_test.go holds a stream through the door
+// shape; this holds one through the production binaries and a real sshd,
+// where a Go change to the ssh or h2 path lands first.
 //
-// THE RULE: a declared timeout is a fact, and its test is a wait bound to its
-// value; a timeout with no such test is untested. The in-package
-// internal/server/door_deadline_test.go holds a stream through the door shape;
-// this holds one through the PRODUCTION binaries and a real sshd, the level
-// where a future Go change to the ssh or h2 path lands first (1b7f98d8: Go
-// 1.26.6 armed ReadHeaderTimeout on the raw conn before the unencrypted HTTP/2
-// handoff, so a door deadline became a ten-second close on every stream).
+// The symptom is a flap rather than the client's own stream ending, because
+// the local node's fanInRemote retries every five seconds. When the door cuts
+// the fan-in's tunneled stream at a deadline, fanInRemote publishes an
+// EventPluginHealth with Healthy false for the connection, so the hold
+// watches for that and for a remote edit's TileChanged on the same stream.
 //
-// The observable symptom here is not the client's own stream ending — the
-// local node's fanInRemote retries every five seconds, so the mounter's
-// Subscribe stays open across a drop and only flaps. The symptom is the flap
-// itself: when the connection door cuts the fan-in's tunneled stream at the
-// deadline, fanInRemote publishes an EventPluginHealth Healthy=false for the
-// connection (connection.go). So the hold watches for a health-down event and
-// for a remote edit's TileChanged that must still arrive on the same stream.
-//
-// The hold is DERIVED from server.ConnectionDoorServer, the very shape the
-// production node puts in front of the door, so it AUTO-TRACKS a re-added
-// deadline: the door declares none today, so the hold is the one-second floor
-// and the test runs fast; re-add a ten-second deadline and the hold becomes
-// 10.5s, long enough for the door to cut the fan-in stream mid-hold and for
-// this test to see the health-down and fail with the production symptom.
+// The hold is derived from server.ConnectionDoorServer, the shape the
+// production node puts in front of the door, so it tracks a re-added deadline
+// on its own. The door declares none today, so the hold is the one-second
+// floor.
 //
 // test/connections may import internal/server: its go.mod replaces the root
-// module to ../.. and it already reaches internal (internal/connection/dial/
-// dialtest), and test/boundary does not police this leaf module. So we read
-// the deadlines off the shape rather than hard-coding a wall-clock constant.
+// module with ../.., it already reaches internal through
+// internal/connection/dial/dialtest, and test/boundary does not police this
+// leaf module. So the deadlines are read off the shape instead of hard-coded.
 
 package connections_test
 
@@ -50,9 +42,9 @@ import (
 )
 
 func TestConnectionDoorHoldsATunneledStreamPastAnyDeadline(t *testing.T) {
-	// Derived from the production door shape, so a re-added deadline lengthens
-	// the hold to catch itself. NotFoundHandler is a stand-in; only the
-	// declared deadlines are read.
+	// Derived from the production door shape, so a re-added deadline
+	// lengthens the hold to catch itself. Only the deadlines are read, so
+	// NotFoundHandler stands in for the handler.
 	shape := server.ConnectionDoorServer(http.NotFoundHandler())
 	hold := max(shape.ReadHeaderTimeout, shape.ReadTimeout, shape.WriteTimeout) + 500*time.Millisecond
 	if hold < time.Second {
@@ -65,8 +57,8 @@ func TestConnectionDoorHoldsATunneledStreamPastAnyDeadline(t *testing.T) {
 		t.Fatalf("gridwell binary not built (run `make build`): %v", err)
 	}
 
-	// Remote node behind a real sshd; local node mounts it through a declared
-	// connection, exactly as TestConnectionSpawn stands up the tunnel.
+	// A remote node behind a real sshd, mounted through a declared
+	// connection, as TestConnectionSpawn stands up the tunnel.
 	remoteHome := t.TempDir()
 	freshHome(t, remoteHome)
 	remoteOrigin, remoteAddr := startServe(t, bin, remoteHome, "127.0.0.1:0")
@@ -76,8 +68,8 @@ func TestConnectionDoorHoldsATunneledStreamPastAnyDeadline(t *testing.T) {
 	appendConnectionsYAML(t, localHome, sshConnectionYAML(t, "holdconn1", creds, remoteAddr))
 	localOrigin, _ := startServe(t, bin, localHome, "127.0.0.1:0")
 
-	// The connection gains its root: the tunnel answered and the fan-in is
-	// following the remote node's events through the connection door.
+	// The connection gaining its root means the tunnel answered and the
+	// fan-in is following the remote node's events.
 	sshRoot := awaitConnRoot(t, localOrigin, "holdconn1")
 	ng := rpc(t, localOrigin, "GetGrid", map[string]any{"gridId": sshRoot})
 	nodeNS, _ := ng["grid"].(map[string]any)["nodeNs"].(string)
@@ -95,9 +87,8 @@ func TestConnectionDoorHoldsATunneledStreamPastAnyDeadline(t *testing.T) {
 		t.Fatalf("the routed menu lacks the remote home: %v", menu["plugins"])
 	}
 
-	// A text tile on the remote home, created through the mount, that a
-	// foreign writer edits directly on the remote node to drive events across
-	// the tunnel.
+	// A text tile on the remote home that a foreign writer edits directly
+	// on the remote node, to drive events across the tunnel.
 	num := func(v any) int64 { f, _ := v.(float64); return int64(f) }
 	txt := rpc(t, localOrigin, "CreateTile", map[string]any{
 		"gridId": remoteHomeRoot,
@@ -105,7 +96,7 @@ func TestConnectionDoorHoldsATunneledStreamPastAnyDeadline(t *testing.T) {
 	})["tile"].(map[string]any)
 	txtID := txt["id"].(string)
 	version := num(txt["version"])
-	// Peel the chained id twice to the remote-direct id the far node knows.
+	// Two peels give the remote-direct id the far node knows.
 	peel := func(id string) string { return strings.SplitN(id, "/", 2)[1] }
 	remoteTxtID := peel(peel(txtID))
 
@@ -134,8 +125,8 @@ func TestConnectionDoorHoldsATunneledStreamPastAnyDeadline(t *testing.T) {
 		}
 	}()
 
-	// editRemote makes one real edit directly on the remote node (another
-	// device, not this mount) and bumps the tracked version.
+	// editRemote edits directly on the remote node, as another device
+	// would, and bumps the tracked version.
 	editRemote := func(body string) {
 		wt, err := clientFor(remoteOrigin).WriteContent(context.Background(), remoteTxtID, version, []byte(body))
 		if err != nil {
@@ -144,8 +135,8 @@ func TestConnectionDoorHoldsATunneledStreamPastAnyDeadline(t *testing.T) {
 		version = wt.Version
 	}
 
-	// awaitTileEvent drains until a TileChanged for our tile arrives on the
-	// still-open stream, editing remotely to drive one, or fails on drop.
+	// awaitTileEvent drains until a TileChanged for the tile arrives on the
+	// still-open stream, editing remotely to drive one.
 	awaitTileEvent := func(what string, editEvery time.Duration) {
 		tick := time.NewTicker(editEvery)
 		defer tick.Stop()
@@ -172,16 +163,14 @@ func TestConnectionDoorHoldsATunneledStreamPastAnyDeadline(t *testing.T) {
 		}
 	}
 
-	// Establish: an event crosses the tunnel and lands on the client stream.
-	// The local fan-in dials the remote asynchronously, so the first edits can
-	// race stream establishment; edit until one arrives.
+	// The local fan-in dials the remote asynchronously, so the first edits
+	// can race stream establishment. Edit until one arrives.
 	awaitTileEvent("establish", 500*time.Millisecond)
 
-	// HOLD the stream past every deadline the door declares. A connection-door
-	// deadline would cut the fan-in's tunneled stream mid-hold; fanInRemote
-	// would publish a health-down for the connection before retrying five
-	// seconds later. On a door with no deadline the connection stays up and
-	// nothing arrives.
+	// Hold the stream past every deadline the door declares. A deadline
+	// would cut the fan-in's tunneled stream mid-hold and fanInRemote would
+	// publish a health-down before retrying. With no deadline the connection
+	// stays up and nothing arrives.
 	start := time.Now()
 	holdDone := time.After(hold)
 holdLoop:
@@ -202,8 +191,8 @@ holdLoop:
 		}
 	}
 
-	// Proven live: a remote edit after the hold still crosses the tunnel onto
-	// the same stream.
+	// A remote edit after the hold still crosses the tunnel onto the same
+	// stream.
 	awaitTileEvent("after the hold", time.Second)
 
 	fmt.Printf("connections deadline gate: a tunneled Subscribe held %s past the connection door's deadlines stayed live OK\n", hold)

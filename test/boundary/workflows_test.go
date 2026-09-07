@@ -7,7 +7,8 @@ import (
 	"testing"
 )
 
-// goWorkUses returns the module dirs go.work stitches ("." for the root).
+// goWorkUses returns the module directories go.work stitches, "." for the
+// root.
 func goWorkUses(t *testing.T, root string) []string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(root, "go.work"))
@@ -33,10 +34,10 @@ func goWorkUses(t *testing.T, root string) []string {
 	return uses
 }
 
-// yamlBlockList reads the indented list under `key: |` (a block scalar)
-// or `key: [a, b]` (a flow list) from a workflow, at the first `key:`
-// after a line containing `after` ("" = from the top) — enough of yaml
-// for the two fields these tests pin, without a parser dependency.
+// yamlBlockList reads the list under `key: |` or `key: [a, b]` from a
+// workflow, at the first `key:` after a line containing `after`, or from the
+// top when after is "". It covers the two fields these tests pin, so no yaml
+// parser is needed.
 func yamlBlockList(t *testing.T, path, after, key string) []string {
 	t.Helper()
 	data, err := os.ReadFile(path)
@@ -82,14 +83,13 @@ func yamlBlockList(t *testing.T, path, after, key string) []string {
 	return nil
 }
 
-// TestGoCacheKeyCoversEveryModule pins that the check workflow's Go cache key,
-// setup-go's cache-dependency-path, hashes every module's go.sum. A module
-// missing from it is a module whose dependency change never invalidates the
-// cache, so CI restores a stale module cache and re-downloads on every run,
-// or keeps building against what the old sums pinned.
+// TestGoCacheKeyCoversEveryModule pins that setup-go's
+// cache-dependency-path hashes every module's go.sum. A module missing from
+// it never invalidates the cache, so CI keeps building against what the old
+// sums pinned.
 func TestGoCacheKeyCoversEveryModule(t *testing.T) {
 	root := repoRoot(t)
-	// The setup-go step's key, not setup-node's; both use the name.
+	// The setup-go step's key. setup-node uses the same field name.
 	patterns := yamlBlockList(t, filepath.Join(root, ".github", "workflows", "check.yml"), "actions/setup-go", "cache-dependency-path")
 	matches := func(rel string) bool {
 		for _, p := range patterns {

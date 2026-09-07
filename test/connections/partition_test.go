@@ -2,13 +2,12 @@
 
 // The mid-session partition gate: a mount that dies under a live session. It
 // runs the production binaries through a real ssh tunnel, reads through the
-// mount to warm the node-side cache in internal/sourcecache, then SIGKILLs the
-// remote node and asserts the whole offline story end to end: a warmed read
-// serves stale, never-read bytes fail honestly, the offline deep copy degrades
-// as decided — cached copies, uncached links — and a revived remote answers
-// live again, so the cache never masks a healed mount. The revival then warms
-// the source again (#275): bytes nobody ever read survive a SECOND partition,
-// because the recovery re-kicked the prefetch walk.
+// mount to warm internal/sourcecache, then SIGKILLs the remote node and
+// asserts the offline story end to end. A warmed read serves stale, never-read
+// bytes fail honestly, the offline deep copy copies what is cached and links
+// what is not, and a revived remote answers live again, so the cache never
+// masks a healed mount. The revival re-kicks the prefetch walk, so bytes
+// nobody read survive a second partition.
 
 package connections_test
 
@@ -26,9 +25,8 @@ import (
 )
 
 // awaitConnHealth reads the client's event stream until one connection's
-// health says what is expected. It is the real path a connection's health
-// takes: fan-in → qualification → the client's stream, through the source
-// cache's own arm on the way.
+// health says what is expected, over the path health really takes: fan-in,
+// qualification, the source cache's arm, then the client's stream.
 func awaitConnHealth(t *testing.T, health <-chan gwrpc.Event, conn string, want bool) {
 	t.Helper()
 	deadline := time.After(90 * time.Second)
@@ -53,26 +51,26 @@ func TestMountPartitionServesCache(t *testing.T) {
 	ctx := context.Background()
 	num := func(v any) int64 { f, _ := v.(float64); return int64(f) }
 
-	// Remote node: one local. Keep its address — the revival must land on
-	// the SAME addr the connection dials.
+	// The revival must land on the same address the connection dials, so
+	// the remote node's address is kept.
 	remoteHome := t.TempDir()
 	freshHome(t, remoteHome)
-	// The connection door's socket lives under the home, so a revival on the same
-	// home lands on the SAME path the connection dials.
+	// The connection door's socket lives under the home, so a revival on
+	// the same home lands on the same path.
 	remoteOrigin, remoteAddr, stopRemote := startServeProc(t, bin, remoteHome, "127.0.0.1:0")
 	creds := dialtest.Server(t, t.TempDir())
 
-	// Local node: localdb + the builtin transport; the connection is
-	// server.yaml CONFIG (v2 #269), declared before first serve.
+	// The local node's connection is server.yaml config, declared before
+	// first serve.
 	localHome := t.TempDir()
 	freshHome(t, localHome)
 	appendConnectionsYAML(t, localHome, sshConnectionYAML(t, "partconn1", creds, remoteAddr))
 	localOrigin, _ := startServe(t, bin, localHome, "127.0.0.1:0")
 	cl := clientFor(localOrigin)
 
-	// The connection lands on the remote HOME — personal's root grid
-	// (remote-menu, 2026-08-16) — writable directly. The transport's id
-	// (the cache file's name) is the row's leading segment.
+	// The connection lands on the remote home, writable directly. The
+	// transport's id, which names the cache file, is the row's leading
+	// segment.
 	personalChild := awaitConnRoot(t, localOrigin, "partconn1")
 	lp := rpc(t, localOrigin, "Handshake", map[string]any{})
 	var homeRoot string
@@ -83,14 +81,13 @@ func TestMountPartitionServesCache(t *testing.T) {
 		}
 	}
 
-	// One live subscription, the way the real client holds one: it is what
-	// carries a connection's health down through the source cache, and the
-	// establishment it makes is the whole-source walk's own trigger. Opened
-	// BEFORE the tiles exist, and given a moment to settle, so nothing below
-	// can have been warmed by that walk. The whole stream lives in its own
-	// goroutine: over HTTP/1.1 the call does not return until the first event
-	// arrives, while the server-side subscription — and its walk — starts as
-	// soon as the request lands.
+	// One live subscription, as the real client holds one. It carries a
+	// connection's health down through the source cache, and establishing it
+	// triggers the whole-source walk. It opens before the tiles exist and
+	// settles, so that walk cannot have warmed anything below. It lives in
+	// its own goroutine because over HTTP/1.1 the call does not return until
+	// the first event arrives, while the server-side walk starts as soon as
+	// the request lands.
 	subCtx, subCancel := context.WithCancel(ctx)
 	defer subCancel()
 	health := make(chan gwrpc.Event, 64)
@@ -115,7 +112,8 @@ func TestMountPartitionServesCache(t *testing.T) {
 	}()
 	time.Sleep(3 * time.Second)
 
-	// Through the chain: a well holding a WARMED text, a NEVER-READ text.
+	// Through the chain: a well holding one text that is warmed and one
+	// that is never read.
 	well := rpc(t, localOrigin, "CreateTile", map[string]any{
 		"gridId": personalChild,
 		"tile":   map[string]any{"kind": "well", "x": 0, "y": 0, "w": 1, "h": 1, "altText": "trip"},
@@ -135,8 +133,8 @@ func TestMountPartitionServesCache(t *testing.T) {
 	if _, err := cl.WriteContent(ctx, coldT["id"].(string), num(coldT["version"]), []byte("cold words")); err != nil {
 		t.Fatal(err)
 	}
-	// A second never-read text, for the re-warm after the revival: this one is
-	// not read even then, so what warms it can only be the walk.
+	// A second never-read text for the re-warm after the revival. It is not
+	// read even then, so only the walk can warm it.
 	colderT := rpc(t, localOrigin, "CreateTile", map[string]any{
 		"gridId": wellChild,
 		"tile":   map[string]any{"kind": "text", "x": 4, "y": 0, "w": 1, "h": 1},
@@ -145,8 +143,7 @@ func TestMountPartitionServesCache(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// WARM the cache: the grids and exactly one body. (Writes are never
-	// cached — only these reads are.)
+	// Warm the cache with the grids and one body. A write is never cached.
 	rpc(t, localOrigin, "GetGrid", map[string]any{"gridId": personalChild})
 	rpc(t, localOrigin, "GetGrid", map[string]any{"gridId": wellChild})
 	if body, _, _, err := cl.ReadContent(ctx, warmT["id"].(string)); err != nil || string(body) != "warmed words" {
@@ -156,11 +153,11 @@ func TestMountPartitionServesCache(t *testing.T) {
 		t.Fatalf("source cache file missing (the node wiring): %v", err)
 	}
 
-	// ── THE PARTITION ──────────────────────────────────────────────────
+	// The partition.
 	stopRemote()
 
-	// Warmed reads serve STALE (poll: the dial layer needs a beat to start
-	// answering Unavailable instead of hanging on half-open sockets).
+	// Warmed reads serve stale. This polls, because the dial layer needs a
+	// beat to answer Unavailable instead of hanging on half-open sockets.
 	deadline := time.Now().Add(60 * time.Second)
 	var staleBody []byte
 	var err error
@@ -174,13 +171,12 @@ func TestMountPartitionServesCache(t *testing.T) {
 	if err != nil || string(staleBody) != "warmed words" {
 		t.Fatalf("dark warmed read = %q (%v), want the cached bytes", staleBody, err)
 	}
-	// The memory says so on the wire (#256): the cache-served grid wears
-	// the stale bit through the whole real chain — sourcecache → server →
-	// Connect JSON — which is what the client's offline chip reads. Polled,
-	// because "this serve is a memory" waits on the node LEARNING that the
-	// connection is dark: a call of its own failing transport-shaped, or the
-	// connection's health saying so on the event stream. The grid was read
-	// seconds ago, so its own age says nothing yet.
+	// The cache-served grid carries the stale bit through sourcecache, the
+	// server and Connect JSON, which is what the client's offline chip
+	// reads. It polls because the bit waits on the node learning that the
+	// connection is dark, either from a call of its own failing
+	// transport-shaped or from the connection's health on the event stream.
+	// The grid was read seconds ago, so its age says nothing yet.
 	deadline = time.Now().Add(60 * time.Second)
 	var g map[string]any
 	for {
@@ -196,10 +192,9 @@ func TestMountPartitionServesCache(t *testing.T) {
 	if len(g["tiles"].([]any)) != 3 {
 		t.Fatalf("dark grid read has %d tiles, want the cached 3", len(g["tiles"].([]any)))
 	}
-	// A never-read body fails HONESTLY — served-wrong would be worse than
-	// unavailable. Both of them: colderT failing here is also what says the
-	// establishment walk never reached it, so the re-warm below can only be
-	// the recovery's doing.
+	// A never-read body fails rather than serving something wrong. colderT
+	// failing here also says the establishment walk never reached it, so the
+	// re-warm below can only be the recovery's doing.
 	if _, _, _, err := cl.ReadContent(ctx, coldT["id"].(string)); err == nil {
 		t.Fatal("dark read of never-cached bytes must fail, not fabricate")
 	}
@@ -208,10 +203,9 @@ func TestMountPartitionServesCache(t *testing.T) {
 	}
 	awaitConnHealth(t, health, "partconn1", false)
 
-	// The OFFLINE DEEP COPY (the owner-decision scenario, end to end over
-	// real binaries): right-drag the remote well into the local plugin
-	// while the mount is dark. Cached text → real copy; never-read text →
-	// LINK to the original.
+	// The offline deep copy: right-drag the remote well into the local
+	// plugin while the mount is dark. Cached text becomes a real copy and
+	// never-read text becomes a link to the original.
 	copyResp := rpc(t, localOrigin, "CloneTile", map[string]any{
 		"tileId": well["id"], "version": 0, "destGridId": homeRoot, "x": 5, "y": 5,
 	})["tile"].(map[string]any)
@@ -239,10 +233,9 @@ func TestMountPartitionServesCache(t *testing.T) {
 		t.Fatalf("offline links target %v, want the two never-read originals", linked)
 	}
 
-	// ── THE REVIVAL ────────────────────────────────────────────────────
-	// Same address, same DB: the connection self-heals (sshdial backoff
-	// caps at 10s) and the cold body reads LIVE — proof the cache answers
-	// only when the mount cannot.
+	// The revival. On the same address and the same DB the connection
+	// self-heals, its dial backoff capping at 10s, and the cold body reads
+	// live, so the cache answers only when the mount cannot.
 	_, _, stop2 := startServeProc(t, bin, remoteHome, strings.TrimPrefix(remoteOrigin, "http://"))
 	if stop2 == nil {
 		t.Fatal("remote revival failed")
@@ -263,13 +256,11 @@ func TestMountPartitionServesCache(t *testing.T) {
 		t.Fatal(fmt.Sprintf("the mount never healed after revival on %s", remoteAddr))
 	}
 
-	// ── THE RE-WARM (#275) ─────────────────────────────────────────────
-	// A recovered connection re-kicks the source's prefetch walk, so the
-	// promise — the cache holds a recent copy of what you did NOT happen to
-	// read — is true again without a restart. `colderT` is never read live,
-	// so the only thing that can warm it is that walk. The health-up on this
-	// stream passed through the cache's own arm on its way here, which is the
-	// kick; what follows it is a handful of small reads.
+	// The re-warm. A recovered connection re-kicks the source's prefetch
+	// walk, so the cache holds a recent copy of what nobody read, without a
+	// restart. colderT is never read live, so only that walk can warm it.
+	// The health-up on this stream passed through the cache's arm on the way
+	// here, which is the kick.
 	awaitConnHealth(t, health, "partconn1", true)
 	time.Sleep(20 * time.Second)
 	stop2()

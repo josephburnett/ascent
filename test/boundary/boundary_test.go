@@ -1,9 +1,7 @@
-// Package boundary codifies the module structure: the dependency arrows
-// between the in-repo modules, and the api module's dependency budget. It
-// imports nothing of ours — it reads the tree and shells out to `go list` — so
-// it can police every module without being inside any of them. A wrong arrow
-// is a failing build rather than a review argument, because this coupling
-// erodes when left to intention.
+// Package boundary pins the module structure: the dependency arrows between
+// the in-repo modules, and the api module's dependency budget. It imports
+// nothing of ours, reading the tree and shelling out to `go list`, so it can
+// police every module without being inside any of them.
 package boundary
 
 import (
@@ -19,27 +17,26 @@ import (
 
 const repoModule = "github.com/josephburnett/gridwell"
 
-// pluginsModule is the plugins repository. Nothing here may reach into it:
-// gridwell owns the door, that repository owns the plugins.
+// pluginsModule is the plugins repository. Nothing here may reach into it.
 const pluginsModule = "github.com/josephburnett/gridwell-plugins"
 
 // modules maps each in-repo module, by path suffix with "" for the root, to
-// the other in-repo modules its non-test packages may import. Tests are exempt
-// by construction: `go list .Imports` excludes test files, and a seam test
-// deliberately crosses.
+// the other in-repo modules its non-test packages may import. Tests are
+// exempt, because `go list .Imports` excludes test files and a seam test
+// crosses on purpose.
 var modules = map[string][]string{
 	// The api imports nothing of ours: it is the contract.
 	"api": {},
 	// doctype: neutral text-document semantics, self-contained.
 	"internal/doctype": {},
-	// The plugins are not here at all: they are their own repository, whose
-	// modules depend on the api and never on this one. TestNoPluginImplementation
-	// below is what keeps it that way.
+	// The plugins are their own repository, whose modules depend on the api
+	// and never on this one. TestNoPluginImplementation keeps it that way.
 	//
-	// The root module is the server library and its embedded client: the api
-	// and the neutral packages, never a plugin implementation.
+	// The root module is the server library and its embedded client: the
+	// api and the neutral packages, never a plugin implementation.
 	"": {"api", "internal/doctype"},
-	// The stock host: server and api. No plugins; it spawns binaries.
+	// The stock host takes the server and the api. It spawns plugin
+	// binaries rather than importing them.
 	"apps/gridwell": {"", "api", "internal/doctype"},
 }
 
@@ -129,11 +126,10 @@ func TestArrows(t *testing.T) {
 	}
 }
 
-// TestAPIDependencyBudget pins the api module's direct dependencies. That
-// graph is inherited by every plugin ever written, so a new entry is a
-// deliberate decision rather than drift. The budget is wire only: host
-// persistence lives in the root module, so no third-party plugin inherits a
-// database driver for code it never calls.
+// TestAPIDependencyBudget pins the api module's direct dependencies. Every
+// plugin ever written inherits that graph, so a new entry is a decision. The
+// budget is wire only, and host persistence lives in the root module, so no
+// third-party plugin inherits a database driver it never calls.
 func TestAPIDependencyBudget(t *testing.T) {
 	allowed := map[string]bool{
 		"connectrpc.com/connect":         true,
@@ -167,25 +163,19 @@ func TestAPIDependencyBudget(t *testing.T) {
 	}
 }
 
-// TestNoPluginImplementation is the standing pin on the third-party door: no
-// package in this repository, TEST FILES INCLUDED, may import a plugin
-// implementation, and no module here may even declare the plugins repository
-// as a dependency. The host must not know its plugins — every plugin-specific
-// behavior rides a wire declaration — and this separation has eroded
-// repeatedly when left to intention, so it is machinery, not a review
-// argument.
+// TestNoPluginImplementation pins the third-party door. No package in this
+// repository, test files included, may import a plugin implementation, and no
+// module here may declare the plugins repository as a dependency, so every
+// plugin-specific behavior has to ride a wire declaration.
 //
-// Tests are the half that used to leak: a seam test that linked the fs plugin
-// gave the host tree an import edge no production code had. They reach a real
-// plugin the way production does instead — internal/plugintest spawns the
-// shipped gridwell-plugin-<kind> binary through compose.LoadPlugin.
+// A test reaches a real plugin the way production does: internal/plugintest
+// spawns the shipped gridwell-plugin-<kind> binary through
+// compose.LoadPlugin.
 func TestNoPluginImplementation(t *testing.T) {
 	root := repoRoot(t)
 	for mod := range modules {
 		dir := filepath.Join(root, mod)
-		// Every import edge, including the ones only tests have: Imports is
-		// the non-test set, TestImports the in-package test files', and
-		// XTestImports the _test package's.
+		// Every import edge, the ones only tests have included.
 		cmd := exec.Command("go", "list", "-f",
 			`{{.ImportPath}} {{join .Imports " "}} {{join .TestImports " "}} {{join .XTestImports " "}}`, "./...")
 		cmd.Dir = dir
@@ -204,8 +194,8 @@ func TestNoPluginImplementation(t *testing.T) {
 			}
 		}
 	}
-	// A go.mod that names the plugins repository at all — require or replace —
-	// is the same coupling one step earlier, and would let an import back in.
+	// A go.mod that names the plugins repository, by require or by
+	// replace, is the same coupling one step earlier.
 	mods, err := filepath.Glob(filepath.Join(root, "**", "go.mod"))
 	if err != nil {
 		t.Fatal(err)
@@ -231,37 +221,30 @@ func TestNoPluginImplementation(t *testing.T) {
 }
 
 // doorServerOwners maps each source file allowed to construct a door server
-// to why it may. Two construction shapes are pinned here: the raw http.Server
-// literal and the raw gRPC server constructor. Both are how a node door is
-// stood up, and both were copied inline across production and its harnesses
-// until a copy diverged (1b7f98d8: the connection door's header timeout lived
-// in node.go and not in the harnesses that served it, and Go 1.26.6 turned
-// that timeout into a stream killer on exactly the path no harness ran). The
-// shapes now have one owner each; this pins that.
+// to why it may. The two shapes pinned here are the raw http.Server literal
+// and the raw gRPC server constructor, and each has one owner, so a harness
+// cannot serve a door configured differently from the node's.
 //
-// nodeexport.go is the door owner: WebDoorServer and ConnectionDoorServer are
-// the two http.Server shapes, and ConnectionHandler is the one gRPC server the
-// node doors carry. The other two entries are not node doors and are exempt on
-// their merits: plugintest stands up a plugin subprocess's own gRPC server
-// (the third-party door, not a node door), and the namespace round-trip test
-// stands up a throwaway gRPC server to exercise the namespace codec end to end.
+// nodeexport.go owns the node doors: WebDoorServer and ConnectionDoorServer
+// are the two http.Server shapes and ConnectionHandler is the gRPC server they
+// carry. The other two entries are not node doors. plugintest stands up a
+// plugin subprocess's own gRPC server, and the namespace round-trip test
+// stands up a throwaway one to exercise the namespace codec end to end.
 var doorServerOwners = map[string]string{
 	"internal/server/nodeexport.go":        "the node's door owner: WebDoorServer, ConnectionDoorServer, ConnectionHandler",
 	"internal/plugintest/plugintest.go":    "not a node door: the plugin subprocess's own gRPC server",
 	"internal/namespace/roundtrip_test.go": "not a node door: a throwaway gRPC server for the namespace codec test",
 }
 
-// TestOneDoorServerOwner is the standing pin on door-server construction: no
-// file in this repository, TEST FILES INCLUDED, builds a raw http.Server or a
-// raw gRPC server outside the owners above. A node door's listener and server
-// configuration is a fact with one owner, not glue every harness rewrites — a
-// harness that builds its own server serves a shape the node does not run, and
-// every seam test then crosses a door the production node never opens. It is
-// machinery, not a review argument, because this exact copy has diverged twice
-// on the connection door alone. Grep, not review, like TestNoPluginImplementation.
+// TestOneDoorServerOwner pins door-server construction. No file in this
+// repository, test files included, builds a raw http.Server or a raw gRPC
+// server outside the owners above. A node door's listener and server
+// configuration has one owner, so a harness that built its own would serve a
+// shape the node never runs and every seam test through it would cross a door
+// that does not exist in production.
 func TestOneDoorServerOwner(t *testing.T) {
 	root := repoRoot(t)
-	// Built by concatenation so this file does not match its own needles.
+	// Concatenated so this file does not match its own needles.
 	httpNeedle := "&http.Server" + "{"
 	grpcNeedle := "grpc.NewServer" + "("
 	skipDir := map[string]bool{".git": true, "node_modules": true}

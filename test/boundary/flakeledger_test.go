@@ -9,10 +9,9 @@ import (
 	"testing"
 )
 
-// TestFlakeLedgerIndexesEveryFlakeNote pins docs/flake-ledger.md to the specs:
-// every file under apps/desktop/e2e and e2e-web whose comments mention a flake
-// must be listed in the ledger by path, so the index cannot drift behind the
-// comments.
+// TestFlakeLedgerIndexesEveryFlakeNote pins that every spec under
+// apps/desktop/e2e and e2e-web whose comments mention a flake is listed in
+// docs/flake-ledger.md by path.
 func TestFlakeLedgerIndexesEveryFlakeNote(t *testing.T) {
 	root := repoRoot(t)
 	ledger, err := os.ReadFile(filepath.Join(root, "docs", "flake-ledger.md"))

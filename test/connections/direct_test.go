@@ -1,9 +1,9 @@
 //go:build connections
 
 // The direct-connect gate: the transport reaches another node's export with
-// no ssh anywhere, which is the two-nodes-on-one-machine case. The connection
-// carries only an addr, and the empty host is the transport selector. Trust is
-// the socket's mode; the ssh bridge remains the authenticated transport across
+// no ssh anywhere, which is two nodes on one machine. The connection carries
+// only an addr, and an empty host selects the transport. Trust is the
+// socket's mode, and the ssh bridge stays the authenticated transport across
 // machines.
 
 package connections_test
@@ -25,17 +25,17 @@ func TestDirectConnectSpawn(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	// Node A: the "other server on this box".
+	// Node A is the other server on this box.
 	remoteHome := t.TempDir()
 	freshHome(t, remoteHome)
-	// remoteAddr is the connection door: its unix socket path, the only thing
-	// a connection can dial. The web origin is not it.
+	// remoteAddr is the connection door's unix socket path, the only thing
+	// a connection can dial.
 	_, remoteAddr := startServe(t, bin, remoteHome, "127.0.0.1:0")
 
-	// Node B: home plus the transport. A direct connection — addr only, host
-	// empty, and no sshd anywhere in this test — declared in server.yaml
-	// before first serve. Its root is the remote's home, exactly where a
-	// direct client of that node boots: writable and immediately usable.
+	// Node B declares a direct connection in server.yaml before first
+	// serve: addr only, host empty, no sshd. Its root is the remote's home,
+	// where a direct client of that node boots, writable and usable at
+	// once.
 	localHome := t.TempDir()
 	freshHome(t, localHome)
 	appendConnectionsYAML(t, localHome, fmt.Sprintf("connections:\n    - name: dconn1\n      addr: %s\n", remoteAddr))
@@ -52,8 +52,8 @@ func TestDirectConnectSpawn(t *testing.T) {
 		t.Fatalf("home grid nodeNs = %q, want the two-segment <remote>/<conn> chain", nodeNS)
 	}
 
-	// The routed menu: asking with the home grid's node_ns answers the remote
-	// node's plugins, which is the + menu a pane inside this node shows.
+	// Asking with the home grid's node_ns answers the remote node's
+	// plugins, which is the + menu a pane inside this node shows.
 	menu := rpc(t, localOrigin, "Handshake", map[string]any{"namespace": nodeNS})
 	mp := menu["plugins"].([]any)
 	if len(mp) != 1 {
