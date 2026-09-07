@@ -15,20 +15,17 @@ import (
 
 // Rendered grid previews: a text tile whose stored text_mode is "rendered"
 // previews as the rendered document, so how you leave a tile is how it
-// presents from outside. markdown.RenderHTML stays the one renderer; this
-// file rasterizes its sanitized output through an SVG foreignObject image and
-// draws that bitmap into the preview. There is no second layout engine.
-// Rasterization is async, so the raw source paints until the image decodes,
-// the same "canvas paints until ready" shape the overlays use.
+// presents from outside. markdown.RenderHTML stays the one renderer, and this
+// rasterizes its output through an SVG foreignObject image. Rasterization is
+// async, so raw source paints until the image decodes.
 
-// renderedPreviewMaxH caps the rasterized document height in CSS px. A
-// preview window scrolled beyond the cap falls back to raw source —
-// previews are a glance, not a reader.
+// renderedPreviewMaxH caps the rasterized document height in CSS px. Beyond
+// it a preview falls back to raw source: previews are a glance, not a
+// reader.
 const renderedPreviewMaxH = 4000.0
 
 // renderedPreviewBucket quantizes the layout width so continuous grid zoom
-// re-rasterizes at steps, not per frame; drawImage stretches the current
-// raster between steps.
+// re-rasterizes at steps, not per frame.
 const renderedPreviewBucket = 64.0
 
 // renderedPreview is one tile's cached raster.
@@ -41,17 +38,12 @@ type renderedPreview struct {
 	failed  bool
 }
 
-// renderedPreviewFor returns the raster for tile n laid out at (roughly)
-// logical width contentW, kicking an async rasterization on a cache miss.
-// ok is false until the image has decoded — and stays false on a failed
-// decode — so the caller paints raw source in the meantime.
-//
-// The cache is keyed per (tile, width bucket), not per tile. Two consumers of
-// the same tile at different widths — two split panes, or two grid previews
-// at different zooms — would otherwise replace a single per-tile entry every
-// frame, each creation revoking the other's still-loading blob URL, so no
-// raster would ever decode. Stale-version entries for the same tile are swept
-// at insert; whole-tile cleanup is dropRenderedPreview, on TileRemoved.
+// renderedPreviewFor returns the raster for tile n at roughly logical width
+// contentW, kicking an async rasterization on a miss. ok stays false until
+// the image decodes, so the caller paints raw source. The cache is keyed per
+// (tile, width bucket): two consumers at different widths would otherwise
+// replace one entry every frame, each revoking the other's loading blob
+// URL.
 func (a *App) renderedPreviewFor(n *gridwellv1.Tile, contentW float64) (*renderedPreview, bool) {
 	bucket := math.Max(renderedPreviewBucket,
 		math.Round(contentW/renderedPreviewBucket)*renderedPreviewBucket)
@@ -66,9 +58,8 @@ func (a *App) renderedPreviewFor(n *gridwellv1.Tile, contentW float64) (*rendere
 	if !ok {
 		return nil, false // blob fetch in flight; the raw path warms it too
 	}
-	// Replace a stale same-bucket entry, and sweep other buckets of this
-	// tile whose version moved on; they re-rasterize on next use.
-	// dropRenderedPreview is the deletion twin of these revokes.
+	// Replace a stale same-bucket entry and sweep other buckets whose version
+	// moved on; they re-rasterize on next use.
 	if old, ok := a.views.renderedPrev[mapKey]; ok && old.url != "" {
 		js.Global().Get("URL").Call("revokeObjectURL", old.url)
 	}
@@ -85,9 +76,8 @@ func (a *App) renderedPreviewFor(n *gridwellv1.Tile, contentW float64) (*rendere
 	e := &renderedPreview{key: key, rasterW: bucket}
 	a.views.renderedPrev[mapKey] = e
 
-	// Serialize the sanitized render through the DOM so goldmark's HTML5
-	// output (unclosed <br>, <img>) becomes well-formed XML — the SVG
-	// foreignObject is an XML context.
+	// The SVG foreignObject is an XML context, so serialize through the DOM
+	// to make goldmark's HTML5 output well-formed.
 	div := a.doc.Call("createElement", "div")
 	div.Set("innerHTML", textedit.PresentationHTML(n, body))
 	xhtml := js.Global().Get("XMLSerializer").New().Call("serializeToString", div).String()
@@ -117,10 +107,9 @@ func (a *App) renderedPreviewFor(n *gridwellv1.Tile, contentW float64) (*rendere
 	return e, false
 }
 
-// drawRenderedPreview windows the tile's raster into (x, y+topInset, w,
-// h-topInset) at the preview frame's scroll, reporting whether it drew. False
-// — raster pending, failed, or scrolled past the cap — means the caller
-// paints the raw fallback.
+// drawRenderedPreview windows the tile's raster at the preview frame's
+// scroll, reporting whether it drew. False means the caller paints the raw
+// fallback.
 func (a *App) drawRenderedPreview(n *gridwellv1.Tile, frame markdown.PreviewFrame,
 	x, y, w, h, topInset float64) bool {
 	e, ok := a.renderedPreviewFor(n, frame.ContentW)
@@ -144,11 +133,9 @@ func (a *App) drawRenderedPreview(n *gridwellv1.Tile, frame markdown.PreviewFram
 	return true
 }
 
-// dropRenderedPreview releases a removed tile's rendered-preview entry: the
-// blob object URL is revoked and the decoded raster freed with the map entry.
-// Fired from the TileRemoved event arm, beside urlPreview.Drop — the two
-// preview caches age out together, or deleting text tiles leaks image
-// resources for the life of the page.
+// dropRenderedPreview releases a removed tile's entries, revoking their blob
+// URLs. Fired from the TileRemoved arm beside urlPreview.Drop, so the two
+// preview caches age out together and deleting text tiles leaks nothing.
 func (a *App) dropRenderedPreview(tileID string) {
 	prefix := tileID + "\x00"
 	for mk, e := range a.views.renderedPrev {

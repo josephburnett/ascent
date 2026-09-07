@@ -2,17 +2,11 @@
 
 package main
 
-// Navigation: one descent and one ascent.
-//
-// Physically there is one gesture — go through a doorway, or come back out
-// the way you came in. The decisions are client/nav's: a gesture plus a world
-// snapshot in, an ordered effect list out. This file is the gathering half —
-// every impure read the machine needs, resolved up front — and nav_exec.go is
-// the executing half. Nothing here decides anything.
-//
-// The data model's ownership boundaries — a well, a link into another
-// namespace, a content tile — are wire declarations on the doorway tile. The
-// machine reads them; no call site switches on a kind.
+// Navigation: one descent and one ascent. The decisions are client/nav's, a
+// gesture plus a world snapshot in and an ordered effect list out. This file
+// is the gathering half and nav_exec.go the executing half; nothing here
+// decides anything. Ownership boundaries are wire declarations on the doorway
+// tile, which the machine reads, so no call site switches on a kind.
 
 import (
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
@@ -24,18 +18,14 @@ import (
 	"github.com/josephburnett/gridwell/client/pluginhealth"
 )
 
-// navGestureSteps bounds the gather-plan-execute loop. A plan asks to be
-// re-planned only after it has consumed something — a running transition
-// landed, one ascent hop popped — so the loop always terminates; the bound is
-// the backstop that turns a machine bug into a notice instead of a hang.
+// navGestureSteps turns a machine bug into a notice instead of a hang. The
+// loop terminates anyway, since a plan re-plans only after consuming
+// something.
 const navGestureSteps = 64
 
-// runGesture is the one entry into navigation: gather the world, plan the
-// gesture against it, run the effects, and repeat while the machine hands
-// back a continuation gesture. The re-gather is what keeps a step whose
-// successor reads state the effects above it just changed honest — a descent
-// that first lands a running transition, and each hop of a multi-level
-// ascent.
+// runGesture is the one entry into navigation: gather, plan, run, repeat
+// while the machine hands back a continuation. The re-gather keeps a step
+// honest that reads state the effects above it changed.
 func (a *App) runGesture(g nav.Gesture) {
 	for i := 0; i < navGestureSteps; i++ {
 		plan := a.nav.Do(g, a.navWorld(g))
@@ -53,30 +43,26 @@ func (a *App) descend(p *pane.Pane, tile *gridwellv1.Tile) {
 	a.runGesture(nav.Gesture{Kind: nav.GestureDescend, PaneID: p.ID, Door: tile})
 }
 
-// ascend leaves n levels of pane p's place: the ascent verb, for one level or
-// several. animate asks for the zoom-out onto the doorway on the last hop;
-// false makes even that instant, for the paths with no footprint to zoom out
-// of.
+// ascend leaves n levels of pane p's place. animate asks for the zoom-out
+// onto the doorway on the last hop; false is for the paths with no footprint
+// to zoom out of.
 func (a *App) ascend(p *pane.Pane, n int, animate bool) {
 	a.runGesture(nav.Gesture{Kind: nav.GestureAscend, PaneID: p.ID, N: n, Animate: animate})
 }
 
-// ascendPane is the one-level ascent gesture: the middle button, and the
-// bar's slot. It is ascend(1), named for what the gesture means.
+// ascendPane is ascend(1), named for what the gesture means: the middle
+// button, and the bar's slot.
 func (a *App) ascendPane(p *pane.Pane) {
 	a.ascend(p, 1, true)
 }
 
-// navReEngage re-applies the auto-live verdict to a pane that is sitting in a
-// content descent: the restore paths' arm of the one go-live owner. The
-// machine reads the row, heals a stale path, and re-checks that the pane is
-// still in this descent, since the read is asynchronous.
+// navReEngage re-applies the auto-live verdict to a pane sitting in a content
+// descent: the restore paths' arm of the one go-live owner.
 func (a *App) navReEngage(paneID, tileID string) {
 	a.runGesture(nav.Gesture{Kind: nav.GestureReEngage, PaneID: paneID, TileID: tileID})
 }
 
-// navWorld resolves the snapshot a gesture is planned against: the common
-// half every verb reads, plus the verb's own.
+// navWorld resolves the snapshot a gesture is planned against.
 func (a *App) navWorld(g nav.Gesture) nav.World {
 	w := a.navWorldCommon()
 	switch g.Kind {
@@ -95,8 +81,7 @@ func (a *App) navWorld(g nav.Gesture) nav.World {
 }
 
 // navWorldForLevel resolves the pane tile's row as the landing pane's grid
-// holds it: what the return animation zooms out of, and nil when the grid was
-// never cached, which is an instant landing.
+// holds it. A grid that was never cached makes the landing instant.
 func (a *App) navWorldForLevel(paneID, tileID string) *nav.LevelWorld {
 	lw := &nav.LevelWorld{}
 	p := a.tree.FindPane(paneID)
@@ -113,14 +98,9 @@ func (a *App) navWorldForLevel(paneID, tileID string) *nav.LevelWorld {
 	return lw
 }
 
-// navWorldForRestore is the whole snapshot a restore and every step of its
-// walk are planned against: the common half plus the cache as the walk reads
-// it.
-//
-// The cached set is projected whole, not a chosen subset, because which grids
-// a path reaches is what the walk decides — a gatherer that guessed would be
-// running the walk itself. Restores are boot and popstate only, so this runs
-// a handful of times a session.
+// navWorldForRestore is the snapshot a restore and every step of its walk are
+// planned against. The cached set is projected whole, because which grids a
+// path reaches is what the walk decides.
 func (a *App) navWorldForRestore() nav.World {
 	w := a.navWorldCommon()
 	rw := &nav.RestoreWorld{
@@ -150,12 +130,8 @@ func (a *App) navWorldForRestore() nav.World {
 	for id := range a.fetch.gridLoadFailed {
 		rw.Failed[id] = true
 	}
-	// The framing each doorway's grid was left at, from the row that owns it
-	// — a menu row's own grid, or one of its declared entries'. Which one the
-	// address names is the machine's to decode, so every one is resolved;
-	// door.Places is ByRoot's answer set, which is exactly what
-	// persistedGridView can resolve, and a restore is always the focused
-	// pane's.
+	// Which doorway the address names is the machine's to decode, so every
+	// one is resolved. door.Places is ByRoot's answer set.
 	if p := a.tree.FocusedPane(); p != nil {
 		for _, pd := range door.Places(a.allPlugins()) {
 			if cx, cy, zoom, ok := a.persistedGridView(p, pd.Plugin.RootGridId, nil); ok {
@@ -167,8 +143,7 @@ func (a *App) navWorldForRestore() nav.World {
 	return w
 }
 
-// navWorldCommon resolves the half of the snapshot every verb reads: where
-// each pane is, what it is animating, what the window can do.
+// navWorldCommon resolves the half of the snapshot every verb reads.
 func (a *App) navWorldCommon() nav.World {
 	w := nav.World{
 		Focus:           a.tree.Focus,
@@ -189,8 +164,8 @@ func (a *App) navWorldCommon() nav.World {
 	rects := a.layoutPanes()
 	a.tree.Walk(func(p *pane.Pane) {
 		r, onScreen := rects[p.ID]
-		// One walk of the place per pane: the grid its place names, and that
-		// grid's scratch stamp, are the same read.
+		// One walk of the place per pane: the grid and its scratch stamp are
+		// the same read.
 		gid := a.gridIDForPane(p)
 		w.Panes = append(w.Panes, nav.PaneView{
 			ID:          p.ID,
@@ -208,8 +183,8 @@ func (a *App) navWorldCommon() nav.World {
 		})
 		w.Animating[p.ID] = a.trans.Active(p.ID)
 	})
-	// A missing key means unknown, which is not dead: the two maps keep that
-	// distinction across the seam.
+	// A missing key means unknown, which is not dead, so the two maps keep
+	// that distinction across the seam.
 	for id, alive := range a.shellAlive {
 		w.ShellAlive[id] = alive
 		w.ShellAliveKnown[id] = true
@@ -217,8 +192,8 @@ func (a *App) navWorldCommon() nav.World {
 	return w
 }
 
-// navWorldForDescend resolves the doorway half: the declarations only the
-// shim can read, each through the predicate that owns it.
+// navWorldForDescend resolves the doorway declarations only the shim can
+// read, each through the predicate that owns it.
 func (a *App) navWorldForDescend(tile *gridwellv1.Tile) *nav.DoorWorld {
 	d := &nav.DoorWorld{
 		DeadLink: a.deadLink(tile),
@@ -233,10 +208,8 @@ func (a *App) navWorldForDescend(tile *gridwellv1.Tile) *nav.DoorWorld {
 		return d
 	}
 	// A doorway with no target: ask pluginhealth why, so the click says
-	// something instead of silently doing nothing. The id is the plugin uuid
-	// itself on a menu row (chained for a connection, "i9sm6ff/ltvv2f9") and
-	// node-qualified on a link tile, so try both shapes or a connection's
-	// dial status never surfaces.
+	// something. The id is bare on a menu row and node-qualified on a link
+	// tile, so both shapes are tried.
 	pl, ok := a.pluginByUUID(tile.Id)
 	if !ok {
 		pl, ok = a.pluginByUUID(rpc.LocalOf(tile.Id))
@@ -250,9 +223,8 @@ func (a *App) navWorldForDescend(tile *gridwellv1.Tile) *nav.DoorWorld {
 	return d
 }
 
-// navWorldForAscend resolves the frame being left: the content row (through
-// the cache-wide walk that finds an off-grid ephemeral visit), the doorway
-// row one level out, and the framing the landing grid was left at.
+// navWorldForAscend resolves the frame being left: the content row, the
+// doorway row one level out, and the framing the landing grid was left at.
 func (a *App) navWorldForAscend(paneID string) *nav.LeaveWorld {
 	lw := &nav.LeaveWorld{}
 	p := a.tree.FindPane(paneID)
@@ -274,9 +246,8 @@ func (a *App) navWorldForAscend(paneID string) *nav.LeaveWorld {
 			}
 		}
 	}
-	// The viewport the ascent lands at when the frame carries none, having
-	// been restored from a URL or a layout blob: the grid's persisted
-	// framing, from the row that owns it.
+	// A frame restored from a URL or a layout blob carries no viewport, so
+	// the ascent lands at the grid's persisted framing.
 	landing := p.Popped(1)
 	if !landing.HasView() && !landing.Content {
 		if cx, cy, zoom, ok := a.persistedGridView(p, landing.Anchor(), landing.Path()); ok {
@@ -286,11 +257,9 @@ func (a *App) navWorldForAscend(paneID string) *nav.LeaveWorld {
 	return lw
 }
 
-// urlSurfaces and shellSurfaces list the panes currently holding a live
-// surface, keyed by the content they show: the input to pane.TakeOver, and
-// the snapshot the close-all sweeps walk at unload. They read straight off
-// the live handles, the one owner of "this pane has a surface open"; nothing
-// is mirrored.
+// urlSurfaces and shellSurfaces list the panes holding a live surface: the
+// input to pane.TakeOver, read straight off the live handles so nothing is
+// mirrored.
 func (a *App) urlSurfaces() []pane.Holder {
 	var out []pane.Holder
 	for id, pl := range a.locals {
