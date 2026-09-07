@@ -54,7 +54,7 @@ func TestSuggest(t *testing.T) {
 			input: "git",
 			limit: 5,
 			want: []string{
-				// comparable forms start with "git" → prefix bucket, input order.
+				// comparable forms start with "git", so prefix bucket in input order.
 				"https://github.com/josephburnett/gridwell",
 				"http://github.com/explore",
 			},
@@ -109,8 +109,8 @@ func TestSuggest(t *testing.T) {
 	}
 }
 
-// TestSuggestMatchesTitles: typing words from a page's title finds its url,
-// and an address-prefix match still outranks a title hit.
+// Typing words from a page's title finds its url, and an address-prefix match
+// still outranks a title hit.
 func TestSuggestMatchesTitles(t *testing.T) {
 	cands := []Candidate{
 		{URL: "https://news.ycombinator.com", Title: "Hacker News"},
@@ -128,9 +128,8 @@ func TestSuggestMatchesTitles(t *testing.T) {
 	if got := urls(Suggest("HACKER news", cands, 5)); !slices.Equal(got, []string{"https://news.ycombinator.com"}) {
 		t.Errorf("case-insensitive title: %v", got)
 	}
-	// "news" prefixes news.ycombinator.com's comparable address and appears
-	// in the other candidate's title — the address-prefix match ranks first
-	// regardless of input order.
+	// "news" prefixes one comparable address and appears in the other's title.
+	// The address-prefix match ranks first whatever the input order.
 	both := Suggest("news", []Candidate{
 		{URL: "https://example.com", Title: "Daily News"},
 		{URL: "https://news.ycombinator.com", Title: ""},
@@ -142,8 +141,7 @@ func TestSuggestMatchesTitles(t *testing.T) {
 }
 
 // TestSuggestPrefixBeatsSubstringAcrossOrder pins the rank rule independent of
-// input order: a later prefix match must still outrank an earlier substring
-// match.
+// input order: a later prefix match still outranks an earlier substring match.
 func TestSuggestPrefixBeatsSubstringAcrossOrder(t *testing.T) {
 	cands := fromURLs(
 		"https://example.com/docs", // "doc" is a substring (after "example.com/")
@@ -159,9 +157,8 @@ func TestSuggestPrefixBeatsSubstringAcrossOrder(t *testing.T) {
 	}
 }
 
-// TestSuggestDedupesSchemeAndWwwVariants: the same address typed with
-// different scheme/www boilerplate collapses to one suggestion (the first
-// seen).
+// The same address typed with different scheme or www boilerplate collapses to
+// one suggestion, the first seen.
 func TestSuggestDedupesSchemeAndWwwVariants(t *testing.T) {
 	cands := fromURLs(
 		"https://example.com",
