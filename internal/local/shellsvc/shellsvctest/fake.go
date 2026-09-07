@@ -22,6 +22,11 @@ type FakeStreamer struct {
 	sessions []*FakeSession
 	killed   []string
 	PaneCmd  string // canned PaneCommand answer
+	// OpenErr, when set, makes every OpenSession fail with it and open no
+	// session — how the real streamer behaves when the PTY layer refuses:
+	// no tmux server, a failed exec, or a platform with no PTY at all
+	// (shelldriver.ErrShellsUnavailable).
+	OpenErr error
 }
 
 func New() *FakeStreamer { return &FakeStreamer{alive: map[string]bool{}} }
@@ -36,6 +41,9 @@ func (f *FakeStreamer) SetAlive(tileID string, alive bool) {
 func (f *FakeStreamer) OpenSession(tid string, mode tmux.Mode, cols, rows uint16) (shellsvc.Session, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.OpenErr != nil {
+		return nil, f.OpenErr
+	}
 	s := &FakeSession{
 		TileID: tid, OpenMode: mode, InitialCols: cols, InitialRows: rows,
 		outCh: make(chan []byte, 64), done: make(chan struct{}),

@@ -16,6 +16,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/josephburnett/gridwell/client/shellwire"
 	"github.com/josephburnett/gridwell/client/shellws"
 	"github.com/josephburnett/gridwell/internal/local"
+	"github.com/josephburnett/gridwell/internal/local/shelldriver"
 	"github.com/josephburnett/gridwell/internal/local/shellsvc"
 	"github.com/josephburnett/gridwell/internal/local/shellsvc/shellsvctest"
 	"github.com/josephburnett/gridwell/internal/local/store"
@@ -199,6 +201,38 @@ func TestShellDoorReportsSessionGone(t *testing.T) {
 	}
 	if f.fake.SessionCount() != 0 {
 		t.Errorf("a dead snapshotted session must not spawn a fresh PTY")
+	}
+}
+
+// A platform with no PTY refuses at the driver, and that refusal must reach
+// the user like any other failed open: an exit frame carrying the reason.
+// This is the seam the Windows build lands on — shelldriver's no-PTY Start
+// returns ErrShellsUnavailable, shellsvc hands it up, and the door turns it
+// into the client's exit message. A refusal that only logged would look to
+// the user like the shell silently vanished.
+//
+// Not SessionGone: nothing here went away. The tile has no session because
+// this node cannot host one, which is the same shape as any open that
+// failed.
+func TestShellDoorSurfacesADriverThatCannotOpen(t *testing.T) {
+	f := newShellDoorFixture(t, Config{})
+	f.fake.OpenErr = shelldriver.ErrShellsUnavailable
+	tile := f.createShell(t, 0, 0)
+	cs := f.clientStack()
+	cs.reg.Open("pane-1", tile.ID, 80, 24)
+	select {
+	case e := <-cs.exit:
+		if e.PaneID != "pane-1" {
+			t.Fatalf("exit = %+v, want it addressed to the opening pane", e)
+		}
+		if !strings.Contains(e.Message, "unavailable") {
+			t.Fatalf("exit message = %q; want the driver's reason carried to the user", e.Message)
+		}
+		if e.SessionGone {
+			t.Errorf("exit = %+v; a node that cannot host a PTY is not a session that went away", e)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("a driver that cannot open must surface, not hang")
 	}
 }
 
