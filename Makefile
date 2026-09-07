@@ -41,7 +41,10 @@ GO_LDFLAGS := -X github.com/josephburnett/gridwell/internal/cli.Version=$(VERSIO
 PLUGINS_DIR ?= ../gridwell-plugins
 WASM := ./web/gridwell.wasm
 WASM_EXEC := ./web/wasm_exec.js
-GOROOT := $(shell go env GOROOT)
+# Backslashes out: on Windows `go env GOROOT` answers C:\..., and every recipe
+# here is a POSIX shell script, where a backslash is an escape and the path
+# silently fails to exist. Git Bash reads C:/... fine.
+GOROOT := $(subst \,/,$(shell go env GOROOT))
 
 DESKTOP := apps/desktop
 
