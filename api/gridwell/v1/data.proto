@@ -142,8 +142,7 @@ message Tile {
   string url_string = 20;
   int64 preview_blob_id = 21;
 
-  // 22, 23 and 24 were fs_path, pid and source_key. No reserved statement
-  // holds them.
+  reserved 22, 23, 24; // fs_path, pid, source_key
 
   // alt_text is the canonical display label, rendered verbatim by the
   // client. Stamped at insert time (for plugin-owned tiles, the entry name;
