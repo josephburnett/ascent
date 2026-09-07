@@ -3,7 +3,10 @@
 package main
 
 import (
+	"google.golang.org/protobuf/proto"
+
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"strings"
 	"syscall/js"
 
@@ -72,9 +75,8 @@ func (a *App) flushWellWheelSaves() {
 		gid := st.gridID
 		delete(a.persist.wellWheelPending, id)
 		tileID := id
-		req := &rpc.SetFramingRequest{
-			TileID:  tileID,
-			Framing: rpc.Framing{Cx: st.cx, Cy: st.cy, Zoom: st.ratio},
+		req := &gridwellv1.SetFramingRequest{
+			TileId: tileID, Cx: st.cx, Cy: st.cy, Zoom: st.ratio,
 		}
 		// The unload transport is the dispatcher's business (write.beacon):
 		// one place decides whether this write goes as an RPC or as a
@@ -123,7 +125,7 @@ func (a *App) persistPaneFraming(p *pane.Pane) {
 			a.persistFraming(p, nil, "", nil)
 			return
 		}
-		a.persistFraming(p, &w, own.DoorAnchor, own.DoorPath)
+		a.persistFraming(p, w, own.DoorAnchor, own.DoorPath)
 	}
 }
 
@@ -141,12 +143,11 @@ func (a *App) persistPaneFraming(p *pane.Pane) {
 //
 // Fired by every ascent flush and by the settle persister
 // (flushFramingSave). A no-op when nothing moved (rpc.Framing.SameAs), so
-// quiet calls do not churn the store. The doorway arm mutates `door` in place,
-// because the local-side ascent transition uses the new values, and patches
-// the cache so the parent's preview renders them before the server's event
-// arrives. During beforeunload the write rides a beacon instead
-// (unload.go).
-func (a *App) persistFraming(p *pane.Pane, door *rpc.Tile, doorAnchor string, doorPath []string) {
+// quiet calls do not churn the store. The doorway arm patches the cache so
+// the parent's preview, and the ascent transition, render the new framing
+// before the server's event arrives. During beforeunload the write rides a
+// beacon instead (unload.go).
+func (a *App) persistFraming(p *pane.Pane, door *gridwellv1.Tile, doorAnchor string, doorPath []string) {
 	// Never a mid-animation viewport. While this pane animates, its centre and
 	// zoom are the transition's scratch values inside whatever place the
 	// current segment installed — presentation, not something the user set —
@@ -159,7 +160,7 @@ func (a *App) persistFraming(p *pane.Pane, door *rpc.Tile, doorAnchor string, do
 		return
 	}
 	var (
-		req    rpc.SetFramingRequest
+		req    gridwellv1.SetFramingRequest
 		foot   = zoomtrans.Well{W: 1, H: 1}
 		cur    rpc.Framing
 		gridID string
@@ -169,11 +170,15 @@ func (a *App) persistFraming(p *pane.Pane, door *rpc.Tile, doorAnchor string, do
 		foot = zoomtrans.Well{W: door.W, H: door.H}
 		cur = rpc.Framing{Cx: door.ViewCx, Cy: door.ViewCy, Zoom: door.ViewZoom}
 		gridID = a.gridIDForPathFrom(doorAnchor, doorPath)
-		req = rpc.SetFramingRequest{TileID: door.ID}
+		req = gridwellv1.SetFramingRequest{TileId: door.Id}
 		commit = func(f rpc.Framing) {
-			door.ViewCx, door.ViewCy, door.ViewZoom = f.Cx, f.Cy, f.Zoom
-			updated := *door
-			a.c.Apply(rpc.Event{Kind: rpc.EventTileChanged, TileChanged: &rpc.TileChanged{Tile: updated}})
+			// A clone, not the row: cache.Grid hands out the cached rows
+			// themselves, and the patch must go through Apply's interlock
+			// rather than land behind it.
+			patched := proto.CloneOf(door)
+			patched.ViewCx, patched.ViewCy, patched.ViewZoom = f.Cx, f.Cy, f.Zoom
+			a.c.Apply(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{
+				TileChanged: &gridwellv1.TileChanged{Tile: patched}}})
 		}
 	} else {
 		if len(p.Path()) > 0 || p.ContentID() != "" {
@@ -185,7 +190,7 @@ func (a *App) persistFraming(p *pane.Pane, door *rpc.Tile, doorAnchor string, do
 		}
 		cur = rpc.Framing{Cx: pl.RootViewCx, Cy: pl.RootViewCy, Zoom: pl.RootViewZoom}
 		gridID = p.Anchor()
-		req = rpc.SetFramingRequest{RootGridID: p.Anchor()}
+		req = gridwellv1.SetFramingRequest{RootGridId: p.Anchor()}
 		commit = func(f rpc.Framing) { a.cacheDoorwayFraming(p.Anchor(), f) }
 	}
 	r := paneRectFor(a, p)
@@ -195,14 +200,14 @@ func (a *App) persistFraming(p *pane.Pane, door *rpc.Tile, doorAnchor string, do
 		return
 	}
 	commit(next)
-	req.Framing = next
+	req.Cx, req.Cy, req.Zoom = next.Cx, next.Cy, next.Zoom
 	// One dispatcher for both rows a framing can live on: the doorway tile
 	// and the root grid. They differ only in which id keys the parked write,
 	// since grid ids and tile ids are separate sequences, never in policy;
 	// neither carries a claim.
-	key := req.TileID
+	key := req.TileId
 	if key == "" {
-		key = req.RootGridID
+		key = req.RootGridId
 	}
 	a.postFramingPersist("SetFraming", gridID, key,
 		func(ctx context.Context) error {
@@ -224,7 +229,7 @@ func (a *App) persistFraming(p *pane.Pane, door *rpc.Tile, doorAnchor string, do
 // page descents carry no text framing at all.
 func (a *App) persistTextScroll(p *pane.Pane) {
 	file, ok := a.descendedTile(p)
-	if !ok || !file.TextDocument() || a.possiblyEphemeral(p, &file) {
+	if !ok || !rpc.TextDocument(file) || a.possiblyEphemeral(p, file) {
 		return
 	}
 	scrollX := int64(p.TextScrollX + 0.5)
@@ -236,24 +241,22 @@ func (a *App) persistTextScroll(p *pane.Pane) {
 	if !textedit.FramingChanged(textedit.FramingOf(file), next) {
 		return
 	}
-	req := &rpc.SetTextViewRequest{
-		TileID: file.ID,
-		TextX:  next.X, TextY: next.Y,
-		TextW: next.W, TextH: next.H,
-		TextMode: next.Mode,
-	}
-	patched := file
+	req := &gridwellv1.SetTileRequest{TileId: file.Id,
+		Tile: &gridwellv1.Tile{Kind: rpc.KindText,
+			TextX: next.X, TextY: next.Y, TextW: next.W, TextH: next.H, TextMode: next.Mode}}
+	patched := proto.CloneOf(file)
 	patched.TextX, patched.TextY = scrollX, scrollY
-	patched.TextW, patched.TextH = req.TextW, req.TextH
+	patched.TextW, patched.TextH = next.W, next.H
 	patched.TextMode = p.TextMode
-	a.c.Apply(rpc.Event{Kind: rpc.EventTileChanged, TileChanged: &rpc.TileChanged{Tile: patched}})
-	a.postFramingPersist("SetTextView", gid, file.ID,
+	a.c.Apply(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{
+		TileChanged: &gridwellv1.TileChanged{Tile: patched}}})
+	a.postFramingPersist("SetTextView", gid, file.Id,
 		func(ctx context.Context) error {
-			_, err := a.cl.SetTextView(ctx, req)
+			_, err := a.cl.SetTile(ctx, req)
 			return err
 		},
 		func() (string, []byte, string) {
-			path, body := rpc.SetTextViewBeacon(req)
+			path, body := rpc.SetTileBeacon(req)
 			return path, body, rpc.BeaconJSONType
 		})
 }

@@ -29,7 +29,7 @@ type SaveQueue struct {
 // server refuses the loser — the client conflicting with itself.
 //
 // An empty content id means the caller could not resolve the owner row; the
-// viewed row is then the document, as rpc.Tile.ContentID and the wasm
+// viewed row is then the document, as rpc.ContentID and the wasm
 // contentKey both fall back, and never the empty chain every document would
 // share.
 func SaveQueueKey(viewedID, contentID string) string {

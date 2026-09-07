@@ -264,7 +264,7 @@ func (alwaysFailInfoPlugin) Info(context.Context, *pb.InfoRequest) (*pb.InfoResp
 // TestListPluginsSurfacesInfoErrorOverTheWire crosses the seam a pure
 // buildPluginInfo unit test cannot reach: server -> Connect wire (proto-JSON)
 // -> rpc.Client.Handshake. InfoError must survive that round trip so the
-// wasm client — which only ever sees an rpc.PluginInfo, never the
+// wasm client — which only ever sees an pb.PluginInfo, never the
 // server's pb.PluginInfo — can classify a broken plugin (client/pluginhealth).
 func TestListPluginsSurfacesInfoErrorOverTheWire(t *testing.T) {
 	client := alwaysFailInfoPlugin{}
@@ -283,8 +283,8 @@ func TestListPluginsSurfacesInfoErrorOverTheWire(t *testing.T) {
 		t.Fatalf("got %d plugins, want 1: %+v", len(plugins.Plugins), plugins.Plugins)
 	}
 	p := plugins.Plugins[0]
-	if p.RootGridID != "" {
-		t.Errorf("broken plugin RootGridID = %q, want empty", p.RootGridID)
+	if p.RootGridId != "" {
+		t.Errorf("broken plugin RootGridID = %q, want empty", p.RootGridId)
 	}
 	if p.InfoError == "" {
 		t.Error("broken plugin must carry a non-empty InfoError over the wire")

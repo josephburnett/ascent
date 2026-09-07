@@ -5,7 +5,12 @@
 // everything else reads it. Js-free and unit-tested.
 package door
 
-import "github.com/josephburnett/gridwell/api/rpc"
+import (
+	"google.golang.org/protobuf/proto"
+
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
+	"github.com/josephburnett/gridwell/api/rpc"
+)
 
 // EntrySeparator joins a menu row's name to one of its entries' names. See
 // EntryName.
@@ -41,9 +46,9 @@ func EntryName(row, entry string) string {
 // The framing follows the grid, not the row: the row's root view belongs to
 // the row's own grid, and the entry carries its own, so a collection reopens
 // where it was left.
-func EntryPlugin(pl rpc.PluginInfo, e rpc.MenuEntry) rpc.PluginInfo {
-	pseudo := pl
-	pseudo.RootGridID = e.GridID
+func EntryPlugin(pl *gridwellv1.PluginInfo, e *gridwellv1.MenuEntry) *gridwellv1.PluginInfo {
+	pseudo := proto.Clone(pl).(*gridwellv1.PluginInfo)
+	pseudo.RootGridId = e.GridId
 	pseudo.RootViewCx, pseudo.RootViewCy, pseudo.RootViewZoom = e.ViewCx, e.ViewCy, e.ViewZoom
 	pseudo.MenuEntries = nil
 	pseudo.Label = EntryName(pl.Label, e.Label)
@@ -74,13 +79,13 @@ const (
 // WellInto finds the well tile whose child grid is anchor — the door a
 // descent into anchor went through. The portal-ascent animation runs the
 // same scan.
-func WellInto(anchor string, tiles map[string]rpc.Tile) (rpc.Tile, bool) {
+func WellInto(anchor string, tiles map[string]*gridwellv1.Tile) (*gridwellv1.Tile, bool) {
 	for _, t := range tiles {
-		if t.ChildGridID == anchor && rpc.IsWellKind(t.Kind) {
+		if t.ChildGridId == anchor && rpc.IsWellKind(t.Kind) {
 			return t, true
 		}
 	}
-	return rpc.Tile{}, false
+	return nil, false
 }
 
 // Find resolves the door into the level rooted at anchor, most-specific
@@ -95,38 +100,36 @@ func WellInto(anchor string, tiles map[string]rpc.Tile) (rpc.Tile, bool) {
 //
 // A None result means the level has no derivable door (a workspace root,
 // an uncached world) — callers keep their fallback.
-func Find(anchor string, parentTiles map[string]rpc.Tile, plugins []rpc.PluginInfo) (rpc.Tile, Kind) {
+func Find(anchor string, parentTiles map[string]*gridwellv1.Tile, plugins []*gridwellv1.PluginInfo) (*gridwellv1.Tile, Kind) {
 	if anchor == "" {
-		return rpc.Tile{}, None
+		return nil, None
 	}
 	if t, ok := WellInto(anchor, parentTiles); ok {
 		return t, Well
 	}
-	for i := range plugins {
-		pl := &plugins[i]
-		for j := range pl.MenuEntries {
-			e := &pl.MenuEntries[j]
-			if e.GridID == anchor {
-				return rpc.PluginWellTile(EntryPlugin(*pl, *e)), Entry
+	for _, pl := range plugins {
+		for _, e := range pl.MenuEntries {
+			if e.GridId == anchor {
+				return rpc.PluginWellTile(EntryPlugin(pl, e)), Entry
 			}
 		}
 	}
-	for i := range plugins {
-		if plugins[i].RootGridID == anchor {
-			return rpc.PluginWellTile(plugins[i]), Root
+	for _, pl := range plugins {
+		if pl.RootGridId == anchor {
+			return rpc.PluginWellTile(pl), Root
 		}
 	}
-	return rpc.Tile{}, None
+	return nil, None
 }
 
 // EntryGlyph is the glyph a declared menu entry declares for gridID, or ""
 // when no entry names it — the one override the grid itself cannot carry
 // (the trash grid is an ordinary local grid; only the declaration knows its
 // face).
-func EntryGlyph(gridID string, plugins []rpc.PluginInfo) string {
+func EntryGlyph(gridID string, plugins []*gridwellv1.PluginInfo) string {
 	for i := range plugins {
 		for _, e := range plugins[i].MenuEntries {
-			if e.GridID == gridID && e.Glyph != "" {
+			if e.GridId == gridID && e.Glyph != "" {
 				return e.Glyph
 			}
 		}
@@ -141,7 +144,7 @@ func EntryGlyph(gridID string, plugins []rpc.PluginInfo) string {
 // grid face, because a plugin serves grids. A connection declares the globe
 // where connection rows are minted (rpc.ConnectionRow), so nothing here
 // switches on a kind.
-func RowGlyph(pl rpc.PluginInfo) string {
+func RowGlyph(pl *gridwellv1.PluginInfo) string {
 	if pl.Glyph != "" {
 		return pl.Glyph
 	}
@@ -172,7 +175,7 @@ func RowGlyph(pl rpc.PluginInfo) string {
 // A cached grid that declares no glyph and came from this node is owned
 // content: the well glyph. grid is nil when the client has not cached it.
 // There is always an answer — a crumb with no face is a blank square.
-func GlyphFor(gridID string, grid *rpc.Grid, plugins []rpc.PluginInfo) string {
+func GlyphFor(gridID string, grid *gridwellv1.Grid, plugins []*gridwellv1.PluginInfo) string {
 	if g := EntryGlyph(gridID, plugins); g != "" {
 		return g
 	}
@@ -183,8 +186,8 @@ func GlyphFor(gridID string, grid *rpc.Grid, plugins []rpc.PluginInfo) string {
 		if grid.Glyph != "" {
 			return grid.Glyph
 		}
-		if grid.NodeNS != "" {
-			if pl, ok := byUUID(grid.NodeNS, plugins); ok {
+		if grid.NodeNs != "" {
+			if pl, ok := byUUID(grid.NodeNs, plugins); ok {
 				return RowGlyph(pl)
 			}
 			return rpc.GlyphGlobe
@@ -201,8 +204,8 @@ func GlyphFor(gridID string, grid *rpc.Grid, plugins []rpc.PluginInfo) string {
 // a pseudo-row for an entry — and the entry it was declared by, nil for the
 // row's own grid.
 type Place struct {
-	Plugin rpc.PluginInfo
-	Entry  *rpc.MenuEntry
+	Plugin *gridwellv1.PluginInfo
+	Entry  *gridwellv1.MenuEntry
 }
 
 // PlacesOf enumerates the doorways one menu row declares, in declaration
@@ -214,27 +217,26 @@ type Place struct {
 // This is the one enumeration. The menu composes its swatches from it
 // (client/palette), ByRoot looks a grid up in it, and the framing restore
 // iterates it, so what a doorway is cannot be answered three ways.
-func PlacesOf(pl rpc.PluginInfo) []Place {
+func PlacesOf(pl *gridwellv1.PluginInfo) []Place {
 	out := make([]Place, 0, 1+len(pl.MenuEntries))
-	if pl.RootGridID != "" {
+	if pl.RootGridId != "" {
 		out = append(out, Place{Plugin: pl})
 	}
-	for i := range pl.MenuEntries {
-		e := &pl.MenuEntries[i]
-		if e.GridID == "" {
+	for _, e := range pl.MenuEntries {
+		if e.GridId == "" {
 			continue
 		}
-		out = append(out, Place{Plugin: EntryPlugin(pl, *e), Entry: e})
+		out = append(out, Place{Plugin: EntryPlugin(pl, e), Entry: e})
 	}
 	return out
 }
 
 // Places is PlacesOf over a whole menu, rows in order and each row's places
 // directly after it.
-func Places(plugins []rpc.PluginInfo) []Place {
+func Places(plugins []*gridwellv1.PluginInfo) []Place {
 	out := make([]Place, 0, len(plugins))
-	for i := range plugins {
-		out = append(out, PlacesOf(plugins[i])...)
+	for _, pl := range plugins {
+		out = append(out, PlacesOf(pl)...)
 	}
 	return out
 }
@@ -243,25 +245,25 @@ func Places(plugins []rpc.PluginInfo) []Place {
 // IS, a row's own or one of its declared entries'. Rooted, not by namespace:
 // a connection row's uuid ("<id>/<conn>") is not a prefix of its root
 // ("<id>/<conn>/<remote-home>/<n>").
-func ByRoot(gridID string, plugins []rpc.PluginInfo) (rpc.PluginInfo, bool) {
+func ByRoot(gridID string, plugins []*gridwellv1.PluginInfo) (*gridwellv1.PluginInfo, bool) {
 	if gridID == "" {
-		return rpc.PluginInfo{}, false
+		return nil, false
 	}
 	for _, p := range Places(plugins) {
-		if p.Plugin.RootGridID == gridID {
+		if p.Plugin.RootGridId == gridID {
 			return p.Plugin, true
 		}
 	}
-	return rpc.PluginInfo{}, false
+	return nil, false
 }
 
 // byUUID finds the plugin row with the given, possibly chain-qualified,
 // namespace.
-func byUUID(u string, plugins []rpc.PluginInfo) (rpc.PluginInfo, bool) {
-	for i := range plugins {
-		if plugins[i].UUID == u {
-			return plugins[i], true
+func byUUID(u string, plugins []*gridwellv1.PluginInfo) (*gridwellv1.PluginInfo, bool) {
+	for _, pl := range plugins {
+		if pl.Uuid == u {
+			return pl, true
 		}
 	}
-	return rpc.PluginInfo{}, false
+	return nil, false
 }

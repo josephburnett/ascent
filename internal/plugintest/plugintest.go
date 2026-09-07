@@ -33,7 +33,6 @@ import (
 	"github.com/josephburnett/gridwell/api/compose"
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	pluginv1 "github.com/josephburnett/gridwell/api/gen/plugin/v1"
-	"github.com/josephburnett/gridwell/api/rpc"
 )
 
 // Loopback serves impl over an in-memory gRPC connection and returns the
@@ -163,13 +162,13 @@ func Landing(t *testing.T, info *gridwellv1.InfoResponse) string {
 }
 
 // LandingOf is Landing over a handshake's menu row.
-func LandingOf(t *testing.T, pl rpc.PluginInfo) string {
+func LandingOf(t *testing.T, pl *gridwellv1.PluginInfo) string {
 	t.Helper()
-	if pl.RootGridID != "" {
-		t.Fatalf("row %q names a grid of its own (%q) — it is a node, not a plugin", pl.Label, pl.RootGridID)
+	if pl.RootGridId != "" {
+		t.Fatalf("row %q names a grid of its own (%q) — it is a node, not a plugin", pl.Label, pl.RootGridId)
 	}
 	if len(pl.MenuEntries) != 1 {
 		t.Fatalf("row %q declares %d collections, want exactly one to land in", pl.Label, len(pl.MenuEntries))
 	}
-	return pl.MenuEntries[0].GridID
+	return pl.MenuEntries[0].GridId
 }

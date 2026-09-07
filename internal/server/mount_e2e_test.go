@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"strings"
 	"testing"
 
@@ -56,22 +57,19 @@ func TestSecondDBMountE2E(t *testing.T) {
 
 	// Mount the second DB: an exit well in the primary root whose child is the
 	// second plugin's root grid.
-	mount, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1,
-		ChildGridID: secondRoot, Label: "second",
-	})
+	mount, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1, ChildGridId: secondRoot, AltText: "second"}})
 	if err != nil {
 		t.Fatalf("mount CreateWell: %v", err)
 	}
-	if mount.ChildGridID != secondRoot {
-		t.Fatalf("mount child = %q, want %q", mount.ChildGridID, secondRoot)
+	if mount.ChildGridId != secondRoot {
+		t.Fatalf("mount child = %q, want %q", mount.ChildGridId, secondRoot)
 	}
-	if u, _, _ := rpc.SplitID(mount.ID); u != primaryUUID {
+	if u, _, _ := rpc.SplitID(mount.Id); u != primaryUUID {
 		t.Errorf("mount well lives in %q, want primary", u)
 	}
 
 	// Descend: GetGrid on the mount's child routes to the second plugin.
-	g, err := cl.GetGrid(ctx, mount.ChildGridID)
+	g, err := cl.GetGrid(ctx, mount.ChildGridId)
 	if err != nil {
 		t.Fatalf("GetGrid second root: %v", err)
 	}
@@ -80,19 +78,16 @@ func TestSecondDBMountE2E(t *testing.T) {
 	}
 
 	// Create a text tile inside the second DB (descend path through the mount).
-	txt, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: mount.ChildGridID,
-		X:      0, Y: 0, W: 1, H: 1, Data: []byte("# in second"),
-	})
+	txt, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: mount.ChildGridId, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("# in second"))
 	if err != nil {
 		t.Fatalf("CreateText in second DB: %v", err)
 	}
-	if u, _, _ := rpc.SplitID(txt.ID); u != secondUUID {
+	if u, _, _ := rpc.SplitID(txt.Id); u != secondUUID {
 		t.Errorf("text tile lives in %q, want second DB %q", u, secondUUID)
 	}
 
 	// Content routes to the second plugin.
-	body, _, _, err := cl.ReadContent(ctx, txt.ID)
+	body, _, _, err := cl.ReadContent(ctx, txt.Id)
 	if err != nil {
 		t.Fatalf("GetTileContent: %v", err)
 	}
@@ -102,11 +97,11 @@ func TestSecondDBMountE2E(t *testing.T) {
 
 	// Isolation: the tile appears in the second DB's grid, never in the primary
 	// root (which holds only the mount well).
-	g2, err := cl.GetGrid(ctx, mount.ChildGridID)
+	g2, err := cl.GetGrid(ctx, mount.ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(g2.Tiles) != 1 || g2.Tiles[0].ID != txt.ID {
+	if len(g2.Tiles) != 1 || g2.Tiles[0].Id != txt.Id {
 		t.Errorf("second DB grid = %+v, want just the text tile", g2.Tiles)
 	}
 	gp, err := cl.GetGrid(ctx, root)
@@ -114,7 +109,7 @@ func TestSecondDBMountE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tile := range gp.Tiles {
-		if tile.ID == txt.ID {
+		if tile.Id == txt.Id {
 			t.Error("second DB's tile leaked into the primary root grid")
 		}
 	}

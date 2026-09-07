@@ -1,6 +1,7 @@
 package nav
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"testing"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -18,14 +19,14 @@ func visitPane(id string) PaneView {
 	return p
 }
 
-func promoteGesture(created rpc.Tile) Gesture {
+func promoteGesture(created *gridwellv1.Tile) Gesture {
 	return Gesture{Kind: GesturePromote, PaneID: "pane1", DestPaneID: "pane2",
 		OldID: "v1", Created: created}
 }
 
 func TestPromote(t *testing.T) {
-	created := rpc.Tile{ID: "n1", Kind: rpc.KindURL, GridID: "g2", X: 4, Y: 5, W: 1, H: 1}
-	visit := &rpc.Tile{ID: "v1", Kind: rpc.KindURL, GridID: "sg"}
+	created := &gridwellv1.Tile{Id: "n1", Kind: rpc.KindURL, GridId: "g2", X: 4, Y: 5, W: 1, H: 1}
+	visit := &gridwellv1.Tile{Id: "v1", Kind: rpc.KindURL, GridId: "sg"}
 
 	t.Run("the visit freezes onto the new tile and the row dies", func(t *testing.T) {
 		w := baseWorld(visitPane("pane1"), gridPane("pane2", "g2"))
@@ -47,7 +48,7 @@ func TestPromote(t *testing.T) {
 		if r.DestPaneID != "pane2" || r.TileID != "n1" || r.Foot.X != 4 || r.Zoom <= 0 {
 			t.Fatalf("relocated %+v, want the destination's place at the descent zoom", r)
 		}
-		if v := only(t, plan, EffPlaceURLView); v.Tile.ID != "n1" || v.PaneID != "pane1" {
+		if v := only(t, plan, EffPlaceURLView); v.Tile.Id != "n1" || v.PaneID != "pane1" {
 			t.Fatalf("placed %+v, want the page live again on the new tile", v)
 		}
 	})

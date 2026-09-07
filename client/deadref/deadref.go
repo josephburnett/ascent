@@ -26,24 +26,27 @@
 // nothing and surfaces nothing.
 package deadref
 
-import "github.com/josephburnett/gridwell/api/rpc"
+import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
+	"github.com/josephburnett/gridwell/api/rpc"
+)
 
 // TargetID returns the qualified id a link tile points at, "" when the tile
 // is not a link or names no target. The two link shapes are a well's
-// qualified child grid and a leaf's link target; rpc.Tile.Reference is the
+// qualified child grid and a leaf's link target; a tile's reference bit is the
 // one authoritative "is a link" bit, derived by the node, and this reads it
 // rather than guessing from the ids.
-func TargetID(t *rpc.Tile) string {
+func TargetID(t *gridwellv1.Tile) string {
 	if t == nil || !t.Reference {
 		return ""
 	}
-	if t.LinkTargetID != "" {
-		return t.LinkTargetID
+	if t.LinkTargetId != "" {
+		return t.LinkTargetId
 	}
 	// A childless reference is a menu swatch or an unrooted launcher tile,
 	// not a link into anywhere: it names no namespace, so it has no verdict
 	// here and pluginhealth keeps owning it.
-	return t.ChildGridID
+	return t.ChildGridId
 }
 
 // Dead reports that id names a namespace the node does not declare. rows is
@@ -55,7 +58,7 @@ func TargetID(t *rpc.Tile) string {
 // handshake has not landed, and everything would look dead), or a chain
 // through a declared connection, whose deeper segments name the FAR node's
 // namespaces and are that node's to judge, not this one's.
-func Dead(id string, rows []rpc.PluginInfo, nodeID string) bool {
+func Dead(id string, rows []*gridwellv1.PluginInfo, nodeID string) bool {
 	if id == "" || len(rows) == 0 {
 		return false
 	}
@@ -64,7 +67,7 @@ func Dead(id string, rows []rpc.PluginInfo, nodeID string) bool {
 		return false
 	}
 	for i := range rows {
-		if rows[i].UUID == ns {
+		if rows[i].Uuid == ns {
 			return false
 		}
 	}
@@ -73,6 +76,6 @@ func Dead(id string, rows []rpc.PluginInfo, nodeID string) bool {
 
 // DeadTile reports that t is a link into a namespace the node does not
 // declare — the tile the client draws greyed and never fetches for.
-func DeadTile(t *rpc.Tile, rows []rpc.PluginInfo, nodeID string) bool {
+func DeadTile(t *gridwellv1.Tile, rows []*gridwellv1.PluginInfo, nodeID string) bool {
 	return Dead(TargetID(t), rows, nodeID)
 }

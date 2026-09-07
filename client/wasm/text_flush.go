@@ -3,7 +3,10 @@
 package main
 
 import (
+	"google.golang.org/protobuf/proto"
+
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/errsurface"
@@ -87,10 +90,10 @@ func (a *App) flushTileContent(tileID string) {
 
 // postTileContent is flushTileContent's ordinary arm: the page is alive, so
 // the bytes go through the per-tile serial save queue. A no-op for rows that
-// own no document body — a non-text kind, a page row (rpc.Tile.TextDocument)
+// own no document body — a non-text kind, a page row (rpc.TextDocument)
 // — and for read-only ones, whose entries cannot normally be dirty; the guard
 // is belt and braces.
-func (a *App) postTileContent(cid string, t *rpc.Tile, data []byte) {
+func (a *App) postTileContent(cid string, t *gridwellv1.Tile, data []byte) {
 	if t == nil {
 		// The owner row is in no cached grid. That is not a dead end: a leaf
 		// link's target lives in a foreign plugin's grid this client may
@@ -108,10 +111,10 @@ func (a *App) postTileContent(cid string, t *rpc.Tile, data []byte) {
 		a.fetchTileByID(cid)
 		return
 	}
-	if !t.TextDocument() || a.tileReadOnly(t) {
+	if !rpc.TextDocument(t) || a.tileReadOnly(t) {
 		return
 	}
-	a.enqueueTextSave(t.GridID, t.ID, cid, t.Version, data)
+	a.enqueueTextSave(t.GridId, t.Id, cid, t.Version, data)
 }
 
 // beaconTileContent is flushTileContent's beforeunload arm: the bytes leave
@@ -125,14 +128,14 @@ func (a *App) postTileContent(cid string, t *rpc.Tile, data []byte) {
 // Returns false when the bytes did not leave — nothing to write, or a refused
 // or oversized beacon — and the caller falls back to the ordinary async post,
 // which beats guaranteeing the loss.
-func (a *App) beaconTileContent(cid string, t *rpc.Tile, data []byte) bool {
+func (a *App) beaconTileContent(cid string, t *gridwellv1.Tile, data []byte) bool {
 	basis, haveBasis := a.c.SaveBasis(cid)
 	var rowVersion int64
 	editable, owner := false, false
 	if t != nil {
 		rowVersion = t.Version
-		editable = t.TextDocument() && !a.tileReadOnly(t)
-		owner = t.ID == cid
+		editable = rpc.TextDocument(t) && !a.tileReadOnly(t)
+		owner = t.Id == cid
 	}
 	version, do := textedit.DecideUnloadFlush(t != nil, editable, owner, rowVersion, basis, haveBasis)
 	switch do {
@@ -146,13 +149,13 @@ func (a *App) beaconTileContent(cid string, t *rpc.Tile, data []byte) bool {
 }
 
 // contentKey resolves a tile id to the id that OWNS its content bytes — the
-// wasm-side twin of rpc.Tile.ContentID for call sites that hold only an id
+// wasm-side twin of rpc.ContentID for call sites that hold only an id
 // (the flush sweep, the textarea binding). Falls back to the id itself when
 // the row isn't cached: content entries are keyed by ContentID at write time,
 // so an uncached id IS already a content id.
 func (a *App) contentKey(tileID string) string {
 	if t := a.cachedTileByID(tileID); t != nil {
-		return t.ContentID()
+		return rpc.ContentID(t)
 	}
 	return tileID
 }
@@ -161,13 +164,13 @@ func (a *App) contentKey(tileID string) string {
 // and the framed window back to the server, through the dispatcher: a
 // failure reacts via clientsync (transport parks in the outbox, a verdict
 // refetches and surfaces) like every other mutation.
-func (a *App) saveTextBeforeAscent(p *pane.Pane, file rpc.Tile) {
+func (a *App) saveTextBeforeAscent(p *pane.Pane, file *gridwellv1.Tile) {
 	// SetTextView, and the framed-window cache patch, are text-tile
 	// concerns: url and shell tiles carry no text framing, and the server's
 	// SetTextView rejects non-text kinds with InvalidArgument, which would
 	// surface as an error the user has to read. A serves_page descent is web
 	// content and carries no text framing either.
-	if !file.TextDocument() {
+	if !rpc.TextDocument(file) {
 		return
 	}
 	gid := a.gridIDForPane(p)
@@ -189,8 +192,8 @@ func (a *App) saveTextBeforeAscent(p *pane.Pane, file rpc.Tile) {
 	// window is a node fact for every text tile, and a plugin's namespace of
 	// the store holds it (pluginhost.Adapter.SetTile), so a host file's
 	// scroll survives an ascent like any other tile's.
-	buf, hasBuf := a.c.DirtyContent(file.ContentID())
-	if a.tileReadOnly(&file) {
+	buf, hasBuf := a.c.DirtyContent(rpc.ContentID(file))
+	if a.tileReadOnly(file) {
 		hasBuf = false
 	}
 
@@ -204,13 +207,14 @@ func (a *App) saveTextBeforeAscent(p *pane.Pane, file rpc.Tile) {
 	// Patch the cache immediately so the ascent transition (and any other
 	// pane previewing this tile) reflects the framed window + mode before
 	// the server round-trip lands.
-	patched := file
+	patched := proto.CloneOf(file)
 	patched.TextX = scrollX
 	patched.TextY = scrollY
 	patched.TextW = viewW
 	patched.TextH = viewH
 	patched.TextMode = p.TextMode
-	a.c.Apply(rpc.Event{Kind: rpc.EventTileChanged, TileChanged: &rpc.TileChanged{Tile: patched}})
+	a.c.Apply(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{
+		TileChanged: &gridwellv1.TileChanged{Tile: patched}}})
 
 	mode := p.TextMode
 	// Through the document's save queue: a debounced keystroke save may still
@@ -219,7 +223,7 @@ func (a *App) saveTextBeforeAscent(p *pane.Pane, file rpc.Tile) {
 	// by textedit.SaveQueueKey, the same rule the debounce sweep reads —
 	// keyed on the viewed row here, a leaf link's ascent flush would ride a
 	// chain of its own and race the sweep for the one basis they share.
-	a.persist.textSaves.Enqueue(textedit.SaveQueueKey(file.ID, file.ContentID()), func() {
+	a.persist.textSaves.Enqueue(textedit.SaveQueueKey(file.Id, rpc.ContentID(file)), func() {
 		// Update the content first if the user was editing, through the one
 		// claim-and-post door every text write uses. The write addresses the
 		// content owner, so a link's doc saves under its target's id, as
@@ -228,8 +232,8 @@ func (a *App) saveTextBeforeAscent(p *pane.Pane, file rpc.Tile) {
 		// row here would claim a version a foreign writer may have advanced
 		// since, vouching for bytes this client never saw.
 		if hasBuf {
-			cid := file.ContentID()
-			if _, ok := a.saveClaimedContent(gid, cid, file.ID == cid, file.Version, buf); !ok {
+			cid := rpc.ContentID(file)
+			if _, ok := a.saveClaimedContent(gid, cid, file.Id == cid, file.Version, buf); !ok {
 				return
 			}
 		}
@@ -241,22 +245,17 @@ func (a *App) saveTextBeforeAscent(p *pane.Pane, file rpc.Tile) {
 		if !textedit.FramingChanged(textedit.FramingOf(file), next) {
 			return
 		}
-		req := &rpc.SetTextViewRequest{
-			TileID:   file.ID,
-			TextX:    scrollX,
-			TextY:    scrollY,
-			TextW:    viewW,
-			TextH:    viewH,
-			TextMode: mode,
-		}
+		req := &gridwellv1.SetTileRequest{TileId: file.Id,
+			Tile: &gridwellv1.Tile{Kind: rpc.KindText,
+				TextX: scrollX, TextY: scrollY, TextW: viewW, TextH: viewH, TextMode: mode}}
 		a.do(write{
-			label: "SetTextView", gid: gid, id: file.ID, refetchOnOK: true,
+			label: "SetTextView", gid: gid, id: file.Id, refetchOnOK: true,
 			call: func(ctx context.Context) error {
-				_, err := a.cl.SetTextView(ctx, req)
+				_, err := a.cl.SetTile(ctx, req)
 				return err
 			},
 			beacon: func() (string, []byte, string) {
-				path, body := rpc.SetTextViewBeacon(req)
+				path, body := rpc.SetTileBeacon(req)
 				return path, body, rpc.BeaconJSONType
 			},
 		})

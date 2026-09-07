@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"sort"
 	"strings"
 	"syscall/js"
@@ -241,7 +242,7 @@ func (a *App) thShellStandin(_ js.Value, args []js.Value) any {
 	// The same box the in-pane draw uses (render.go's KindShell arm).
 	r := a.paneRectByID(p.ID)
 	x, y, _, _ := paneContentBox(r)
-	cached, ok := a.views.urlPreview.Get(file.ContentID(), file.PreviewBlobID)
+	cached, ok := a.views.urlPreview.Get(rpc.ContentID(file), file.PreviewBlobId)
 	if !ok {
 		return nil
 	}
@@ -436,7 +437,7 @@ func (a *App) thPreviewSigs(js.Value, []js.Value) any {
 	}
 	out := map[string]any{}
 	for id, t := range g.Tiles {
-		out[id] = tileSig(&t) + a.childSig(t.ChildGridID)
+		out[id] = tileSig(t) + a.childSig(t.ChildGridId)
 	}
 	return out
 }
@@ -455,7 +456,7 @@ func (a *App) thGridSigs(_ js.Value, args []js.Value) any {
 	}
 	out := map[string]any{}
 	for id, t := range g.Tiles {
-		out[id] = tileSig(&t) + a.childSig(t.ChildGridID)
+		out[id] = tileSig(t) + a.childSig(t.ChildGridId)
 	}
 	return out
 }
@@ -476,7 +477,7 @@ func (a *App) thDeadLinks(_ js.Value, args []js.Value) any {
 	ids := []string{}
 	for id, t := range g.Tiles {
 		tile := t
-		if a.deadLink(&tile) {
+		if a.deadLink(tile) {
 			ids = append(ids, id)
 		}
 	}
@@ -489,12 +490,12 @@ func (a *App) thDeadLinks(_ js.Value, args []js.Value) any {
 }
 
 // tileSig flattens one tile row's render-relevant fields.
-func tileSig(t *rpc.Tile) string {
+func tileSig(t *gridwellv1.Tile) string {
 	return fmt.Sprintf("v%d k%s @%d,%d %dx%d view%g,%g,%g text%d,%d,%d,%d,%s blob%d prev%d url%q alt%q ref%v",
 		t.Version, t.Kind, t.X, t.Y, t.W, t.H,
 		t.ViewCx, t.ViewCy, t.ViewZoom,
 		t.TextX, t.TextY, t.TextW, t.TextH, t.TextMode,
-		t.BlobID, t.PreviewBlobID, t.URLString, t.AltText, t.Reference)
+		t.BlobId, t.PreviewBlobId, t.UrlString, t.AltText, t.Reference)
 }
 
 // childSig digests a well's cached child grid (one level — what the preview
@@ -518,7 +519,7 @@ func (a *App) childSig(childGridID string) string {
 		b.WriteString("|")
 		b.WriteString(id)
 		b.WriteString(":")
-		b.WriteString(tileSig(&t))
+		b.WriteString(tileSig(t))
 	}
 	return b.String()
 }
@@ -600,12 +601,11 @@ func (a *App) thPlugins(js.Value, []js.Value) any {
 	out := make([]any, 0, len(a.plugins))
 	for i, pl := range a.plugins {
 		entries := make([]any, 0, len(pl.MenuEntries))
-		for j := range pl.MenuEntries {
-			e := &pl.MenuEntries[j]
+		for _, e := range pl.MenuEntries {
 			entries = append(entries, map[string]any{
-				"id":       e.ID,
+				"id":       e.Id,
 				"label":    door.EntryName(pl.Label, e.Label),
-				"gridID":   e.GridID,
+				"gridID":   e.GridId,
 				"viewCx":   e.ViewCx,
 				"viewCy":   e.ViewCy,
 				"viewZoom": e.ViewZoom,
@@ -615,10 +615,10 @@ func (a *App) thPlugins(js.Value, []js.Value) any {
 			"index":         i,
 			"kind":          pl.Kind,
 			"label":         pl.Label,
-			"uuid":          pl.UUID,
-			"rootGridID":    pl.RootGridID,
+			"uuid":          pl.Uuid,
+			"rootGridID":    pl.RootGridId,
 			"menuEntries":   entries,
-			"scratchGridID": pl.ScratchGridID,
+			"scratchGridID": pl.ScratchGridId,
 			"infoError":     pl.InfoError,
 			"status":        pluginStatusName(pl),
 			"rootViewCx":    pl.RootViewCx,
@@ -631,7 +631,7 @@ func (a *App) thPlugins(js.Value, []js.Value) any {
 
 // pluginStatusName is the stable string for a plugin's pluginhealth class,
 // shared by thPlugins/thPalette.
-func pluginStatusName(pl rpc.PluginInfo) string {
+func pluginStatusName(pl *gridwellv1.PluginInfo) string {
 	switch pluginhealth.Classify(pl) {
 	case pluginhealth.Broken:
 		return "broken"
@@ -669,8 +669,8 @@ func (a *App) thPalette(js.Value, []js.Value) any {
 		if item.isPlugin {
 			e["kind"] = item.plugin.Kind
 			e["label"] = item.plugin.Label
-			e["uuid"] = item.plugin.UUID
-			e["rootGridID"] = item.plugin.RootGridID
+			e["uuid"] = item.plugin.Uuid
+			e["rootGridID"] = item.plugin.RootGridId
 			e["status"] = pluginStatusName(item.plugin)
 			// The swatch's face, the exact selector drawPaletteItem renders,
 			// so a spec can pin it against the crumb of the grid this row
@@ -685,7 +685,7 @@ func (a *App) thPalette(js.Value, []js.Value) any {
 		// reported the raw entry label would be a second name for one
 		// doorway, and a spec would pin the wrong one.
 		if item.entry != nil {
-			e["entry"] = item.entry.ID
+			e["entry"] = item.entry.Id
 		}
 		entries = append(entries, e)
 	}

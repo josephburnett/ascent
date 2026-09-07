@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"sync"
 	"testing"
 	"time"
@@ -27,30 +28,25 @@ func TestLinkedDocumentFlushesShareOneChain(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
 
-	target, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte("v0"),
-	})
+	target, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("v0"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	link, err := cl.CreateLeafLink(ctx, &rpc.CreateLeafLinkRequest{
-		GridID: root, X: 2, Y: 0, W: 1, H: 1,
-		Kind: rpc.KindText, LinkTargetID: target.ID, Label: "linked",
-	})
+	link, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 2, Y: 0, W: 1, H: 1, LinkTargetId: target.Id, AltText: "linked"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if link.ID == target.ID || link.ContentID() != target.ID {
+	if link.Id == target.Id || rpc.ContentID(link) != target.Id {
 		t.Fatalf("link %s content id %s, want a distinct row owning %s",
-			link.ID, link.ContentID(), target.ID)
+			link.Id, rpc.ContentID(link), target.Id)
 	}
 
 	// The client as it stands when the user has typed into the document
 	// through the link: one content entry, keyed by the id that owns the
 	// bytes, dirty, based on the version it was fetched under.
 	c := cache.New()
-	c.PutFetchedContent(target.ID, []byte("v0"), target.Version)
-	c.PutEditedContent(target.ID, []byte("typed"))
+	c.PutFetchedContent(target.Id, []byte("v0"), target.Version)
+	c.PutEditedContent(target.Id, []byte("typed"))
 
 	// Both flushes reach for the head of the same chain at the same moment.
 	// Serialized, the second waits out this window and then reads the basis
@@ -82,40 +78,40 @@ func TestLinkedDocumentFlushesShareOneChain(t *testing.T) {
 		return func() {
 			defer wg.Done()
 			rendezvous()
-			basis, haveBasis := c.SaveBasis(target.ID)
-			claim := textedit.SaveClaim(rowID == target.ID, rowVersion, basis, haveBasis)
-			tile, err := cl.WriteContent(ctx, target.ID, claim, data)
+			basis, haveBasis := c.SaveBasis(target.Id)
+			claim := textedit.SaveClaim(rowID == target.Id, rowVersion, basis, haveBasis)
+			tile, err := cl.WriteContent(ctx, target.Id, claim, data)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
 				errs = append(errs, err)
 				return
 			}
-			c.PutSavedContent(tile.ID, data, tile.Version)
+			c.PutSavedContent(tile.Id, data, tile.Version)
 		}
 	}
 
 	q := textedit.NewSaveQueue()
 	// The ascent flush: it holds the link row it was descended through.
-	q.Enqueue(textedit.SaveQueueKey(link.ID, link.ContentID()),
-		save(link.ID, link.Version, []byte("typed")))
+	q.Enqueue(textedit.SaveQueueKey(link.Id, rpc.ContentID(link)),
+		save(link.Id, link.Version, []byte("typed")))
 	// The debounce sweep: it holds the content id.
-	q.Enqueue(textedit.SaveQueueKey(target.ID, target.ID),
-		save(target.ID, target.Version, []byte("typed and more")))
+	q.Enqueue(textedit.SaveQueueKey(target.Id, target.Id),
+		save(target.Id, target.Version, []byte("typed and more")))
 	wg.Wait()
 
 	if len(errs) > 0 {
 		t.Fatalf("the client conflicted with itself: %v — the two flush paths of one "+
 			"document ran on different save chains", errs)
 	}
-	data, _, _, err := cl.ReadContent(ctx, target.ID)
+	data, _, _, err := cl.ReadContent(ctx, target.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if string(data) != "typed and more" {
 		t.Errorf("stored content = %q, want the last write in queue order", data)
 	}
-	if basis, ok := c.SaveBasis(target.ID); !ok || basis != target.Version+2 {
+	if basis, ok := c.SaveBasis(target.Id); !ok || basis != target.Version+2 {
 		t.Errorf("save basis = %d (present %v), want %d: both writes chained",
 			basis, ok, target.Version+2)
 	}

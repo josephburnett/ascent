@@ -1,6 +1,7 @@
 package textedit
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 	"testing"
 )
@@ -34,7 +35,7 @@ func TestDecideUnloadFlush(t *testing.T) {
 }
 
 func TestFramingChangedCountsEveryField(t *testing.T) {
-	cur := FramingOf(rpc.Tile{TextX: 1, TextY: 2, TextW: 300, TextH: 400, TextMode: "text"})
+	cur := FramingOf(&gridwellv1.Tile{TextX: 1, TextY: 2, TextW: 300, TextH: 400, TextMode: "text"})
 	if FramingChanged(cur, cur) {
 		t.Fatal("identical framing must not write")
 	}
@@ -56,7 +57,7 @@ func TestDescentModeTable(t *testing.T) {
 		in   ModeInput
 		want string
 	}{
-		// Which rows are documents is rpc.Tile.TextDocument's question
+		// Which rows are documents is rpc.TextDocument's question
 		// (pinned there); here it is one input, and everything that is not
 		// one has no text mode at all.
 		{"not a document (url, shell, page tile)", ModeInput{Cached: true, Stored: "text"}, ""},

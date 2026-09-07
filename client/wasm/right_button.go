@@ -4,10 +4,10 @@ package main
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"math"
 	"syscall/js"
 
-	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/dragdrop"
 	"github.com/josephburnett/gridwell/client/gesture"
 	"github.com/josephburnett/gridwell/client/pane"
@@ -73,7 +73,7 @@ type rightDragState struct {
 
 	// Tile-only.
 	tilePaneID string
-	tileNode   rpc.Tile
+	tileNode   *gridwellv1.Tile
 	tilePane   *pane.Pane // for path/grid lookups at commit time
 	tilePaneR  pane.Rect  // pane rect at right-down (for cell mapping)
 
@@ -133,7 +133,7 @@ func (a *App) onRightDown(p *pane.Pane, r pane.Rect, sx, sy float64, intent drag
 		Region:     pane.ClassifyRegion(r, resizeBandPx, sx, sy),
 	}
 
-	var tile *rpc.Tile
+	var tile *gridwellv1.Tile
 	if in.InGridView {
 		tile = a.tileAtScreen(p, r, sx, sy)
 		in.OverTile = tile != nil
@@ -274,7 +274,7 @@ func (a *App) onRightMove(sx, sy float64) {
 	rd.curY = sy
 	switch rd.kind {
 	case rightDragTileCenter:
-		rd.cursorInCenter = inTileCenter(&rd.tileNode, rd.tilePane, rd.tilePaneR, sx, sy)
+		rd.cursorInCenter = inTileCenter(rd.tileNode, rd.tilePane, rd.tilePaneR, sx, sy)
 		a.advanceCloneDrag(sx, sy)
 	case rightDragTileResize:
 		rd.tileNewX, rd.tileNewY, rd.tileNewW, rd.tileNewH = tileResizeFromPin(rd, sx, sy)
@@ -285,7 +285,7 @@ func (a *App) onRightMove(sx, sy float64) {
 // tileAtScreen returns the tile under (sx, sy) inside pane p, or nil.
 // Wraps cellAtScreen + tileAtCell so the tile-gesture entry is a
 // single helper rather than an inline pair.
-func (a *App) tileAtScreen(p *pane.Pane, r pane.Rect, sx, sy float64) *rpc.Tile {
+func (a *App) tileAtScreen(p *pane.Pane, r pane.Rect, sx, sy float64) *gridwellv1.Tile {
 	cellX, cellY := cellAtScreen(p, r, sx, sy)
 	return a.tileAtCell(p, cellX, cellY)
 }
@@ -304,14 +304,14 @@ func (a *App) tileAtScreen(p *pane.Pane, r pane.Rect, sx, sy float64) *rpc.Tile 
 // In both cases drawRightDragPreview paints the 5-zone hotspot
 // overlay so the user can see all the affordances on the tile at a
 // glance.
-func (a *App) armTileGesture(p *pane.Pane, r pane.Rect, n *rpc.Tile, sx, sy float64, intent dragdrop.Intent) {
+func (a *App) armTileGesture(p *pane.Pane, r pane.Rect, n *gridwellv1.Tile, sx, sy float64, intent dragdrop.Intent) {
 	common := rightDragState{
 		startX:     sx,
 		startY:     sy,
 		curX:       sx,
 		curY:       sy,
 		tilePaneID: p.ID,
-		tileNode:   *n,
+		tileNode:   n,
 		tilePane:   p,
 		tilePaneR:  r,
 	}
@@ -337,14 +337,14 @@ func (a *App) armTileGesture(p *pane.Pane, r pane.Rect, n *rpc.Tile, sx, sy floa
 // inTileCenter is a wasm-side adapter that builds the dragdrop.Pane
 // from a pane.Pane + pane.Rect and delegates to dragdrop.InTileCenter
 // (where the geometry lives, natively tested).
-func inTileCenter(n *rpc.Tile, p *pane.Pane, r pane.Rect, sx, sy float64) bool {
+func inTileCenter(n *gridwellv1.Tile, p *pane.Pane, r pane.Rect, sx, sy float64) bool {
 	ps := paneToDragdrop(p, r)
 	cx, cy := ps.ScreenToCell(sx, sy)
 	return dragdrop.InTileCenter(n.X, n.Y, n.W, n.H, cx, cy)
 }
 
 // tileResizeAnchors is the wasm-side adapter for dragdrop.ResizeAnchorsFor.
-func tileResizeAnchors(n *rpc.Tile, p *pane.Pane, r pane.Rect, sx, sy float64) (
+func tileResizeAnchors(n *gridwellv1.Tile, p *pane.Pane, r pane.Rect, sx, sy float64) (
 	pinX, pinY, origMovingX, origMovingY, clickCellX, clickCellY int64,
 ) {
 	ps := paneToDragdrop(p, r)
@@ -424,7 +424,7 @@ func (a *App) advanceCloneDrag(sx, sy float64) {
 // We don't hide the original tile — both intents create, and the source stays
 // — and the cursor offset inside the tile is preserved so the grab point
 // tracks the cursor.
-func (a *App) armRightClone(p *pane.Pane, r pane.Rect, n *rpc.Tile, sx, sy float64, intent dragdrop.Intent) {
+func (a *App) armRightClone(p *pane.Pane, r pane.Rect, n *gridwellv1.Tile, sx, sy float64, intent dragdrop.Intent) {
 	ps := paneToDragdrop(p, r)
 	cxF, cyF := ps.ScreenToCell(sx, sy)
 	tlX, tlY := ps.CellToScreen(float64(n.X), float64(n.Y))
@@ -505,9 +505,9 @@ func (a *App) commitRightClone(d *dragState, sx, sy float64) {
 	dstGridID := t.gridID
 	srcGridID := d.srcGridID
 	tileID := d.tileID
-	req := &rpc.CloneTileRequest{
-		TileID:     tileID,
-		DestGridID: dstGridID,
+	req := &gridwellv1.CloneTileRequest{
+		TileId:     tileID,
+		DestGridId: dstGridID,
 		X:          dropX,
 		Y:          dropY,
 	}
@@ -530,7 +530,7 @@ func (a *App) runDeleteTile(d *dragState, t *dropTarget) {
 	if t != nil {
 		dstGridID = t.gridID
 	}
-	req := &rpc.DeleteTileRequest{TileID: d.tileID}
+	req := &gridwellv1.DeleteTileRequest{TileId: d.tileID}
 	// Drop any cached liveness probe for this tile — the row is
 	// about to vanish and so will the tmux session the server side
 	// kills behind it.
@@ -567,15 +567,15 @@ func (a *App) commitTileResize(rd *rightDragState) {
 		return
 	}
 	gid := a.gridIDForPane(p)
-	req := &rpc.PlaceTileRequest{
-		TileID: n.ID,
-		GridID: n.GridID,
+	req := &gridwellv1.PlaceTileRequest{
+		TileId: n.Id,
+		GridId: n.GridId,
 		X:      rd.tileNewX,
 		Y:      rd.tileNewY,
 		W:      rd.tileNewW,
 		H:      rd.tileNewH,
 	}
-	a.postTileMutate("PlaceTile", gid, func(ctx context.Context) (*rpc.Tile, error) {
+	a.postTileMutate("PlaceTile", gid, func(ctx context.Context) (*gridwellv1.Tile, error) {
 		return a.cl.PlaceTile(ctx, req)
 	}, nil)
 }

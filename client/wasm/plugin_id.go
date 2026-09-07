@@ -3,6 +3,7 @@
 package main
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/deadref"
 	"github.com/josephburnett/gridwell/client/door"
@@ -12,8 +13,8 @@ import (
 // "<uuid>/<local>" id convention and its exit-well classification live once,
 // in api/rpc, where they are tested. They keep local names because the wasm
 // renderer reads them at many call sites.
-func uuidOf(id string) string     { return rpc.UUIDOf(id) }
-func isExitWell(n *rpc.Tile) bool { return rpc.IsExitWell(n) }
+func uuidOf(id string) string            { return rpc.UUIDOf(id) }
+func isExitWell(n *gridwellv1.Tile) bool { return rpc.IsExitWell(n) }
 
 // nodeID is this node's own id: the segment its home grid and every one of
 // its connections hang under. The handshake's home grid is the one place it
@@ -35,7 +36,7 @@ func (a *App) deadNamespace(id string) bool {
 // deadLink reports that a tile is a link into a namespace this node does not
 // declare: the greyed, inert face, and the one thing the renderer, the
 // descent guard, and the fetch doors all read.
-func (a *App) deadLink(n *rpc.Tile) bool {
+func (a *App) deadLink(n *gridwellv1.Tile) bool {
 	return deadref.DeadTile(n, a.plugins, a.nodeID())
 }
 
@@ -68,7 +69,7 @@ func (a *App) gridWritable(gridID string) (writable, known bool) {
 // and restores from, and whose face that grid wears. The rule is
 // door.ByRoot's, js-free and unit-tested; this is the impure half, resolving
 // the declaration list it reads.
-func (a *App) pluginByRoot(gridID string) (rpc.PluginInfo, bool) {
+func (a *App) pluginByRoot(gridID string) (*gridwellv1.PluginInfo, bool) {
 	return door.ByRoot(gridID, a.allPlugins())
 }
 
@@ -82,11 +83,11 @@ func (a *App) cacheDoorwayFraming(gridID string, f rpc.Framing) {
 		return
 	}
 	for i := range a.plugins {
-		if a.plugins[i].RootGridID == gridID {
+		if a.plugins[i].RootGridId == gridID {
 			a.plugins[i].RootViewCx, a.plugins[i].RootViewCy, a.plugins[i].RootViewZoom = f.Cx, f.Cy, f.Zoom
 		}
-		for j := range a.plugins[i].MenuEntries {
-			if e := &a.plugins[i].MenuEntries[j]; e.GridID == gridID {
+		for _, e := range a.plugins[i].MenuEntries {
+			if e.GridId == gridID {
 				e.ViewCx, e.ViewCy, e.ViewZoom = f.Cx, f.Cy, f.Zoom
 			}
 		}
@@ -97,20 +98,20 @@ func (a *App) cacheDoorwayFraming(gridID string, f rpc.Framing) {
 // namespace: the local list first, then every fetched remote menu context. A
 // remote plugin's descent guards need its PluginInfo, and its uuid arrives
 // chain-qualified, so the two spaces cannot collide.
-func (a *App) pluginByUUID(u string) (rpc.PluginInfo, bool) {
+func (a *App) pluginByUUID(u string) (*gridwellv1.PluginInfo, bool) {
 	for i := range a.plugins {
-		if a.plugins[i].UUID == u {
+		if a.plugins[i].Uuid == u {
 			return a.plugins[i], true
 		}
 	}
 	for _, ctx := range a.views.menuCtxs {
 		for i := range ctx.plugins {
-			if ctx.plugins[i].UUID == u {
+			if ctx.plugins[i].Uuid == u {
 				return ctx.plugins[i], true
 			}
 		}
 	}
-	return rpc.PluginInfo{}, false
+	return nil, false
 }
 
 // pluginGlyph returns the identity glyph for the plugin owning the given
@@ -120,7 +121,7 @@ func (a *App) pluginByUUID(u string) (rpc.PluginInfo, bool) {
 func (a *App) pluginGlyph(gridID string) string {
 	plugins := a.allPlugins()
 	if g, ok := a.c.Grid(gridID); ok {
-		return door.GlyphFor(gridID, &g.Meta, plugins)
+		return door.GlyphFor(gridID, g.Meta, plugins)
 	}
 	return door.GlyphFor(gridID, nil, plugins)
 }
@@ -128,7 +129,7 @@ func (a *App) pluginGlyph(gridID string) string {
 // allPlugins is every PluginInfo the client knows — the boot handshake's list
 // plus each fetched remote menu context — for declaration scans (door.Find,
 // door.EntryGlyph) that must see remote declarations too.
-func (a *App) allPlugins() []rpc.PluginInfo {
+func (a *App) allPlugins() []*gridwellv1.PluginInfo {
 	out := a.plugins
 	for _, ctx := range a.views.menuCtxs {
 		out = append(out[:len(out):len(out)], ctx.plugins...)

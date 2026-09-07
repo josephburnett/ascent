@@ -385,7 +385,7 @@ func (a *App) ensureFileToggle() {
 // refreshFileToggle positions and styles the floating toggle for a markdown
 // descent, in any mode, and hides it otherwise. Web content is excluded: a url
 // tile uses a canvas back button instead, and a page tile has no document body
-// to show a second face of (rpc.Tile.TextDocument).
+// to show a second face of (rpc.TextDocument).
 func (a *App) refreshFileToggle() {
 	a.ensureFileToggle()
 	style := a.overlays.textToggleBtn.Get("style")
@@ -403,11 +403,11 @@ func (a *App) refreshFileToggle() {
 		return
 	}
 	file, ok := g.Tiles[p.ContentID()]
-	if !ok || !file.TextDocument() {
+	if !ok || !rpc.TextDocument(file) {
 		hide()
 		return
 	}
-	if !textedit.ToggleVisible(&file, a.tileReadOnly(&file)) {
+	if !textedit.ToggleVisible(file, a.tileReadOnly(file)) {
 		hide()
 		return
 	}
@@ -458,7 +458,7 @@ func (a *App) refreshFileOverlay() {
 	// outlive the source key being set, so this is the only place the
 	// invariant can be enforced client-side.
 	if g, ok := a.c.Grid(a.gridIDForPane(p)); ok {
-		if file, ok := g.Tiles[p.ContentID()]; ok && a.tileReadOnly(&file) {
+		if file, ok := g.Tiles[p.ContentID()]; ok && a.tileReadOnly(file) {
 			ta.Get("style").Set("display", "none")
 			a.focusCanvas()
 			return
@@ -494,7 +494,7 @@ func (a *App) refreshFileOverlay() {
 	}
 	if g, ok := a.c.Grid(gid); ok {
 		if file, ok := g.Tiles[p.ContentID()]; ok {
-			if body, ok := a.tileBody(&file); ok {
+			if body, ok := a.tileBody(file); ok {
 				in.BlobCached = true
 				in.BlobContent = string(body)
 			}
@@ -593,7 +593,7 @@ func (a *App) onToggleFileMode(p *pane.Pane) {
 	// host file flips between rendered and raw source, and the textarea
 	// guard in refreshFileOverlay keeps raw mode caret-free either way.
 	if g, ok := a.c.Grid(a.gridIDForPane(p)); ok {
-		if file, ok := g.Tiles[p.ContentID()]; ok && !textedit.ToggleVisible(&file, a.tileReadOnly(&file)) {
+		if file, ok := g.Tiles[p.ContentID()]; ok && !textedit.ToggleVisible(file, a.tileReadOnly(file)) {
 			return
 		}
 	}

@@ -1,7 +1,7 @@
 package nav
 
 import (
-	"github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/client/errsurface"
 	"github.com/josephburnett/gridwell/client/pane"
 	"github.com/josephburnett/gridwell/client/transition"
@@ -167,7 +167,7 @@ type Effect struct {
 	// Tile is a row by value, for the effects that must act on the row the
 	// gesture read rather than on whatever the cache holds later: an
 	// ephemeral scratch tile is in no cached grid.
-	Tile rpc.Tile
+	Tile *gridwellv1.Tile
 
 	// Place and tree.
 	Stack      *pane.Stack
@@ -259,10 +259,10 @@ type Result struct {
 	Alive bool
 	// Tile answers RequestGetTile: the row BY VALUE, because the step acts on
 	// the row that was read rather than on whatever the cache holds later.
-	Tile *rpc.Tile
+	Tile *gridwellv1.Tile
 	// Wells answers RequestSearch: the hit's containing-well chain from its
 	// plugin root, outermost first. Empty means the tile sits at a root.
-	Wells []rpc.Tile
+	Wells []*gridwellv1.Tile
 	// Data answers RequestReadLayout: the blob's bytes, which the machine
 	// decodes itself (client/pane owns the codec, and it is pure).
 	Data []byte

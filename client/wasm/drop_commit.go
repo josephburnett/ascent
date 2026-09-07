@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/anim"
@@ -97,7 +98,7 @@ func (a *App) finishLeftDrag(sx, sy float64) bool {
 		}
 		cellX, cellY := cellAtScreen(focused, r, sx, sy)
 		if n := a.tileAtCell(focused, cellX, cellY); n != nil {
-			a.local(focused.ID).Selected = n.ID
+			a.local(focused.ID).Selected = n.Id
 		} else {
 			a.clearSelected(focused.ID)
 		}
@@ -164,9 +165,9 @@ func (a *App) finishLeftDrag(sx, sy float64) bool {
 	// well-into-own-subtree refusal is the server's own ancestor walk — and
 	// no version claim, since placement is layout and last-writer-wins, with
 	// the overlap check protecting the grid.
-	req := &rpc.PlaceTileRequest{
-		TileID: d.tileID,
-		GridID: dstGridID,
+	req := &gridwellv1.PlaceTileRequest{
+		TileId: d.tileID,
+		GridId: dstGridID,
 		X:      dropX,
 		Y:      dropY,
 		W:      d.snapshotTile.W,
@@ -200,25 +201,23 @@ func (a *App) commitLinkDrop(d *dragState, t *dropTarget, dropX, dropY int64) {
 	src := d.snapshotTile
 	dstGridID := t.gridID
 	if rpc.IsWellKind(src.Kind) {
-		req := &rpc.CreateWellRequest{
-			GridID: dstGridID, X: dropX, Y: dropY, W: src.W, H: src.H,
-			ChildGridID: src.ChildGridID, Label: src.AltText,
-			Framing: rpc.Framing{Cx: src.ViewCx, Cy: src.ViewCy, Zoom: src.ViewZoom},
-		}
-		a.postTileMutate("CreateWell", dstGridID, func(ctx context.Context) (*rpc.Tile, error) {
-			return a.cl.CreateWell(ctx, req)
+		req := &gridwellv1.CreateTileRequest{GridId: dstGridID,
+			Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: dropX, Y: dropY, W: src.W, H: src.H,
+				ChildGridId: src.ChildGridId, AltText: src.AltText,
+				ViewCx: src.ViewCx, ViewCy: src.ViewCy, ViewZoom: src.ViewZoom}}
+		a.postTileMutate("CreateWell", dstGridID, func(ctx context.Context) (*gridwellv1.Tile, error) {
+			return a.cl.CreateTile(ctx, req)
 		}, nil)
 		return
 	}
 	// A link to a link points at the content, never at the middle row: the
 	// same read-through every content operation takes.
-	target := src.ContentID()
-	req := &rpc.CreateLeafLinkRequest{
-		GridID: dstGridID, X: dropX, Y: dropY, W: src.W, H: src.H,
-		Kind: src.Kind, LinkTargetID: target, Label: src.AltText,
-	}
-	a.postTileMutate("CreateLeafLink", dstGridID, func(ctx context.Context) (*rpc.Tile, error) {
-		return a.cl.CreateLeafLink(ctx, req)
+	target := rpc.ContentID(src)
+	req := &gridwellv1.CreateTileRequest{GridId: dstGridID,
+		Tile: &gridwellv1.Tile{Kind: src.Kind, X: dropX, Y: dropY, W: src.W, H: src.H,
+			LinkTargetId: target, AltText: src.AltText}}
+	a.postTileMutate("CreateLeafLink", dstGridID, func(ctx context.Context) (*gridwellv1.Tile, error) {
+		return a.cl.CreateTile(ctx, req)
 	}, nil)
 }
 
@@ -235,7 +234,7 @@ func (a *App) occupiedForDrop(gridID string, x, y, w, h int64, excludeID string)
 		return false
 	}
 	for _, n := range g.Tiles {
-		if n.ID == excludeID {
+		if n.Id == excludeID {
 			continue
 		}
 		if dragdrop.RectsOverlap(n.X, n.Y, n.W, n.H, x, y, w, h) {

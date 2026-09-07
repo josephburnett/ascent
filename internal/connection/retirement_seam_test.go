@@ -80,15 +80,15 @@ func TestConnectionSurvivesRemoveThenRestore(t *testing.T) {
 	}
 	// The stored reference a mount leaves behind: a link tile into the
 	// connection's namespace, as the user's grid holds it.
-	ref := &rpc.Tile{Reference: true, LinkTargetID: nodeID + "/rtb/rnode1/7"}
-	roster := func(s *Server) []rpc.PluginInfo {
-		var out []rpc.PluginInfo
+	ref := &gridwellv1.Tile{Reference: true, LinkTargetId: nodeID + "/rtb/rnode1/7"}
+	roster := func(s *Server) []*gridwellv1.PluginInfo {
+		var out []*gridwellv1.PluginInfo
 		for _, r := range s.Rows(ctx) {
-			out = append(out, rpc.PluginInfo{UUID: rpc.QualifyID(nodeID, r.Name), RootGridID: r.RootGridID})
+			out = append(out, &gridwellv1.PluginInfo{Uuid: rpc.QualifyID(nodeID, r.Name), RootGridId: r.RootGridID})
 		}
 		// A node always declares its own home, so the roster is never empty
 		// and deadref always has a declaration to answer from.
-		return append(out, rpc.PluginInfo{UUID: nodeID})
+		return append(out, &gridwellv1.PluginInfo{Uuid: nodeID})
 	}
 
 	// Boot 1: declared, landing learned, reference live.

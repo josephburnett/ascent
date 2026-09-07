@@ -224,15 +224,12 @@ func TestContentDoorResolvesLeafLink(t *testing.T) {
 		}
 	}
 	cl := rpc.NewClient(hs.Client(), hs.URL)
-	link, err := cl.CreateLeafLink(ctx, &rpc.CreateLeafLinkRequest{
-		GridID: rootA, X: 0, Y: 0, W: 2, H: 2, Kind: rpc.KindText,
-		LinkTargetID: catID, Label: "cat.png",
-	})
+	link, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: rootA, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 2, H: 2, LinkTargetId: catID, AltText: "cat.png"}})
 	if err != nil {
 		t.Fatalf("create link: %v", err)
 	}
 
-	res, body := get(t, noRedirect(hs), hs.URL+"/content/"+ContentToken(testPassword)+"/"+link.ID+"/", "")
+	res, body := get(t, noRedirect(hs), hs.URL+"/content/"+ContentToken(testPassword)+"/"+link.Id+"/", "")
 	if res.StatusCode != http.StatusOK || body != string(img) {
 		t.Fatalf("link GET = %d, %d bytes; want the target's %d image bytes", res.StatusCode, len(body), len(img))
 	}
@@ -316,13 +313,11 @@ func TestContentDoorUnimplemented(t *testing.T) {
 	hs := serveWeb(t, srv)
 
 	cl := rpc.NewClient(hs.Client(), hs.URL)
-	txt, err := cl.CreateText(context.Background(), &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte("hi"),
-	})
+	txt, err := cl.CreateWithContent(context.Background(), &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("hi"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, _ := get(t, noRedirect(hs), hs.URL+"/content/"+ContentToken(testPassword)+"/"+txt.ID+"/", "")
+	res, _ := get(t, noRedirect(hs), hs.URL+"/content/"+ContentToken(testPassword)+"/"+txt.Id+"/", "")
 	if res.StatusCode != http.StatusNotFound {
 		t.Errorf("localdb page GET = %d, want 404 (ServeContent unimplemented)", res.StatusCode)
 	}
@@ -357,8 +352,8 @@ func TestHandshakeCarriesTokensAndRootView(t *testing.T) {
 	}
 	landing := plugintest.LandingOf(t, pl.Plugins[0])
 
-	path, body := rpc.SetFramingBeacon(&rpc.SetFramingRequest{
-		RootGridID: landing, Framing: rpc.Framing{Cx: 3, Cy: 4, Zoom: 0.5},
+	path, body := rpc.SetFramingBeacon(&gridwellv1.SetFramingRequest{
+		RootGridId: landing, Cx: 3, Cy: 4, Zoom: 0.5,
 	})
 	res, err := hs.Client().Post(hs.URL+path, "application/json", bytes.NewReader(body))
 	if err != nil {

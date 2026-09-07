@@ -3,7 +3,10 @@
 package main
 
 import (
+	"google.golang.org/protobuf/proto"
+
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"syscall/js"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -25,7 +28,7 @@ const (
 )
 
 // contentZoomOf reads a tile's zoom with the unset (0) default of 1.0.
-func contentZoomOf(t *rpc.Tile) float64 {
+func contentZoomOf(t *gridwellv1.Tile) float64 {
 	if t != nil && t.ContentZoom > 0 {
 		return t.ContentZoom
 	}
@@ -48,7 +51,7 @@ func clampContentZoom(z float64) float64 {
 // disagree about how big the text is.
 func (a *App) textScaleFor(p *pane.Pane) float64 {
 	if t, ok := a.descendedTile(p); ok {
-		return textFixedScale * contentZoomOf(&t)
+		return textFixedScale * contentZoomOf(t)
 	}
 	return textFixedScale
 }
@@ -74,7 +77,7 @@ func (a *App) handleContentZoomKey(ev js.Value) bool {
 		return false
 	}
 	ev.Call("preventDefault")
-	a.applyContentZoom(p, &t, next(contentZoomOf(&t)))
+	a.applyContentZoom(p, t, next(contentZoomOf(t)))
 	return true
 }
 
@@ -112,14 +115,14 @@ func (a *App) contentZoomKeyFromView(paneID, key string) {
 	if !ok || !rpc.IsContentDescentKind(t.Kind) {
 		return
 	}
-	a.applyContentZoom(p, &t, next(contentZoomOf(&t)))
+	a.applyContentZoom(p, t, next(contentZoomOf(t)))
 }
 
 // applyContentZoom updates the cache (the one client copy every reader uses),
 // pokes the live surface for the kinds that hold native state, and persists —
 // the last only for a descent that outlives the pane leaving it.
-func (a *App) applyContentZoom(p *pane.Pane, t *rpc.Tile, z float64) {
-	if t.PageContent() {
+func (a *App) applyContentZoom(p *pane.Pane, t *gridwellv1.Tile, z float64) {
+	if rpc.PageContent(t) {
 		// A serves_page descent has no persisted content_zoom, because the
 		// owning plugin stores no url state, and a client-only zoom would
 		// break the no-client-state rule. The chord is inert here.
@@ -129,9 +132,9 @@ func (a *App) applyContentZoom(p *pane.Pane, t *rpc.Tile, z float64) {
 		// client with a url kind and serves_page set.
 		return
 	}
-	nt := *t
+	nt := proto.CloneOf(t)
 	nt.ContentZoom = z
-	a.c.UpdateTile(nt.GridID, nt)
+	a.c.UpdateTile(nt.GridId, nt)
 	switch t.Kind {
 	case rpc.KindText:
 		// The next draw reads the cache through textScaleFor; keep the pane's
@@ -159,12 +162,10 @@ func (a *App) applyContentZoom(p *pane.Pane, t *rpc.Tile, z float64) {
 	// dispatcher's policy expects. There is no beacon form — content zoom is
 	// the one framing write with no *Beacon builder — so a quit inside its
 	// settle window still loses it.
-	tileID := t.ID
-	a.postFramingPersist("SetContentZoom", nt.GridID, tileID,
+	tileID := t.Id
+	a.postFramingPersist("SetContentZoom", nt.GridId, tileID,
 		func(ctx context.Context) error {
-			_, err := a.cl.SetContentZoom(ctx, &rpc.SetContentZoomRequest{
-				TileID: tileID, ContentZoom: z,
-			})
+			_, err := a.cl.SetContentZoom(ctx, tileID, z)
 			return err
 		}, nil)
 }

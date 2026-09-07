@@ -137,57 +137,44 @@ func TestDeepCopyDegradesToLinksWhenSourceDark(t *testing.T) {
 	cl, dark, _, rootA, _, rootB := darkTwoPluginServer(t)
 	ctx := context.Background()
 
-	well, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: rootA, X: 0, Y: 0, W: 1, H: 1, Label: "trip",
-	})
+	well, err := cl.CreateTile(ctx, &pb.CreateTileRequest{GridId: rootA, Tile: &pb.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1, AltText: "trip"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: well.ChildGridID, X: 0, Y: 0, W: 1, H: 1, Data: []byte("cached notes"),
-	}); err != nil {
+	if _, err := cl.CreateWithContent(ctx, &pb.CreateTileRequest{GridId: well.ChildGridId, Tile: &pb.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("cached notes")); err != nil {
 		t.Fatal(err)
 	}
-	uncached, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: well.ChildGridID, X: 2, Y: 0, W: 1, H: 1, Data: []byte("never opened"),
-	})
+	uncached, err := cl.CreateWithContent(ctx, &pb.CreateTileRequest{GridId: well.ChildGridId, Tile: &pb.Tile{Kind: rpc.KindText, X: 2, Y: 0, W: 1, H: 1}}, []byte("never opened"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	nested, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: well.ChildGridID, X: 4, Y: 0, W: 1, H: 1, Label: "unvisited",
-	})
+	nested, err := cl.CreateTile(ctx, &pb.CreateTileRequest{GridId: well.ChildGridId, Tile: &pb.Tile{Kind: rpc.KindWell, X: 4, Y: 0, W: 1, H: 1, AltText: "unvisited"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: nested.ChildGridID, X: 0, Y: 0, W: 1, H: 1, Data: []byte("deep"),
-	}); err != nil {
+	if _, err := cl.CreateWithContent(ctx, &pb.CreateTileRequest{GridId: nested.ChildGridId, Tile: &pb.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("deep")); err != nil {
 		t.Fatal(err)
 	}
-	urlTile, err := cl.CreateURL(ctx, &rpc.CreateURLRequest{GridID: well.ChildGridID, X: 6, Y: 0, W: 1, H: 1})
+	urlTile, err := cl.CreateTile(ctx, &pb.CreateTileRequest{GridId: well.ChildGridId, Tile: &pb.Tile{Kind: rpc.KindURL, X: 6, Y: 0, W: 1, H: 1}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	urlTile, err = cl.WriteContent(ctx, urlTile.ID, urlTile.Version, []byte("https://example.com/album"))
+	urlTile, err = cl.WriteContent(ctx, urlTile.Id, urlTile.Version, []byte("https://example.com/album"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	urlTile, err = cl.SetURLState(ctx, &rpc.SetURLStateRequest{
-		TileID: urlTile.ID,
-		JPEG:   []byte("\xff\xd8fakejpeg"), URL: "https://example.com/album", Title: "album",
-	})
+	urlTile, err = cl.SetTile(ctx, &pb.SetTileRequest{TileId: urlTile.Id, Tile: &pb.Tile{Kind: rpc.KindURL, UrlString: "https://example.com/album", AltText: "album"}, Preview: []byte("\xff\xd8fakejpeg")})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// The offline shape: metadata reachable (cached), these reads dark.
-	dark.darkContent[localID(t, uncached.ID)] = true
-	dark.darkGrids[localID(t, nested.ChildGridID)] = true
-	dark.darkPreviews[localID(t, urlTile.ID)] = true
+	dark.darkContent[localID(t, uncached.Id)] = true
+	dark.darkGrids[localID(t, nested.ChildGridId)] = true
+	dark.darkPreviews[localID(t, urlTile.Id)] = true
 
-	copyTop, err := cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID: well.ID, DestGridID: rootB, X: 0, Y: 0,
+	copyTop, err := cl.CloneTile(ctx, &pb.CloneTileRequest{
+		TileId: well.Id, DestGridId: rootB, X: 0, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("offline deep copy must not refuse: %v", err)
@@ -196,38 +183,38 @@ func TestDeepCopyDegradesToLinksWhenSourceDark(t *testing.T) {
 		t.Fatal("the top copy must be SOLID (its own grid was reachable)")
 	}
 
-	cg, err := cl.GetGrid(ctx, copyTop.ChildGridID)
+	cg, err := cl.GetGrid(ctx, copyTop.ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
-	byX := map[int64]*rpc.Tile{}
-	for i := range cg.Tiles {
-		byX[cg.Tiles[i].X] = &cg.Tiles[i]
+	byX := map[int64]*pb.Tile{}
+	for _, t := range cg.Tiles {
+		byX[t.X] = t
 	}
 
 	// Cached text → a real copy with the bytes.
-	if c := byX[0]; c == nil || c.Reference || c.LinkTargetID != "" {
+	if c := byX[0]; c == nil || c.Reference || c.LinkTargetId != "" {
 		t.Fatalf("cached text should be a solid copy: %+v", byX[0])
-	} else if body, _, _, err := cl.ReadContent(ctx, c.ID); err != nil || string(body) != "cached notes" {
+	} else if body, _, _, err := cl.ReadContent(ctx, c.Id); err != nil || string(body) != "cached notes" {
 		t.Fatalf("cached copy body = %q (%v)", body, err)
 	}
 
 	// Dark-content text → a LINK to the original (dashed says "elsewhere").
-	if l := byX[2]; l == nil || l.LinkTargetID != uncached.ID {
-		t.Fatalf("dark text should degrade to a link to %s: %+v", uncached.ID, byX[2])
+	if l := byX[2]; l == nil || l.LinkTargetId != uncached.Id {
+		t.Fatalf("dark text should degrade to a link to %s: %+v", uncached.Id, byX[2])
 	} else if !l.Reference {
 		t.Error("the degraded link must derive Reference=true")
 	}
 
 	// Dark-grid nested well → a well LINK sharing the original child.
-	if w := byX[4]; w == nil || !w.Reference || w.ChildGridID != nested.ChildGridID {
-		t.Fatalf("dark nested well should degrade to a link to %s: %+v", nested.ChildGridID, byX[4])
+	if w := byX[4]; w == nil || !w.Reference || w.ChildGridId != nested.ChildGridId {
+		t.Fatalf("dark nested well should degrade to a link to %s: %+v", nested.ChildGridId, byX[4])
 	}
 
 	// Dark-preview url → a solid copy of the ADDRESS, faceless.
-	if u := byX[6]; u == nil || u.Reference || u.URLString != "https://example.com/album" {
+	if u := byX[6]; u == nil || u.Reference || u.UrlString != "https://example.com/album" {
 		t.Fatalf("dark-preview url should copy its address: %+v", byX[6])
-	} else if u.PreviewBlobID != 0 {
+	} else if u.PreviewBlobId != 0 {
 		t.Error("the faceless copy must carry no preview blob")
 	}
 }
@@ -238,45 +225,41 @@ func TestTopLevelCloneDegradesWhenSourceDark(t *testing.T) {
 
 	// A text whose bytes are dark: the single-tile right-drag degrades to a
 	// leaf link.
-	txt, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: rootA, X: 0, Y: 0, W: 1, H: 1, Data: []byte("body"),
-	})
+	txt, err := cl.CreateWithContent(ctx, &pb.CreateTileRequest{GridId: rootA, Tile: &pb.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("body"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	dark.darkContent[localID(t, txt.ID)] = true
-	got, err := cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID: txt.ID, DestGridID: rootB, X: 0, Y: 0,
+	dark.darkContent[localID(t, txt.Id)] = true
+	got, err := cl.CloneTile(ctx, &pb.CloneTileRequest{
+		TileId: txt.Id, DestGridId: rootB, X: 0, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("dark leaf clone must degrade, not fail: %v", err)
 	}
-	if got.LinkTargetID != txt.ID || !got.Reference {
-		t.Fatalf("dark leaf clone should be a link to %s: %+v", txt.ID, got)
+	if got.LinkTargetId != txt.Id || !got.Reference {
+		t.Fatalf("dark leaf clone should be a link to %s: %+v", txt.Id, got)
 	}
 
 	// A well whose OWN child grid is dark: the whole room degrades to an
 	// exit-well link, framing preserved.
-	well, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: rootA, X: 3, Y: 0, W: 1, H: 1, Label: "dark room",
-	})
+	well, err := cl.CreateTile(ctx, &pb.CreateTileRequest{GridId: rootA, Tile: &pb.Tile{Kind: rpc.KindWell, X: 3, Y: 0, W: 1, H: 1, AltText: "dark room"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cl.SetFraming(ctx, &rpc.SetFramingRequest{
-		TileID: well.ID, Framing: rpc.Framing{Cx: 5, Cy: 6, Zoom: 1.5},
+	if _, err := cl.SetFraming(ctx, &pb.SetFramingRequest{
+		TileId: well.Id, Cx: 5, Cy: 6, Zoom: 1.5,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	dark.darkGrids[localID(t, well.ChildGridID)] = true
-	gotWell, err := cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID: well.ID, DestGridID: rootB, X: 3, Y: 0,
+	dark.darkGrids[localID(t, well.ChildGridId)] = true
+	gotWell, err := cl.CloneTile(ctx, &pb.CloneTileRequest{
+		TileId: well.Id, DestGridId: rootB, X: 3, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("dark well clone must degrade, not fail: %v", err)
 	}
-	if !gotWell.Reference || gotWell.ChildGridID != well.ChildGridID {
-		t.Fatalf("dark well clone should be a link sharing %s: %+v", well.ChildGridID, gotWell)
+	if !gotWell.Reference || gotWell.ChildGridId != well.ChildGridId {
+		t.Fatalf("dark well clone should be a link sharing %s: %+v", well.ChildGridId, gotWell)
 	}
 	if gotWell.ViewCx != 5 || gotWell.ViewCy != 6 || gotWell.ViewZoom != 1.5 {
 		t.Errorf("degraded well link lost the framing: %+v", gotWell)
@@ -291,22 +274,18 @@ func TestGoneIsNeverALink(t *testing.T) {
 	cl, dark, _, rootA, _, rootB := darkTwoPluginServer(t)
 	ctx := context.Background()
 
-	well, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: rootA, X: 0, Y: 0, W: 1, H: 1, Label: "trip",
-	})
+	well, err := cl.CreateTile(ctx, &pb.CreateTileRequest{GridId: rootA, Tile: &pb.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1, AltText: "trip"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	txt, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: well.ChildGridID, X: 0, Y: 0, W: 1, H: 1, Data: []byte("body"),
-	})
+	txt, err := cl.CreateWithContent(ctx, &pb.CreateTileRequest{GridId: well.ChildGridId, Tile: &pb.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("body"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	dark.verdict[localID(t, txt.ID)] = status.Error(codes.NotFound, "no such tile")
+	dark.verdict[localID(t, txt.Id)] = status.Error(codes.NotFound, "no such tile")
 
-	_, err = cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID: well.ID, DestGridID: rootB, X: 0, Y: 0,
+	_, err = cl.CloneTile(ctx, &pb.CloneTileRequest{
+		TileId: well.Id, DestGridId: rootB, X: 0, Y: 0,
 	})
 	if err == nil || !strings.Contains(err.Error(), "deep copy incomplete") {
 		t.Fatalf("a verdict mid-walk must abort with the partial contract, got: %v", err)
@@ -325,17 +304,13 @@ func TestMidCopyFailureNeverDoublesTheWell(t *testing.T) {
 	ctx := context.Background()
 
 	// Source lives in HEALTHY plugin B; the wrapped plugin A is the dest.
-	well, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: rootB, X: 0, Y: 0, W: 1, H: 1, Label: "outer",
-	})
+	well, err := cl.CreateTile(ctx, &pb.CreateTileRequest{GridId: rootB, Tile: &pb.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1, AltText: "outer"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A NESTED well, so the failing copy runs through the child arm (the
 	// top-level clone has its own, correct, guard).
-	if _, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: well.ChildGridID, X: 0, Y: 0, W: 1, H: 1, Label: "inner",
-	}); err != nil {
+	if _, err := cl.CreateTile(ctx, &pb.CreateTileRequest{GridId: well.ChildGridId, Tile: &pb.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1, AltText: "inner"}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -344,8 +319,8 @@ func TestMidCopyFailureNeverDoublesTheWell(t *testing.T) {
 	// up through the child arm with the inner copy already created.
 	dark.darkFramingFrom = 2
 
-	_, cerr := cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID: well.ID, DestGridID: rootA, X: 0, Y: 0,
+	_, cerr := cl.CloneTile(ctx, &pb.CloneTileRequest{
+		TileId: well.Id, DestGridId: rootA, X: 0, Y: 0,
 	})
 	if cerr == nil {
 		t.Fatal("a dest-dark mid-copy must surface, not pretend success")

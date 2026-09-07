@@ -106,7 +106,7 @@ func (a *App) refreshRenderedOverlay() {
 		return
 	}
 	t, ok := a.descendedTile(p)
-	if !ok || !t.TextDocument() {
+	if !ok || !rpc.TextDocument(t) {
 		hide()
 		return
 	}
@@ -118,14 +118,14 @@ func (a *App) refreshRenderedOverlay() {
 	// mode the session carried in. This display-time guard makes
 	// textedit.DescentMode's rule hold from every entry point, including a
 	// restored session.
-	if a.tileReadOnly(&t) {
+	if a.tileReadOnly(t) {
 		mode = rpc.TextModeRendered
 	}
 	if mode != rpc.TextModeRendered {
 		hide()
 		return
 	}
-	body, ok := a.tileBody(&t)
+	body, ok := a.tileBody(t)
 	if !ok {
 		hide() // canvas paints raw source until the fetch lands (issue #35 guard)
 		return
@@ -142,10 +142,10 @@ func (a *App) refreshRenderedOverlay() {
 	s.Set("fontSize", pxf(14*a.textScaleFor(p)))
 	s.Set("display", "block")
 
-	key := t.ID + "\x00" + strconv.FormatInt(t.Version, 10) + "\x00" +
+	key := t.Id + "\x00" + strconv.FormatInt(t.Version, 10) + "\x00" +
 		strconv.FormatBool(markdown.IsOrg(t.AltText)) + "\x00" + fmt.Sprint(len(body))
 	if key != a.overlays.lastRenderedKey {
-		div.Set("innerHTML", textedit.PresentationHTML(&t, body))
+		div.Set("innerHTML", textedit.PresentationHTML(t, body))
 		a.overlays.lastRenderedKey = key
 		div.Set("scrollTop", p.TextScrollY)
 		div.Set("scrollLeft", p.TextScrollX)
@@ -169,18 +169,18 @@ func (a *App) onRenderedCheckboxClick(ev, input js.Value) {
 		return
 	}
 	t, ok := a.descendedTile(p)
-	if !ok || !t.TextDocument() || markdown.IsOrg(t.AltText) {
+	if !ok || !rpc.TextDocument(t) || markdown.IsOrg(t.AltText) {
 		// Org checkboxes render via go-org and have no source mapping here.
 		ev.Call("preventDefault")
 		return
 	}
-	if a.tileReadOnly(&t) {
+	if a.tileReadOnly(t) {
 		ev.Call("preventDefault")
 		a.reportErr(errsurface.Info, "textedit",
 			"this document is read-only — the checkbox was not changed")
 		return
 	}
-	body, ok := a.tileBody(&t)
+	body, ok := a.tileBody(t)
 	if !ok {
 		ev.Call("preventDefault")
 		return
@@ -202,7 +202,7 @@ func (a *App) onRenderedCheckboxClick(ev, input js.Value) {
 			"checkbox did not map to a task marker — nothing was changed")
 		return
 	}
-	a.putEditedContent(t.ContentID(), toggled)
+	a.putEditedContent(rpc.ContentID(t), toggled)
 	a.scheduleFileSave()
 	// Re-render from the toggled source: the render key won't change (same
 	// tile, same version, same length), so force it.

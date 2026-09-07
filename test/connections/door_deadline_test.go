@@ -36,7 +36,7 @@ import (
 	"testing"
 	"time"
 
-	gwrpc "github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/internal/connection/dial/dialtest"
 	"github.com/josephburnett/gridwell/internal/server"
 )
@@ -102,7 +102,7 @@ func TestConnectionDoorHoldsATunneledStreamPastAnyDeadline(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	events := make(chan gwrpc.Event, 128)
+	events := make(chan *gridwellv1.Event, 128)
 	ended := make(chan error, 1)
 	go func() {
 		sub, err := clientFor(localOrigin).Subscribe(ctx)
@@ -149,7 +149,7 @@ func TestConnectionDoorHoldsATunneledStreamPastAnyDeadline(t *testing.T) {
 				if !ok {
 					t.Fatalf("%s: stream channel closed", what)
 				}
-				if ev.Kind == gwrpc.EventTileChanged && ev.TileChanged != nil && ev.TileChanged.Tile.ID == txtID {
+				if c := ev.GetTileChanged(); c != nil && c.GetTile().GetId() == txtID {
 					return
 				}
 			case err := <-ended:
@@ -180,9 +180,9 @@ holdLoop:
 			if !ok {
 				t.Fatalf("the mounter's stream channel closed during the %s hold", hold)
 			}
-			if ev.Kind == gwrpc.EventPluginHealth && ev.PluginHealth != nil && !ev.PluginHealth.Healthy {
+			if h := ev.GetPluginHealth(); h != nil && !h.Healthy {
 				t.Fatalf("the connection door cut the fan-in stream %s into the hold: health-down for %q: %s",
-					time.Since(start).Round(100*time.Millisecond), ev.PluginHealth.PluginUUID, ev.PluginHealth.Detail)
+					time.Since(start).Round(100*time.Millisecond), h.PluginUuid, h.Detail)
 			}
 		case err := <-ended:
 			t.Fatalf("the mounter's stream ended %s into the hold: %v", time.Since(start).Round(100*time.Millisecond), err)

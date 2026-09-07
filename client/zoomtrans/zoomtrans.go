@@ -15,10 +15,9 @@
 package zoomtrans
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"math"
 	"slices"
-
-	"github.com/josephburnett/gridwell/api/rpc"
 )
 
 // Endpoints describes one end of a transition: the pane state expressed
@@ -57,9 +56,9 @@ type Well struct {
 // footprint in the parent grid plus the framing it was left at. One
 // derivation, so the renderer's preview, the descent, and the ascent cannot
 // disagree about what a row says.
-func WellOf(t *rpc.Tile) Well {
+func WellOf(t *gridwellv1.Tile) Well {
 	return Well{
-		ID: t.ID, X: t.X, Y: t.Y, W: t.W, H: t.H,
+		ID: t.Id, X: t.X, Y: t.Y, W: t.W, H: t.H,
 		ViewCx: t.ViewCx, ViewCy: t.ViewCy, ViewZoom: t.ViewZoom,
 	}
 }

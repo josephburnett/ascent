@@ -1,6 +1,8 @@
 package nav
 
-import "github.com/josephburnett/gridwell/api/rpc"
+import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
+)
 
 // GestureKind is the closed set of navigation verbs. Which frame a descent
 // pushes is the doorway tile's declaration, never the call site's, so there
@@ -44,7 +46,7 @@ type Gesture struct {
 	// Door is the doorway row BY VALUE: an ephemeral scratch tile is in no
 	// cached grid, so a lookup at transition end would miss it and the
 	// descent would silently skip going live.
-	Door rpc.Tile
+	Door *gridwellv1.Tile
 	// N is how many levels an ascent leaves; Animate asks for the zoom-out
 	// on the last hop.
 	N       int
@@ -57,7 +59,7 @@ type Gesture struct {
 	Reset      bool
 	DestPaneID string
 	OldID      string
-	Created    rpc.Tile
+	Created    *gridwellv1.Tile
 	TileID     string
 	Count      int
 	// Outer says the level just popped had parked a tree: its landing is the

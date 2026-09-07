@@ -28,6 +28,7 @@ package server
 import (
 	"context"
 	"fmt"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"net/http"
 	"testing"
 	"time"
@@ -46,7 +47,7 @@ func TestWebDoorHoldsAConnectStreamPastAnyDeadline(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	events := make(chan rpc.Event, 64)
+	events := make(chan *gridwellv1.Event, 64)
 	ended := make(chan error, 1)
 	go func() {
 		sub, err := cl.Subscribe(ctx)
@@ -74,9 +75,7 @@ func TestWebDoorHoldsAConnectStreamPastAnyDeadline(t *testing.T) {
 	// the hold.
 	n := 0
 	createText := func() {
-		if _, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-			GridID: root, X: int64(n), Y: 0, W: 1, H: 1,
-		}); err != nil {
+		if _, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: int64(n), Y: 0, W: 1, H: 1}}); err != nil {
 			t.Fatalf("CreateText: %v", err)
 		}
 		n++

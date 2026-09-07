@@ -14,6 +14,7 @@ package server
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -75,9 +76,9 @@ func newShellDoorFixture(t *testing.T, cfg Config) *shellDoorFixture {
 	}
 }
 
-func (f *shellDoorFixture) createShell(t *testing.T, x, y int64) *rpc.Tile {
+func (f *shellDoorFixture) createShell(t *testing.T, x, y int64) *gridwellv1.Tile {
 	t.Helper()
-	tile, err := f.cl.CreateShell(context.Background(), &rpc.CreateShellRequest{GridID: f.root, X: x, Y: y, W: 1, H: 1})
+	tile, err := f.cl.CreateTile(context.Background(), &gridwellv1.CreateTileRequest{GridId: f.root, Tile: &gridwellv1.Tile{Kind: rpc.KindShell, X: x, Y: y, W: 1, H: 1}})
 	if err != nil {
 		t.Fatalf("CreateShell: %v", err)
 	}
@@ -125,7 +126,7 @@ func TestShellDoorRoundTripsBytes(t *testing.T) {
 	f := newShellDoorFixture(t, Config{})
 	tile := f.createShell(t, 0, 0)
 	cs := f.clientStack()
-	cs.reg.Open("pane-1", tile.ID, 100, 40)
+	cs.reg.Open("pane-1", tile.Id, 100, 40)
 	t.Cleanup(func() { cs.reg.Close("pane-1") })
 
 	sess := waitSession(t, f.fake)
@@ -154,7 +155,7 @@ func TestShellDoorForwardsResize(t *testing.T) {
 	f := newShellDoorFixture(t, Config{})
 	tile := f.createShell(t, 0, 0)
 	cs := f.clientStack()
-	cs.reg.Open("pane-1", tile.ID, 80, 24)
+	cs.reg.Open("pane-1", tile.Id, 80, 24)
 	t.Cleanup(func() { cs.reg.Close("pane-1") })
 	sess := waitSession(t, f.fake)
 
@@ -181,13 +182,11 @@ func TestShellDoorReportsSessionGone(t *testing.T) {
 	tile := f.createShell(t, 0, 0)
 	// A frozen snapshot means "do not fabricate a new bash behind the
 	// JPEG"; with no live session, the attach is refused.
-	if _, err := f.cl.SetShellPreview(context.Background(), &rpc.SetShellPreviewRequest{
-		TileID: tile.ID, JPEG: []byte("jpegbytes"),
-	}); err != nil {
+	if _, err := f.cl.SetTile(context.Background(), &gridwellv1.SetTileRequest{TileId: tile.Id, Tile: &gridwellv1.Tile{Kind: rpc.KindShell}, Preview: []byte("jpegbytes")}); err != nil {
 		t.Fatalf("SetShellPreview: %v", err)
 	}
 	cs := f.clientStack()
-	cs.reg.Open("pane-1", tile.ID, 80, 24)
+	cs.reg.Open("pane-1", tile.Id, 80, 24)
 	select {
 	case e := <-cs.exit:
 		if !e.SessionGone {
@@ -219,7 +218,7 @@ func TestShellDoorSurfacesADriverThatCannotOpen(t *testing.T) {
 	f.fake.OpenErr = shelldriver.ErrShellsUnavailable
 	tile := f.createShell(t, 0, 0)
 	cs := f.clientStack()
-	cs.reg.Open("pane-1", tile.ID, 80, 24)
+	cs.reg.Open("pane-1", tile.Id, 80, 24)
 	select {
 	case e := <-cs.exit:
 		if e.PaneID != "pane-1" {
@@ -258,7 +257,7 @@ func TestShellDoorRefusesUnknownTile(t *testing.T) {
 func TestShellDoorRequiresTheAuthCookie(t *testing.T) {
 	f := newShellDoorFixture(t, Config{})
 	tile := f.createShell(t, 0, 0)
-	addr, err := shellwire.AttachURL(f.hs.URL, tile.ID, 80, 24)
+	addr, err := shellwire.AttachURL(f.hs.URL, tile.Id, 80, 24)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,7 +282,7 @@ func TestShellDoorRequiresTheAuthCookie(t *testing.T) {
 func TestShellDoorRefusesCrossOrigin(t *testing.T) {
 	f := newShellDoorFixture(t, Config{})
 	tile := f.createShell(t, 0, 0)
-	addr, err := shellwire.AttachURL(f.hs.URL, tile.ID, 80, 24)
+	addr, err := shellwire.AttachURL(f.hs.URL, tile.Id, 80, 24)
 	if err != nil {
 		t.Fatal(err)
 	}

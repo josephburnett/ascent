@@ -31,14 +31,14 @@ func (m *Machine) promote(g Gesture, w World) Plan {
 	// The view's final frame, title and trail freeze onto the NEW tile, never
 	// the row about to die.
 	pl.add(Effect{Kind: EffCloseStream, PaneID: op.ID, Streams: StreamURL, Freeze: true,
-		FreezeOnto: &FreezeTarget{TileID: created.ID, GridID: created.GridID}})
+		FreezeOnto: &FreezeTarget{TileID: created.Id, GridID: created.GridId}})
 	// The row dies only if it is known ephemeral and no sibling pane still
 	// shows the visit; a split clone keeps it and deletes it on its own
 	// ascent. The same rule the ascent applies, from the same two owners.
 	if old := w.Promote.old(); old != nil {
-		eph, known := scratch.Ephemeral(op.Scratch, old.GridID)
-		if eph && known && !w.otherPaneShows(op.ID, old.ID) {
-			pl.add(Effect{Kind: EffDeleteEphemeral, GridID: old.GridID, TileID: old.ID})
+		eph, known := scratch.Ephemeral(op.Scratch, old.GridId)
+		if eph && known && !w.otherPaneShows(op.ID, old.Id) {
+			pl.add(Effect{Kind: EffDeleteEphemeral, GridID: old.GridId, TileID: old.Id})
 		}
 	}
 	// The pane follows its content: RelocateTo replaces the visit's frame with
@@ -49,14 +49,14 @@ func (m *Machine) promote(g Gesture, w World) Plan {
 	// overtake to zoom out from. There is no zoom floor here: a promote has no
 	// prior grid zoom in this pane to refuse to zoom out past.
 	pl.add(Effect{Kind: EffRelocatePane, PaneID: op.ID, DestPaneID: dp.ID,
-		TileID: created.ID,
+		TileID: created.Id,
 		Foot:   pane.Footprint{X: created.X, Y: created.Y, W: created.W, H: created.H},
 		Zoom:   panebox.FitZoom(op.Rect, created.W, created.H, w.TextSideInset, w.CellPx)})
 	// The content scale follows the frame, as it does at the end of every
 	// descent and every ascent landing (issue #82).
 	pl.add(Effect{Kind: EffScaleContent, PaneID: op.ID})
 	// And the page goes live again on the new tile.
-	pl.add(Effect{Kind: EffPlaceURLView, PaneID: op.ID, TileID: created.ID, Tile: created})
+	pl.add(Effect{Kind: EffPlaceURLView, PaneID: op.ID, TileID: created.Id, Tile: created})
 	pl.add(Effect{Kind: EffRefreshOverlay})
 	pl.add(Effect{Kind: EffScheduleURLUpdate})
 	return pl.plan()

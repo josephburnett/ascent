@@ -1,6 +1,7 @@
 package nav
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"strconv"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -41,7 +42,7 @@ type levelData struct {
 	Followed bool
 
 	// What the fetch arm learns.
-	Tile     rpc.Tile
+	Tile     *gridwellv1.Tile
 	Data     []byte
 	Tree     *pane.Tree
 	Capture  bool
@@ -63,7 +64,7 @@ func (m *Machine) enterLevel(g Gesture, w World) Plan {
 		// The origin pane's place, for the organize-this default and for the
 		// byte-identical viewport restore under the animation.
 		Origin:   p.Stack.Clone(),
-		TileID:   pt.ID,
+		TileID:   pt.Id,
 		IDPrefix: "w" + strconv.Itoa(w.LevelDepth+1) + ":",
 	}
 	ld.Barrier = m.mintBarrier(p.ID, 2, ld)
@@ -83,7 +84,7 @@ func (m *Machine) enterLevel(g Gesture, w World) Plan {
 		ToCx: p.Cx, ToCy: p.Cy, ToZoom: p.Zoom,
 		DurationMs: w.TransitionMs,
 	}
-	expand := pt.BlobID == 0
+	expand := pt.BlobId == 0
 	if !expand {
 		// The zoom: pan to the tile's centre while zooming until its footprint
 		// fills the pane box, so the preview grows into the live tree.
@@ -131,13 +132,13 @@ func (m *Machine) levelTile(c cont, r Result, pl *planner) Plan {
 	if !r.OK || r.Tile == nil {
 		return m.levelFailed(ld, "GetTile", r, pl)
 	}
-	t := *r.Tile
-	if t.LeafLink() && !ld.Followed {
+	t := r.Tile
+	if rpc.LeafLink(t) && !ld.Followed {
 		// A pane link opens the target's arrangement, the one shared layout,
 		// and the persister then writes back through the target id too: the
 		// same read-through rule as every other content door.
 		ld.Followed = true
-		ld.TileID = t.ContentID()
+		ld.TileID = rpc.ContentID(t)
 		m.awaitLevelTile(ld, pl)
 		return pl.plan()
 	}
@@ -147,7 +148,7 @@ func (m *Machine) levelTile(c cont, r Result, pl *planner) Plan {
 		return pl.plan()
 	}
 	ld.Tile = t
-	if t.BlobID == 0 {
+	if t.BlobId == 0 {
 		// Never arranged. A descent captures the window layout as it stands at
 		// the swap — deferred to install time so the encode reads the tree
 		// after the origin pane's place is back. A boot restore has no window
@@ -196,7 +197,7 @@ func (m *Machine) levelFallbackTree(ld *levelData) *pane.Tree {
 	if ld.Boot {
 		t := ld.Tile
 		cx, cy := pane.Footprint{X: t.X, Y: t.Y, W: t.W, H: t.H}.Center()
-		return pane.TreeAtPlace(ld.IDPrefix, t.GridID, nil, cx, cy, 1)
+		return pane.TreeAtPlace(ld.IDPrefix, t.GridId, nil, cx, cy, 1)
 	}
 	return pane.TreeAtPlace(ld.IDPrefix, ld.Origin.Anchor(), ld.Origin.Path(),
 		ld.Origin.Cx, ld.Origin.Cy, ld.Origin.Zoom)
@@ -265,17 +266,17 @@ func (m *Machine) installLevelData(ld *levelData, pl *planner) {
 	pl.add(Effect{Kind: EffFlushLayout})
 	lvl := pane.Level{
 		OriginPane: ld.PaneID,
-		TileID:     ld.Tile.ID,
+		TileID:     ld.Tile.Id,
 		// Where the pane tile sits, off the row this descent already read: the
 		// close-all landing when no tree was parked, and so the face the bar's
 		// root crumb wears there instead of an anonymous square.
-		GridID: ld.Tile.GridID,
+		GridID: ld.Tile.GridId,
 		// Raw alt text: the bar substitutes the generic label at draw time, so
 		// the crumb rename can round-trip an empty name honestly.
 		Name:     ld.Tile.AltText,
 		ReadOnly: ld.ReadOnly,
 	}
-	pl.add(Effect{Kind: EffInstallLevel, PaneID: ld.PaneID, TileID: ld.Tile.ID,
+	pl.add(Effect{Kind: EffInstallLevel, PaneID: ld.PaneID, TileID: ld.Tile.Id,
 		Level: &lvl, Tree: ld.Tree, Baseline: ld.Data, KeepOuter: !ld.Boot,
 		Capture: ld.Capture, IDPrefix: ld.IDPrefix})
 	// The installed tree's focused leaf may be text-descended, from a restored
@@ -374,7 +375,7 @@ func (m *Machine) animateLevelReturn(g Gesture, w World, pl *planner) {
 	if w.Level == nil || w.Level.Tile == nil {
 		return
 	}
-	t := *w.Level.Tile
+	t := w.Level.Tile
 	cx, cy := pane.Footprint{X: t.X, Y: t.Y, W: t.W, H: t.H}.Center()
 	overtake := panebox.FitZoom(p.Rect, t.W, t.H, w.TextSideInset, w.CellPx)
 	if overtake < p.Zoom {
@@ -420,11 +421,11 @@ func (m *Machine) levelRecentre(c cont, r Result, w World, pl *planner) {
 	if !ok {
 		return
 	}
-	t := *r.Tile
+	t := r.Tile
 	cx, cy := pane.Footprint{X: t.X, Y: t.Y, W: t.W, H: t.H}.Center()
 	var st pane.Stack
-	st.Reset(pane.Frame{GridID: t.GridID, Cx: cx, Cy: cy, Zoom: p.Zoom})
+	st.Reset(pane.Frame{GridID: t.GridId, Cx: cx, Cy: cy, Zoom: p.Zoom})
 	pl.add(Effect{Kind: EffInstallPlace, PaneID: c.PaneID, Stack: &st})
-	pl.add(Effect{Kind: EffFetchGrid, GridID: t.GridID})
+	pl.add(Effect{Kind: EffFetchGrid, GridID: t.GridId})
 	pl.add(Effect{Kind: EffScheduleURLUpdate})
 }

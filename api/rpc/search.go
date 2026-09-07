@@ -39,20 +39,16 @@ func ParseSearchQuery(q string) SearchQuery {
 	return SearchQuery{Text: q}
 }
 
-// SearchResult is one hit: a place, not just a row — the tile plus its
-// containing-well chain from the plugin root. It and its conversions are
-// generated from the proto into wire_gen.go, like every other record.
-
 // Search issues one query against the server surface. scope routes to the
 // namespace owning that qualified id; "" fans out across every configured
 // plugin, and transit nodes recurse. limit caps results per answering
 // plugin; 0 means the plugin's default.
-func (c *Client) Search(ctx context.Context, query, scope string, limit int32) ([]SearchResult, error) {
+func (c *Client) Search(ctx context.Context, query, scope string, limit int32) ([]*pb.SearchResult, error) {
 	resp, err := c.cl.Search(ctx, connect.NewRequest(&pb.SearchRequest{
 		Query: query, Scope: scope, Limit: limit,
 	}))
 	if err != nil {
 		return nil, err
 	}
-	return SearchResultsFromProto(resp.Msg.Results), nil
+	return resp.Msg.Results, nil
 }

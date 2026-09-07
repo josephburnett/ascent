@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -27,9 +28,7 @@ func TestCreateTextEmptyData(t *testing.T) {
 	// Empty Data is what client/wasm/input.go's palette drop sends.
 	// After proto3 default-value omission round-trips through the wire
 	// the server sees req.Data == nil.
-	tile, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte{},
-	})
+	tile, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte{})
 	if err != nil {
 		t.Fatalf("CreateText with empty data: %v", err)
 	}
@@ -44,9 +43,9 @@ func TestCreateTextEmptyData(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(resp.Tiles) != 1 || resp.Tiles[0].ID != tile.ID {
+	if len(resp.Tiles) != 1 || resp.Tiles[0].Id != tile.Id {
 		t.Errorf("after CreateText empty: %d tiles, want 1 matching id=%s",
-			len(resp.Tiles), tile.ID)
+			len(resp.Tiles), tile.Id)
 	}
 }
 
@@ -55,9 +54,7 @@ func TestCreateTextEmptyData(t *testing.T) {
 // this guards the case where any future caller passes nil directly.
 func TestCreateTextNilData(t *testing.T) {
 	_, cl, root := newTestServer(t)
-	if _, err := cl.CreateText(context.Background(), &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: nil,
-	}); err != nil {
+	if _, err := cl.CreateWithContent(context.Background(), &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, nil); err != nil {
 		t.Fatalf("CreateText with nil data: %v", err)
 	}
 }
@@ -67,18 +64,14 @@ func TestCreateTextNilData(t *testing.T) {
 // still fails loudly with InvalidArgument, not silently with Internal.
 func TestCreateURLEmptyString(t *testing.T) {
 	_, cl, root := newTestServer(t)
-	tile, err := cl.CreateURL(context.Background(), &rpc.CreateURLRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, URL: "",
-	})
+	tile, err := cl.CreateTile(context.Background(), &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: 0, Y: 0, W: 1, H: 1, UrlString: ""}})
 	if err != nil {
 		t.Fatalf("empty URL is the unconfigured state, must create: %v", err)
 	}
-	if tile.URLString != "" {
-		t.Errorf("unconfigured tile URLString = %q, want empty", tile.URLString)
+	if tile.UrlString != "" {
+		t.Errorf("unconfigured tile URLString = %q, want empty", tile.UrlString)
 	}
-	_, err = cl.CreateURL(context.Background(), &rpc.CreateURLRequest{
-		GridID: root, X: 2, Y: 0, W: 1, H: 1, URL: "javascript:alert(1)",
-	})
+	_, err = cl.CreateTile(context.Background(), &gridwellv1.CreateTileRequest{GridId: root, Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: 2, Y: 0, W: 1, H: 1, UrlString: "javascript:alert(1)"}})
 	if got := errCode(err); got != connect.CodeInvalidArgument {
 		t.Errorf("garbage scheme: code %v, want InvalidArgument", got)
 	}
@@ -90,8 +83,8 @@ func TestCreateURLEmptyString(t *testing.T) {
 // id routes nowhere.)
 func TestMountUnknownPlugin(t *testing.T) {
 	_, cl, root := newTestServer(t)
-	_, err := cl.CloneTile(context.Background(), &rpc.CloneTileRequest{
-		TileID: "no-such-plugin/1", DestGridID: root, X: 0, Y: 0,
+	_, err := cl.CloneTile(context.Background(), &gridwellv1.CloneTileRequest{
+		TileId: "no-such-plugin/1", DestGridId: root, X: 0, Y: 0,
 	})
 	if got := errCode(err); got != connect.CodeNotFound {
 		t.Errorf("unknown plugin: code %v, want NotFound", got)

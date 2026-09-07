@@ -4,9 +4,8 @@ package rpc
 // and the page dies first, so a quit or reload inside the settle window
 // loses the last write. navigator.sendBeacon survives the page but needs a
 // raw (path, body) pair; these helpers produce the exact Connect-unary wire
-// form the ordinary client call would send, from the same *ToProto
-// converters, as proto-JSON, which the Connect handler accepts on its
-// unary POSTs.
+// form the ordinary client call would send, as proto-JSON, which the Connect
+// handler accepts on its unary POSTs.
 //
 // The WriteContent beacon hand-builds the one Connect client-streaming
 // envelope (a single enveloped message; the request stream ends with the
@@ -46,34 +45,29 @@ func beacon(procedure string, m proto.Message) (path string, body []byte) {
 	return procedure, b
 }
 
-// SetTextViewBeacon is the beacon form of Client.SetTextView.
-func SetTextViewBeacon(req *SetTextViewRequest) (path string, body []byte) {
-	return beacon(gridwellv1connect.GridwellSetTileProcedure, SetTextViewToProto(req))
+// SetTileBeacon is the beacon form of Client.SetTile. The preview jpeg is
+// dropped: the beacon queue budget is about 64 KB, which a jpeg would
+// exhaust, and the store skips an empty preview, so the tile keeps its
+// previous frozen face rather than losing the address, title, and history a
+// live page navigated to.
+func SetTileBeacon(req *pb.SetTileRequest) (path string, body []byte) {
+	r := proto.Clone(req).(*pb.SetTileRequest)
+	r.Preview = nil
+	return beacon(gridwellv1connect.GridwellSetTileProcedure, r)
 }
 
 // SetFramingBeacon is the beacon form of Client.SetFraming: the one framing
 // beacon, doorway tile and root grid alike.
-func SetFramingBeacon(req *SetFramingRequest) (path string, body []byte) {
-	return beacon(gridwellv1connect.GridwellSetFramingProcedure, SetFramingToProto(req))
-}
-
-// SetURLStateBeacon is the beacon form of Client.SetURLState without the
-// preview jpeg, so the address, title, and history a live page navigated to
-// survive a tab close. The jpeg stays empty: the store skips empty fields,
-// so the tile keeps its previous frozen face rather than losing the trail.
-// The beacon queue budget is about 64 KB, which a jpeg would exhaust.
-func SetURLStateBeacon(req *SetURLStateRequest) (path string, body []byte) {
-	r := *req
-	r.JPEG = nil
-	return beacon(gridwellv1connect.GridwellSetTileProcedure, SetURLStateToProto(&r))
+func SetFramingBeacon(req *pb.SetFramingRequest) (path string, body []byte) {
+	return beacon(gridwellv1connect.GridwellSetFramingProcedure, req)
 }
 
 // DeleteTileBeacon is the beacon form of Client.DeleteTile. Only one delete
 // parks and therefore reaches the unload drain: the ephemeral visit's
 // cleanup, which is off-grid — nothing on screen says it did not happen, and
 // a shell's tmux session outlives it.
-func DeleteTileBeacon(req *DeleteTileRequest) (path string, body []byte) {
-	return beacon(gridwellv1connect.GridwellDeleteTileProcedure, DeleteTileRequestToProto(req))
+func DeleteTileBeacon(req *pb.DeleteTileRequest) (path string, body []byte) {
+	return beacon(gridwellv1connect.GridwellDeleteTileProcedure, req)
 }
 
 // WriteContentBeacon is the beacon form of Client.WriteContent, and the one

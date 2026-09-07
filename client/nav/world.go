@@ -1,7 +1,7 @@
 package nav
 
 import (
-	"github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/client/caps"
 	"github.com/josephburnett/gridwell/client/errsurface"
 	"github.com/josephburnett/gridwell/client/pane"
@@ -83,14 +83,14 @@ type LeaveWorld struct {
 	// DescendedTile is descendedTile(p) for a content place — the cache-wide
 	// walk that finds an off-grid ephemeral visit. nil when the row vanished
 	// or was never cached.
-	DescendedTile *rpc.Tile
+	DescendedTile *gridwellv1.Tile
 	// DoorGridID is the grid the doorway row lives in, one level out.
 	DoorGridID string
 	// DoorGridCached says whether that grid is in the cache at all.
 	DoorGridCached bool
 	// DoorTile is the doorway row itself, nil when the grid holds none — a
 	// + menu portal, for which the origin grid has no row.
-	DoorTile *rpc.Tile
+	DoorTile *gridwellv1.Tile
 	// LandingView is the framing the grid being landed on was left at, from
 	// the row that owns it (persistedGridView: the containing well for a
 	// nested grid, the plugin's persisted root view for a root). nil when
@@ -102,7 +102,7 @@ type LeaveWorld struct {
 // zooms out onto, from the grid the landing pane sits in. nil Tile means the
 // row is not cached, and the landing is instant.
 type LevelWorld struct {
-	Tile *rpc.Tile
+	Tile *gridwellv1.Tile
 }
 
 // PromoteWorld is the promote's extra half: the ephemeral row being promoted
@@ -110,11 +110,11 @@ type LevelWorld struct {
 // off-grid scratch tile). nil leaves it undeleted rather than guessing about a
 // row nobody can see.
 type PromoteWorld struct {
-	OldTile *rpc.Tile
+	OldTile *gridwellv1.Tile
 }
 
 // old is the row being promoted away from, "" when there is no promote half.
-func (pw *PromoteWorld) old() *rpc.Tile {
+func (pw *PromoteWorld) old() *gridwellv1.Tile {
 	if pw == nil {
 		return nil
 	}

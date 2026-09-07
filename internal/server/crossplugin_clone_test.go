@@ -69,16 +69,11 @@ func TestLinkWellAcrossPlugins(t *testing.T) {
 	ctx := context.Background()
 
 	// A named well with content inside it, in plugin A.
-	well, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: rootA, X: 0, Y: 0, W: 1, H: 1, Label: "recipes",
-	})
+	well, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: rootA, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1, AltText: "recipes"}})
 	if err != nil {
 		t.Fatalf("CreateWell: %v", err)
 	}
-	inner, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: well.ChildGridID,
-		X:      0, Y: 0, W: 1, H: 1, Data: []byte("# soup"),
-	})
+	inner, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: well.ChildGridId, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("# soup"))
 	if err != nil {
 		t.Fatalf("CreateText: %v", err)
 	}
@@ -86,9 +81,9 @@ func TestLinkWellAcrossPlugins(t *testing.T) {
 	// The source well has a framing the user set — the preview the link
 	// gesture carries along. Descending the link must land exactly where
 	// descending the source would.
-	framed, err := cl.SetFraming(ctx, &rpc.SetFramingRequest{
-		TileID:  well.ID,
-		Framing: rpc.Framing{Cx: 7, Cy: -2, Zoom: 1.75},
+	framed, err := cl.SetFraming(ctx, &gridwellv1.SetFramingRequest{
+		TileId: well.Id,
+		Cx:     7, Cy: -2, Zoom: 1.75,
 	})
 	if err != nil {
 		t.Fatalf("SetFraming: %v", err)
@@ -98,11 +93,7 @@ func TestLinkWellAcrossPlugins(t *testing.T) {
 	// carrying the source's qualified child grid, label, framing, and
 	// provenance — the destination gains a LINK; there is only one copy of
 	// the grid.
-	link, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: rootB, X: 3, Y: 3, W: well.W, H: well.H,
-		ChildGridID: well.ChildGridID, Label: framed.AltText,
-		Framing: rpc.Framing{Cx: framed.ViewCx, Cy: framed.ViewCy, Zoom: framed.ViewZoom},
-	})
+	link, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: rootB, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 3, Y: 3, W: well.W, H: well.H, ChildGridId: well.ChildGridId, AltText: framed.AltText, ViewCx: framed.ViewCx, ViewCy: framed.ViewCy, ViewZoom: framed.ViewZoom}})
 	if err != nil {
 		t.Fatalf("cross-plugin link (CreateWell): %v", err)
 	}
@@ -110,11 +101,11 @@ func TestLinkWellAcrossPlugins(t *testing.T) {
 		t.Errorf("link framing = (%v, %v, %v), want the source's (7, -2, 1.75) — a link must not reset the viewport",
 			link.ViewCx, link.ViewCy, link.ViewZoom)
 	}
-	if u, _, _ := rpc.SplitID(link.ID); u != uuidB {
+	if u, _, _ := rpc.SplitID(link.Id); u != uuidB {
 		t.Errorf("link lives in %q, want destination plugin %q", u, uuidB)
 	}
-	if link.ChildGridID != well.ChildGridID {
-		t.Errorf("link child = %q, want the SOURCE well's grid %q (shared, not copied)", link.ChildGridID, well.ChildGridID)
+	if link.ChildGridId != well.ChildGridId {
+		t.Errorf("link child = %q, want the SOURCE well's grid %q (shared, not copied)", link.ChildGridId, well.ChildGridId)
 	}
 	if !link.Reference {
 		t.Error("cross-plugin link must be marked Reference (dashed border, unlink-only delete)")
@@ -123,22 +114,22 @@ func TestLinkWellAcrossPlugins(t *testing.T) {
 		t.Errorf("link label = %q, want the source's name", link.AltText)
 	}
 	// The grid is SHARED: reading the link's child sees the source's content.
-	g, err := cl.GetGrid(ctx, link.ChildGridID)
+	g, err := cl.GetGrid(ctx, link.ChildGridId)
 	if err != nil {
 		t.Fatalf("GetGrid through link: %v", err)
 	}
-	if len(g.Tiles) != 1 || g.Tiles[0].ID != inner.ID {
-		t.Errorf("linked grid = %+v, want the source's tile %s", g.Tiles, inner.ID)
+	if len(g.Tiles) != 1 || g.Tiles[0].Id != inner.Id {
+		t.Errorf("linked grid = %+v, want the source's tile %s", g.Tiles, inner.Id)
 	}
 
 	// Deleting the link only unlinks — the source well and its content survive.
-	if err := cl.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: link.ID}); err != nil {
+	if err := cl.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: link.Id}); err != nil {
 		t.Fatalf("delete link: %v", err)
 	}
-	if _, err := cl.GetTile(ctx, well.ID); err != nil {
+	if _, err := cl.GetTile(ctx, well.Id); err != nil {
 		t.Errorf("deleting the link destroyed the source well: %v", err)
 	}
-	if _, _, _, err := cl.ReadContent(ctx, inner.ID); err != nil {
+	if _, _, _, err := cl.ReadContent(ctx, inner.Id); err != nil {
 		t.Errorf("deleting the link destroyed the source's content: %v", err)
 	}
 	_ = uuidA
@@ -153,51 +144,40 @@ func TestCloneWellAcrossPluginsDeepCopies(t *testing.T) {
 	cl, _, rootA, uuidB, rootB := twoPluginServer(t)
 	ctx := context.Background()
 
-	well, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: rootA, X: 0, Y: 0, W: 1, H: 1, Label: "recipes",
-	})
+	well, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: rootA, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 0, Y: 0, W: 1, H: 1, AltText: "recipes"}})
 	if err != nil {
 		t.Fatalf("CreateWell: %v", err)
 	}
 	// Contents: a text body, a NESTED well with its own text, and a leaf
 	// LINK (which must copy as a reference, not as bytes).
-	inner, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: well.ChildGridID, X: 0, Y: 0, W: 1, H: 1, Data: []byte("# soup"),
-	})
+	inner, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: well.ChildGridId, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("# soup"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	nested, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: well.ChildGridID, X: 2, Y: 0, W: 1, H: 1, Label: "drafts",
-	})
+	nested, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: well.ChildGridId, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 2, Y: 0, W: 1, H: 1, AltText: "drafts"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: nested.ChildGridID, X: 0, Y: 0, W: 1, H: 1, Data: []byte("# stock"),
-	}); err != nil {
+	if _, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: nested.ChildGridId, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("# stock")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cl.CreateLeafLink(ctx, &rpc.CreateLeafLinkRequest{
-		GridID: well.ChildGridID, X: 4, Y: 0, W: 1, H: 1, Kind: rpc.KindText,
-		LinkTargetID: inner.ID, Label: "soup-link",
-	}); err != nil {
+	if _, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: well.ChildGridId, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 4, Y: 0, W: 1, H: 1, LinkTargetId: inner.Id, AltText: "soup-link"}}); err != nil {
 		t.Fatal(err)
 	}
 	// Framing on the well (preview = descent = ascent).
-	if _, err := cl.SetFraming(ctx, &rpc.SetFramingRequest{
-		TileID: well.ID, Framing: rpc.Framing{Cx: 7, Cy: 8, Zoom: 2.5},
+	if _, err := cl.SetFraming(ctx, &gridwellv1.SetFramingRequest{
+		TileId: well.Id, Cx: 7, Cy: 8, Zoom: 2.5,
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	copyTop, err := cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID: well.ID, DestGridID: rootB, X: 3, Y: 3,
+	copyTop, err := cl.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId: well.Id, DestGridId: rootB, X: 3, Y: 3,
 	})
 	if err != nil {
 		t.Fatalf("deep copy: %v", err)
 	}
-	if got := uuidOfTest(copyTop.ID); got != uuidB {
+	if got := uuidOfTest(copyTop.Id); got != uuidB {
 		t.Fatalf("copy landed in %s, want plugin B (%s)", got, uuidB)
 	}
 	if copyTop.ViewCx != 7 || copyTop.ViewCy != 8 || copyTop.ViewZoom != 2.5 {
@@ -208,17 +188,16 @@ func TestCloneWellAcrossPluginsDeepCopies(t *testing.T) {
 	}
 
 	// The copied child grid: text bytes, the nested subtree, the reference.
-	cg, err := cl.GetGrid(ctx, copyTop.ChildGridID)
+	cg, err := cl.GetGrid(ctx, copyTop.ChildGridId)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var copiedText, copiedLink, copiedNested *rpc.Tile
-	for i := range cg.Tiles {
-		tl := &cg.Tiles[i]
+	var copiedText, copiedLink, copiedNested *gridwellv1.Tile
+	for _, tl := range cg.Tiles {
 		switch {
-		case tl.Kind == rpc.KindText && tl.LinkTargetID == "":
+		case tl.Kind == rpc.KindText && tl.LinkTargetId == "":
 			copiedText = tl
-		case tl.LinkTargetID != "":
+		case tl.LinkTargetId != "":
 			copiedLink = tl
 		case tl.Kind == rpc.KindWell:
 			copiedNested = tl
@@ -227,23 +206,23 @@ func TestCloneWellAcrossPluginsDeepCopies(t *testing.T) {
 	if copiedText == nil || copiedLink == nil || copiedNested == nil {
 		t.Fatalf("copied grid incomplete: %+v", cg.Tiles)
 	}
-	body, _, _, err := cl.ReadContent(ctx, copiedText.ID)
+	body, _, _, err := cl.ReadContent(ctx, copiedText.Id)
 	if err != nil || string(body) != "# soup" {
 		t.Fatalf("copied body = %q (%v)", body, err)
 	}
-	if copiedLink.LinkTargetID != inner.ID {
-		t.Errorf("the leaf link must copy as a reference to the ORIGINAL target: %q", copiedLink.LinkTargetID)
+	if copiedLink.LinkTargetId != inner.Id {
+		t.Errorf("the leaf link must copy as a reference to the ORIGINAL target: %q", copiedLink.LinkTargetId)
 	}
-	ng, err := cl.GetGrid(ctx, copiedNested.ChildGridID)
+	ng, err := cl.GetGrid(ctx, copiedNested.ChildGridId)
 	if err != nil || len(ng.Tiles) != 1 {
 		t.Fatalf("nested subtree not copied: %v %v", ng, err)
 	}
 
 	// Independence: editing the copy leaves the source byte-identical.
-	if _, err := cl.WriteContent(ctx, copiedText.ID, copiedText.Version, []byte("# changed")); err != nil {
+	if _, err := cl.WriteContent(ctx, copiedText.Id, copiedText.Version, []byte("# changed")); err != nil {
 		t.Fatal(err)
 	}
-	orig, _, _, err := cl.ReadContent(ctx, inner.ID)
+	orig, _, _, err := cl.ReadContent(ctx, inner.Id)
 	if err != nil || string(orig) != "# soup" {
 		t.Fatalf("editing the copy changed the source: %q (%v)", orig, err)
 	}
@@ -263,31 +242,25 @@ func TestLinkLeafAcrossPlugins(t *testing.T) {
 	cl, _, rootA, uuidB, rootB := twoPluginServer(t)
 	ctx := context.Background()
 
-	txt, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: rootA, X: 0, Y: 0, W: 1, H: 1, Data: []byte("# the one copy"),
-	})
+	txt, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: rootA, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("# the one copy"))
 	if err != nil {
 		t.Fatalf("CreateText: %v", err)
 	}
-	link, err := cl.CreateLeafLink(ctx, &rpc.CreateLeafLinkRequest{
-		GridID: rootB, X: 2, Y: 2, W: 1, H: 1,
-		Kind: rpc.KindText, LinkTargetID: txt.ID,
-		Label: txt.AltText,
-	})
+	link, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: rootB, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 2, Y: 2, W: 1, H: 1, LinkTargetId: txt.Id, AltText: txt.AltText}})
 	if err != nil {
 		t.Fatalf("cross-plugin leaf link: %v", err)
 	}
-	if u, _, _ := rpc.SplitID(link.ID); u != uuidB {
+	if u, _, _ := rpc.SplitID(link.Id); u != uuidB {
 		t.Errorf("link lives in %q, want destination plugin %q", u, uuidB)
 	}
-	if link.Kind != rpc.KindText || link.LinkTargetID != txt.ID {
-		t.Errorf("link shape: kind=%q target=%q, want text → %q", link.Kind, link.LinkTargetID, txt.ID)
+	if link.Kind != rpc.KindText || link.LinkTargetId != txt.Id {
+		t.Errorf("link shape: kind=%q target=%q, want text → %q", link.Kind, link.LinkTargetId, txt.Id)
 	}
 	if !link.Reference {
 		t.Error("leaf link must be marked Reference (dashed border, unlink-only delete)")
 	}
 	// One copy: content is read THROUGH the target id the link carries.
-	body, _, _, err := cl.ReadContent(ctx, link.LinkTargetID)
+	body, _, _, err := cl.ReadContent(ctx, link.LinkTargetId)
 	if err != nil {
 		t.Fatalf("content through link target: %v", err)
 	}
@@ -296,10 +269,10 @@ func TestLinkLeafAcrossPlugins(t *testing.T) {
 	}
 
 	// Deleting the link only unlinks — the source and its bytes survive.
-	if err := cl.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: link.ID}); err != nil {
+	if err := cl.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: link.Id}); err != nil {
 		t.Fatalf("delete leaf link: %v", err)
 	}
-	if body, _, _, err := cl.ReadContent(ctx, txt.ID); err != nil || string(body) != "# the one copy" {
+	if body, _, _, err := cl.ReadContent(ctx, txt.Id); err != nil || string(body) != "# the one copy" {
 		t.Errorf("deleting the link touched the source: body=%q err=%v", body, err)
 	}
 }
@@ -308,23 +281,21 @@ func TestCloneLeafAcrossPluginsCopiesBytes(t *testing.T) {
 	cl, _, rootA, uuidB, rootB := twoPluginServer(t)
 	ctx := context.Background()
 
-	txt, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: rootA, X: 0, Y: 0, W: 1, H: 1, Data: []byte("# portable"),
-	})
+	txt, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: rootA, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("# portable"))
 	if err != nil {
 		t.Fatalf("CreateText: %v", err)
 	}
-	copyT, err := cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     txt.ID,
-		DestGridID: rootB, X: 1, Y: 1,
+	copyT, err := cl.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     txt.Id,
+		DestGridId: rootB, X: 1, Y: 1,
 	})
 	if err != nil {
 		t.Fatalf("cross-plugin text clone: %v", err)
 	}
-	if u, _, _ := rpc.SplitID(copyT.ID); u != uuidB {
+	if u, _, _ := rpc.SplitID(copyT.Id); u != uuidB {
 		t.Errorf("copy lives in %q, want %q", u, uuidB)
 	}
-	body, _, _, err := cl.ReadContent(ctx, copyT.ID)
+	body, _, _, err := cl.ReadContent(ctx, copyT.Id)
 	if err != nil {
 		t.Fatalf("copy content: %v", err)
 	}
@@ -333,10 +304,10 @@ func TestCloneLeafAcrossPluginsCopiesBytes(t *testing.T) {
 	}
 
 	// The copies are independent: editing the copy leaves the source alone.
-	if _, err := cl.WriteContent(ctx, copyT.ID, copyT.Version, []byte("# changed")); err != nil {
+	if _, err := cl.WriteContent(ctx, copyT.Id, copyT.Version, []byte("# changed")); err != nil {
 		t.Fatalf("edit copy: %v", err)
 	}
-	orig, _, _, err := cl.ReadContent(ctx, txt.ID)
+	orig, _, _, err := cl.ReadContent(ctx, txt.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,20 +320,18 @@ func TestCloneURLAcrossPluginsCopiesAddress(t *testing.T) {
 	cl, _, rootA, _, rootB := twoPluginServer(t)
 	ctx := context.Background()
 
-	u, err := cl.CreateURL(ctx, &rpc.CreateURLRequest{
-		GridID: rootA, X: 0, Y: 0, W: 1, H: 1, URL: "https://example.com/",
-	})
+	u, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: rootA, Tile: &gridwellv1.Tile{Kind: rpc.KindURL, X: 0, Y: 0, W: 1, H: 1, UrlString: "https://example.com/"}})
 	if err != nil {
 		t.Fatalf("CreateURL: %v", err)
 	}
-	cp, err := cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID: u.ID, DestGridID: rootB, X: 0, Y: 0,
+	cp, err := cl.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId: u.Id, DestGridId: rootB, X: 0, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("cross-plugin url clone: %v", err)
 	}
-	if cp.URLString != "https://example.com/" {
-		t.Errorf("copied url = %q", cp.URLString)
+	if cp.UrlString != "https://example.com/" {
+		t.Errorf("copied url = %q", cp.UrlString)
 	}
 }
 
@@ -375,24 +344,22 @@ func TestCloneAcrossPluginsCopiesCurrentContent(t *testing.T) {
 	cl, _, rootA, _, rootB := twoPluginServer(t)
 	ctx := context.Background()
 
-	txt, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: rootA, X: 0, Y: 0, W: 1, H: 1, Data: []byte("v0"),
-	})
+	txt, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: rootA, Tile: &gridwellv1.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("v0"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A real content edit: the source's version is now past what the clone
 	// caller last saw.
-	if _, err := cl.WriteContent(ctx, txt.ID, txt.Version, []byte("v1")); err != nil {
+	if _, err := cl.WriteContent(ctx, txt.Id, txt.Version, []byte("v1")); err != nil {
 		t.Fatalf("WriteContent: %v", err)
 	}
-	cp, err := cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID: txt.ID, DestGridID: rootB, X: 0, Y: 0,
+	cp, err := cl.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId: txt.Id, DestGridId: rootB, X: 0, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("cross-plugin clone after a content edit: %v", err)
 	}
-	body, _, _, err := cl.ReadContent(ctx, cp.ID)
+	body, _, _, err := cl.ReadContent(ctx, cp.Id)
 	if err != nil {
 		t.Fatalf("ReadContent(copy): %v", err)
 	}
@@ -411,25 +378,23 @@ func TestClonePaneAcrossPluginsCopiesLayout(t *testing.T) {
 	ctx := context.Background()
 
 	layout := []byte(`{"v":1,"root":{"pane":{"id":"p1","anchor":"someplugin/1","zoom":1}},"focus":"p1"}`)
-	pt, err := cl.CreatePane(ctx, &rpc.CreatePaneRequest{
-		GridID: rootA, X: 0, Y: 0, W: 2, H: 2, Label: "ws", Data: layout,
-	})
+	pt, err := cl.CreateWithContent(ctx, &gridwellv1.CreateTileRequest{GridId: rootA, Tile: &gridwellv1.Tile{Kind: rpc.KindPane, X: 0, Y: 0, W: 2, H: 2, AltText: "ws"}}, layout)
 	if err != nil {
 		t.Fatalf("CreatePane: %v", err)
 	}
-	cp, err := cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID: pt.ID, DestGridID: rootB, X: 1, Y: 1,
+	cp, err := cl.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId: pt.Id, DestGridId: rootB, X: 1, Y: 1,
 	})
 	if err != nil {
 		t.Fatalf("cross-plugin pane clone: %v", err)
 	}
-	if u, _, _ := rpc.SplitID(cp.ID); u != uuidB {
+	if u, _, _ := rpc.SplitID(cp.Id); u != uuidB {
 		t.Errorf("copy lives in %q, want %q", u, uuidB)
 	}
 	if cp.Kind != rpc.KindPane || cp.AltText != "ws" {
 		t.Errorf("copy shape: %+v", cp)
 	}
-	body, _, _, err := cl.ReadContent(ctx, cp.ID)
+	body, _, _, err := cl.ReadContent(ctx, cp.Id)
 	if err != nil {
 		t.Fatalf("copy content: %v", err)
 	}
@@ -438,11 +403,11 @@ func TestClonePaneAcrossPluginsCopiesLayout(t *testing.T) {
 	}
 
 	// Independence: rearranging the copy leaves the source's layout alone.
-	if _, err := cl.WriteContent(ctx, cp.ID, cp.Version,
+	if _, err := cl.WriteContent(ctx, cp.Id, cp.Version,
 		[]byte(`{"v":1,"root":{"pane":{"id":"p1","zoom":1}},"focus":"p1"}`)); err != nil {
 		t.Fatalf("edit copy: %v", err)
 	}
-	orig, _, _, err := cl.ReadContent(ctx, pt.ID)
+	orig, _, _, err := cl.ReadContent(ctx, pt.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -489,10 +454,10 @@ func TestLinkDirWellFromFsPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetGrid (fs root): %v", err)
 	}
-	var sub *rpc.Tile
+	var sub *gridwellv1.Tile
 	for i := range g.Tiles {
 		if g.Tiles[i].AltText == "sub" {
-			sub = &g.Tiles[i]
+			sub = g.Tiles[i]
 		}
 	}
 	if sub == nil {
@@ -501,30 +466,27 @@ func TestLinkDirWellFromFsPlugin(t *testing.T) {
 
 	// The left-drag commit: the client builds the link from its cached tile
 	// (the one it is dragging) — no read from the fs plugin is needed.
-	link, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: dstRoot, X: 1, Y: 1, W: sub.W, H: sub.H,
-		ChildGridID: sub.ChildGridID, Label: sub.AltText,
-	})
+	link, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: dstRoot, Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: 1, Y: 1, W: sub.W, H: sub.H, ChildGridId: sub.ChildGridId, AltText: sub.AltText}})
 	if err != nil {
 		t.Fatalf("cross-plugin link from fs: %v", err)
 	}
 	// A reference at rest holds the address the client dragged, which is the
 	// one name that grid answers to, and it must open exactly the same grid —
 	// shared, not copied.
-	if link.ChildGridID == "" || !strings.HasPrefix(link.ChildGridID, fsUUID+"/") {
-		t.Fatalf("link child = %q, want a grid in %q", link.ChildGridID, fsUUID)
+	if link.ChildGridId == "" || !strings.HasPrefix(link.ChildGridId, fsUUID+"/") {
+		t.Fatalf("link child = %q, want a grid in %q", link.ChildGridId, fsUUID)
 	}
-	viaLink, err := cl.GetGrid(ctx, link.ChildGridID)
+	viaLink, err := cl.GetGrid(ctx, link.ChildGridId)
 	if err != nil {
 		t.Fatalf("GetGrid through the link: %v", err)
 	}
-	viaSource, err := cl.GetGrid(ctx, sub.ChildGridID)
+	viaSource, err := cl.GetGrid(ctx, sub.ChildGridId)
 	if err != nil {
 		t.Fatalf("GetGrid through the dragged address: %v", err)
 	}
-	if viaLink.Grid.ID != viaSource.Grid.ID {
+	if viaLink.Grid.Id != viaSource.Grid.Id {
 		t.Errorf("the link opens %q, the dragged tile opens %q: not the same grid",
-			viaLink.Grid.ID, viaSource.Grid.ID)
+			viaLink.Grid.Id, viaSource.Grid.Id)
 	}
 	if !link.Reference {
 		t.Error("cross-plugin link must be marked Reference (dashed border)")
@@ -535,8 +497,8 @@ func TestLinkDirWellFromFsPlugin(t *testing.T) {
 
 	// The right-drag (clone) of a dir well is refused loudly — deep copy of a
 	// host directory is unimplemented.
-	if _, err := cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID: sub.ID, DestGridID: dstRoot, X: 3, Y: 3,
+	if _, err := cl.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId: sub.Id, DestGridId: dstRoot, X: 3, Y: 3,
 	}); connect.CodeOf(err) != connect.CodeUnimplemented {
 		t.Errorf("clone of an fs dir well: err=%v, want unimplemented refusal", err)
 	}
@@ -548,19 +510,17 @@ func TestClonePaneAcrossPluginsNeverArranged(t *testing.T) {
 	cl, _, rootA, _, rootB := twoPluginServer(t)
 	ctx := context.Background()
 
-	pt, err := cl.CreatePane(ctx, &rpc.CreatePaneRequest{
-		GridID: rootA, X: 0, Y: 0, W: 2, H: 2, Label: "empty",
-	})
+	pt, err := cl.CreateTile(ctx, &gridwellv1.CreateTileRequest{GridId: rootA, Tile: &gridwellv1.Tile{Kind: rpc.KindPane, X: 0, Y: 0, W: 2, H: 2, AltText: "empty"}})
 	if err != nil {
 		t.Fatalf("CreatePane: %v", err)
 	}
-	cp, err := cl.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID: pt.ID, DestGridID: rootB, X: 0, Y: 0,
+	cp, err := cl.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId: pt.Id, DestGridId: rootB, X: 0, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("cross-plugin clone of never-arranged pane: %v", err)
 	}
-	if cp.BlobID != 0 {
+	if cp.BlobId != 0 {
 		t.Errorf("never-arranged copy grew a blob: %+v", cp)
 	}
 }

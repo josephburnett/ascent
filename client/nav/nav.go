@@ -14,7 +14,7 @@
 package nav
 
 import (
-	"github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/client/errsurface"
 	"github.com/josephburnett/gridwell/client/pane"
 )
@@ -98,7 +98,7 @@ type cont struct {
 
 	PaneID string
 	TileID string
-	Tile   rpc.Tile
+	Tile   *gridwellv1.Tile
 	Stack  pane.Stack
 	// Restore is set on the restore paths' continuations, whose data is a
 	// whole decoded address mid-walk. They leave PaneID empty on purpose:
@@ -299,10 +299,10 @@ func (m *Machine) Resume(tok Token, r Result, w World) Plan {
 		}
 		// A stale path is healed BEFORE the engagement, because the heal moves
 		// the place the surface is opened into.
-		if m.healStale(c.PaneID, *r.Tile, w, &pl) {
+		if m.healStale(c.PaneID, r.Tile, w, &pl) {
 			break
 		}
-		m.autoLiveOnDescent(c.PaneID, *r.Tile, w, &pl)
+		m.autoLiveOnDescent(c.PaneID, r.Tile, w, &pl)
 	case stepHealed:
 		// An unsearchable tile, from a plugin without Search, keeps the place
 		// it was restored with; the engagement happens either way.
@@ -327,7 +327,7 @@ func (m *Machine) Resume(tok Token, r Result, w World) Plan {
 			break
 		}
 		pl.add(Effect{Kind: EffPlaceURLView, PaneID: c.PaneID,
-			TileID: r.Tile.ID, Tile: *r.Tile})
+			TileID: r.Tile.Id, Tile: r.Tile})
 	case stepRestoreCursor:
 		// The bytes have landed and seeded the textarea; the cursor the
 		// address encodes goes after the seeding, or it lands in an empty

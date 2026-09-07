@@ -20,6 +20,7 @@ package main
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"strings"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -172,14 +173,14 @@ func (a *App) commitWorkspaceRename(level int, alt string) {
 		return
 	}
 	tileID := f.TileID
-	a.commitRenameRetained(tileID, alt, func(tile *rpc.Tile) {
+	a.commitRenameRetained(tileID, alt, func(tile *gridwellv1.Tile) {
 		// The level may be gone by the time a parked retry lands, if the user
 		// left it. The rename still landed on the tile row; only the crumb
 		// update is conditional.
 		if fr := a.ws.At(level); fr != nil && fr.TileID == tileID {
 			fr.Name = tile.AltText
 		}
-		a.c.UpdateTile(tile.GridID, *tile)
+		a.c.UpdateTile(tile.GridId, tile)
 	})
 }
 
@@ -235,7 +236,7 @@ func (a *App) flushWorkspaceSave() {
 // is the only copy of the arrangement. The beacon form carries it through a
 // tab close.
 func (a *App) postPaneLayout(tileID string, data []byte) {
-	var tile *rpc.Tile
+	var tile *gridwellv1.Tile
 	a.do(write{
 		label: "PaneLayout", gid: a.gridIDOfTile(tileID), id: tileID,
 		source: "layout:" + tileID, failText: "workspace layout unsaved",
@@ -248,7 +249,8 @@ func (a *App) postPaneLayout(tileID string, data []byte) {
 			if top := a.ws.Top(); top != nil && top.TileID == tileID {
 				pane.MarkSaved(top, data)
 			}
-			a.c.Apply(rpc.Event{Kind: rpc.EventTileChanged, TileChanged: &rpc.TileChanged{Tile: *tile}})
+			a.c.Apply(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{
+				TileChanged: &gridwellv1.TileChanged{Tile: tile}}})
 			a.resolveErr("rpc:PaneLayout")
 		},
 		beacon: func() (string, []byte, string) {

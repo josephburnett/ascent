@@ -12,6 +12,7 @@ package main
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/pane"
@@ -19,7 +20,7 @@ import (
 
 // menuContext is one node's menu: its plugins and its shell policy.
 type menuContext struct {
-	plugins        []rpc.PluginInfo
+	plugins        []*gridwellv1.PluginInfo
 	shellsDisabled bool
 	// fetched marks a completed load. What keeps concurrent opens to one
 	// read is NOT here: it is a.fetch.menuFetch, the client's one claim
@@ -45,7 +46,7 @@ func (a *App) paneNodeNS(p *pane.Pane) string {
 // well — so the same-node gate reads the grid it is actually landing in.
 func (a *App) gridNodeNS(gridID string) string {
 	if g, ok := a.c.Grid(gridID); ok {
-		return g.Meta.NodeNS
+		return g.Meta.NodeNs
 	}
 	return ""
 }

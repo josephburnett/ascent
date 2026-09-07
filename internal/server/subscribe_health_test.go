@@ -42,7 +42,7 @@ func (p *flakyWatchPlugin) Subscribe(ctx context.Context, _ *pb.SubscribeRequest
 
 // recvHealth reads events off stream until it sees an EventPluginHealth (skip
 // any grid/tile events, though none are expected here) or the deadline hits.
-func recvHealth(t *testing.T, stream *rpc.EventStream) *rpc.PluginHealth {
+func recvHealth(t *testing.T, stream *rpc.EventStream) *pb.EventPluginHealth {
 	t.Helper()
 	for {
 		ev, ok, err := stream.Recv()
@@ -52,8 +52,8 @@ func recvHealth(t *testing.T, stream *rpc.EventStream) *rpc.PluginHealth {
 		if !ok {
 			t.Fatal("stream ended before a health event arrived")
 		}
-		if ev.Kind == rpc.EventPluginHealth {
-			return ev.PluginHealth
+		if h := ev.GetPluginHealth(); h != nil {
+			return h
 		}
 	}
 }
@@ -85,8 +85,8 @@ func TestSubscribeFanInReportsHealthDownAndRecovery(t *testing.T) {
 	if down.Healthy {
 		t.Error("first health event must report healthy=false (the down transition)")
 	}
-	if down.PluginUUID != "u-1" {
-		t.Errorf("plugin uuid = %q, want u-1", down.PluginUUID)
+	if down.PluginUuid != "u-1" {
+		t.Errorf("plugin uuid = %q, want u-1", down.PluginUuid)
 	}
 	if down.Detail == "" {
 		t.Error("down transition must carry the underlying failure as Detail")
@@ -96,8 +96,8 @@ func TestSubscribeFanInReportsHealthDownAndRecovery(t *testing.T) {
 	if !up.Healthy {
 		t.Error("second health event must report healthy=true (recovery)")
 	}
-	if up.PluginUUID != "u-1" {
-		t.Errorf("plugin uuid = %q, want u-1", up.PluginUUID)
+	if up.PluginUuid != "u-1" {
+		t.Errorf("plugin uuid = %q, want u-1", up.PluginUuid)
 	}
 }
 

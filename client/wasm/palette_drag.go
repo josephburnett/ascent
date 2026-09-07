@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"math"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -58,21 +59,21 @@ func (a *App) startPaletteDrag(p *pane.Pane, r pane.Rect, idx int, sx, sy float6
 	}
 }
 
-// paletteItemGhostNode synthesizes a 1×1 rpc.Tile matching the palette item,
+// paletteItemGhostNode synthesizes a 1×1 gridwellv1.Tile matching the palette item,
 // so the ghost renderer can paint the in-flight tile using the same drawNode
 // path that a real tile would use. A plugin item is the shared synthetic
 // exit well (rpc.PluginWellTile) with the plugin's uuid as its id, so the
 // health tint and the not-enterable descent guard can name the plugin.
-func paletteItemGhostNode(item paletteItem) rpc.Tile {
+func paletteItemGhostNode(item paletteItem) *gridwellv1.Tile {
 	if item.isPlugin {
 		t := rpc.PluginWellTile(item.plugin)
-		t.ID = item.plugin.UUID
+		t.Id = item.plugin.Uuid
 		return t
 	}
 	if pr, ok := primitiveFor(item.primitive); ok {
 		return pr.ghost
 	}
-	return rpc.Tile{}
+	return nil
 }
 
 // clickTemplate runs the bare-click behavior of the palette item a template
@@ -100,7 +101,7 @@ func (a *App) clickTemplate(d *dragState) {
 		// drops the exit-well link (commitTemplateDrop).
 		well := paletteItemGhostNode(d.item)
 		well.X, well.Y = int64(math.Floor(fp.Cx-0.5)), int64(math.Floor(fp.Cy-0.5))
-		a.descend(fp, &well)
+		a.descend(fp, well)
 	case palette.ClickVisit:
 		pr.click(a, fp)
 	case palette.ClickHere, palette.ClickNothing:
@@ -229,14 +230,12 @@ func (a *App) commitTemplateDrop(d *dragState, t *dropTarget, dropX, dropY int64
 // grid as the child: an exit-well link, through CreateTile, the one create.
 // The link's framing seeds from the plugin's persisted root view, so its
 // preview shows what descent will show.
-func (a *App) createPluginLinkAtCell(gid string, pl rpc.PluginInfo, cellX, cellY int64) {
-	req := &rpc.CreateWellRequest{
-		GridID: gid, X: cellX, Y: cellY, W: 1, H: 1,
-		ChildGridID: pl.RootGridID,
-		Label:       pl.Label,
-		Framing:     rpc.Framing{Cx: pl.RootViewCx, Cy: pl.RootViewCy, Zoom: pl.RootViewZoom},
-	}
-	a.postTileMutate("CreateWell", gid, func(ctx context.Context) (*rpc.Tile, error) {
-		return a.cl.CreateWell(ctx, req)
+func (a *App) createPluginLinkAtCell(gid string, pl *gridwellv1.PluginInfo, cellX, cellY int64) {
+	req := &gridwellv1.CreateTileRequest{GridId: gid,
+		Tile: &gridwellv1.Tile{Kind: rpc.KindWell, X: cellX, Y: cellY, W: 1, H: 1,
+			ChildGridId: pl.RootGridId, AltText: pl.Label,
+			ViewCx: pl.RootViewCx, ViewCy: pl.RootViewCy, ViewZoom: pl.RootViewZoom}}
+	a.postTileMutate("CreateWell", gid, func(ctx context.Context) (*gridwellv1.Tile, error) {
+		return a.cl.CreateTile(ctx, req)
 	}, nil)
 }

@@ -3,12 +3,12 @@
 package main
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"math"
 	"strconv"
 	"strings"
 	"syscall/js"
 
-	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/markdown"
 	"github.com/josephburnett/gridwell/client/textedit"
 )
@@ -52,12 +52,12 @@ type renderedPreview struct {
 // frame, each creation revoking the other's still-loading blob URL, so no
 // raster would ever decode. Stale-version entries for the same tile are swept
 // at insert; whole-tile cleanup is dropRenderedPreview, on TileRemoved.
-func (a *App) renderedPreviewFor(n *rpc.Tile, contentW float64) (*renderedPreview, bool) {
+func (a *App) renderedPreviewFor(n *gridwellv1.Tile, contentW float64) (*renderedPreview, bool) {
 	bucket := math.Max(renderedPreviewBucket,
 		math.Round(contentW/renderedPreviewBucket)*renderedPreviewBucket)
 	isOrg := markdown.IsOrg(n.AltText)
-	mapKey := n.ID + "\x00" + strconv.FormatFloat(bucket, 'f', 0, 64)
-	key := n.ID + "\x00" + strconv.FormatInt(n.Version, 10) + "\x00" +
+	mapKey := n.Id + "\x00" + strconv.FormatFloat(bucket, 'f', 0, 64)
+	key := n.Id + "\x00" + strconv.FormatInt(n.Version, 10) + "\x00" +
 		strconv.FormatFloat(bucket, 'f', 0, 64) + "\x00" + strconv.FormatBool(isOrg)
 	if e, ok := a.views.renderedPrev[mapKey]; ok && e.key == key {
 		return e, e.ready && !e.failed
@@ -72,10 +72,10 @@ func (a *App) renderedPreviewFor(n *rpc.Tile, contentW float64) (*renderedPrevie
 	if old, ok := a.views.renderedPrev[mapKey]; ok && old.url != "" {
 		js.Global().Get("URL").Call("revokeObjectURL", old.url)
 	}
-	stalePrefix := n.ID + "\x00"
+	stalePrefix := n.Id + "\x00"
 	for mk, old := range a.views.renderedPrev {
 		if mk != mapKey && strings.HasPrefix(mk, stalePrefix) && old.key != "" &&
-			!strings.HasPrefix(old.key, n.ID+"\x00"+strconv.FormatInt(n.Version, 10)+"\x00") {
+			!strings.HasPrefix(old.key, n.Id+"\x00"+strconv.FormatInt(n.Version, 10)+"\x00") {
 			if old.url != "" {
 				js.Global().Get("URL").Call("revokeObjectURL", old.url)
 			}
@@ -121,7 +121,7 @@ func (a *App) renderedPreviewFor(n *rpc.Tile, contentW float64) (*renderedPrevie
 // h-topInset) at the preview frame's scroll, reporting whether it drew. False
 // — raster pending, failed, or scrolled past the cap — means the caller
 // paints the raw fallback.
-func (a *App) drawRenderedPreview(n *rpc.Tile, frame markdown.PreviewFrame,
+func (a *App) drawRenderedPreview(n *gridwellv1.Tile, frame markdown.PreviewFrame,
 	x, y, w, h, topInset float64) bool {
 	e, ok := a.renderedPreviewFor(n, frame.ContentW)
 	if !ok {

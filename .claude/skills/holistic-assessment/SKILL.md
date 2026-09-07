@@ -24,7 +24,7 @@ free. Do not run it casually; the user initiates it deliberately.
 
    ```
    find . -path ./.git -prune -o -type f \( -name '*.go' -o -name '*.ts' \) -print \
-     | grep -vE 'node_modules|/gen/|/dist/|/out/|_test\.go|\.test\.ts|\.spec\.ts|\.d\.ts|/e2e/|e2e-web|playwright|/harness/|wire_gen|plugintest|servertest|dialtest|shellsvctest|test/boundary' \
+     | grep -vE 'node_modules|/gen/|/dist/|/out/|_test\.go|\.test\.ts|\.spec\.ts|\.d\.ts|/e2e/|e2e-web|playwright|/harness/|plugintest|servertest|dialtest|shellsvctest|test/boundary' \
      | sort
    ```
 

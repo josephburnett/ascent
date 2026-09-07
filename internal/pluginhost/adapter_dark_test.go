@@ -2,6 +2,7 @@ package pluginhost_test
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -91,16 +92,16 @@ func TestADarkPluginFailsHonestlyAndKeepsTheNodesRows(t *testing.T) {
 	}
 	// One durable touch: the arrangement is what a ROW holds, and the row is
 	// the node's own fact, so it is what must survive the outage.
-	var notes rpc.Tile
+	var notes *gridwellv1.Tile
 	for _, tile := range before.Tiles {
 		if tile.AltText == "notes.md" {
 			notes = tile
 		}
 	}
-	if notes.ID == "" {
+	if notes.Id == "" {
 		t.Fatal("no notes.md tile to move")
 	}
-	placed, err := cl.PlaceTile(ctx, &rpc.PlaceTileRequest{TileID: notes.ID, X: 7, Y: 3, W: 1, H: 1})
+	placed, err := cl.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{TileId: notes.Id, X: 7, Y: 3, W: 1, H: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,9 +122,9 @@ func TestADarkPluginFailsHonestlyAndKeepsTheNodesRows(t *testing.T) {
 	if len(healed.Tiles) != len(before.Tiles) {
 		t.Fatalf("healed listing = %d tiles, want the original %d", len(healed.Tiles), len(before.Tiles))
 	}
-	var back rpc.Tile
+	var back *gridwellv1.Tile
 	for _, tile := range healed.Tiles {
-		if tile.ID == placed.ID {
+		if tile.Id == placed.Id {
 			back = tile
 		}
 	}
@@ -166,29 +167,29 @@ func TestASourceGoingDarkDoesNotCostTheUserTheirArrangement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var moved rpc.Tile
+	var moved *gridwellv1.Tile
 	for _, tile := range before.Tiles {
 		if tile.AltText == "notes.md" {
 			moved = tile
 		}
 	}
-	if moved.ID == "" {
+	if moved.Id == "" {
 		t.Fatal("no notes.md tile to move")
 	}
 	// The arrangement the dark must not cost: one move while the source is
 	// still readable, which is what mints the row.
-	first, err := cl.PlaceTile(ctx, &rpc.PlaceTileRequest{TileID: moved.ID, X: 8, Y: 8, W: 1, H: 1})
+	first, err := cl.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{TileId: moved.Id, X: 8, Y: 8, W: 1, H: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	moved = *first
+	moved = first
 
 	// The source goes dark: the process answers, the directory does not.
 	lighten := darken(t, root)
 
 	// The user drags the tile somewhere free. The write is the node's own
 	// half, so it must land and report landing.
-	placed, err := cl.PlaceTile(ctx, &rpc.PlaceTileRequest{TileID: moved.ID, X: 9, Y: 9, W: 1, H: 1})
+	placed, err := cl.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{TileId: moved.Id, X: 9, Y: 9, W: 1, H: 1})
 	if err != nil {
 		t.Fatalf("a placement while the source is dark must still land: %v", err)
 	}
@@ -209,7 +210,7 @@ func TestASourceGoingDarkDoesNotCostTheUserTheirArrangement(t *testing.T) {
 		t.Fatalf("dark source answered %d tiles, want only the touched one: %+v", len(g.Tiles), g.Tiles)
 	}
 	back := g.Tiles[0]
-	if back.ID != moved.ID || back.X != 9 || back.Y != 9 {
+	if back.Id != moved.Id || back.X != 9 || back.Y != 9 {
 		t.Fatalf("the move made while dark was lost: %+v", back)
 	}
 	if back.AltText != "notes.md" {
@@ -227,7 +228,7 @@ func TestASourceGoingDarkDoesNotCostTheUserTheirArrangement(t *testing.T) {
 		t.Fatal("healed source still stamped stale")
 	}
 	for _, tile := range healed.Tiles {
-		if tile.ID == moved.ID && (tile.X != 9 || tile.Y != 9) {
+		if tile.Id == moved.Id && (tile.X != 9 || tile.Y != 9) {
 			t.Fatalf("the healed listing overwrote the user's placement: %+v", tile)
 		}
 	}
@@ -238,17 +239,17 @@ func TestASourceGoingDarkDoesNotCostTheUserTheirArrangement(t *testing.T) {
 	// An entry with no row cannot be arranged while its source is dark: there
 	// is nothing to derive a tile from, so the refusal is a plain NotFound
 	// the client surfaces, never a silent no-op.
-	var untouched rpc.Tile
+	var untouched *gridwellv1.Tile
 	for _, tile := range healed.Tiles {
 		if tile.AltText == "data.bin" {
 			untouched = tile
 		}
 	}
-	if untouched.ID == "" {
+	if untouched.Id == "" {
 		t.Fatal("no untouched tile to try")
 	}
 	darken(t, root)
-	if _, err := cl.PlaceTile(ctx, &rpc.PlaceTileRequest{TileID: untouched.ID, X: 1, Y: 1, W: 1, H: 1}); err == nil {
+	if _, err := cl.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{TileId: untouched.Id, X: 1, Y: 1, W: 1, H: 1}); err == nil {
 		t.Fatal("placing an untouched entry while its source is dark must refuse, not invent a row")
 	}
 }

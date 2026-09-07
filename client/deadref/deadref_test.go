@@ -1,6 +1,7 @@
 package deadref
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"testing"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -15,11 +16,11 @@ const (
 // roster is the node as the handshake declares it: home, one plugin, one
 // connection. It is exactly rpc.MenuRows' shape — a connection's UUID is
 // "<node>/<name>".
-func roster() []rpc.PluginInfo {
-	return []rpc.PluginInfo{
-		{UUID: node, Label: "home"},
-		{UUID: fs, Label: "files"},
-		{UUID: node + "/laptop", Kind: rpc.PluginKindConnection, Label: "laptop"},
+func roster() []*gridwellv1.PluginInfo {
+	return []*gridwellv1.PluginInfo{
+		{Uuid: node, Label: "home"},
+		{Uuid: fs, Label: "files"},
+		{Uuid: node + "/laptop", Kind: rpc.PluginKindConnection, Label: "laptop"},
 	}
 }
 
@@ -71,7 +72,7 @@ func TestAnEmptyRosterJudgesNothing(t *testing.T) {
 	if Dead(gone+"/1", nil, node) {
 		t.Error("an empty roster must judge nothing: the handshake has not landed yet")
 	}
-	if Dead(gone+"/1", []rpc.PluginInfo{}, node) {
+	if Dead(gone+"/1", []*gridwellv1.PluginInfo{}, node) {
 		t.Error("an empty roster must judge nothing")
 	}
 }
@@ -82,23 +83,23 @@ func TestAnEmptyRosterJudgesNothing(t *testing.T) {
 func TestTargetIDCoversBothLinkShapesAndOnlyLinks(t *testing.T) {
 	cases := []struct {
 		name string
-		tile rpc.Tile
+		tile *gridwellv1.Tile
 		want string
 	}{
 		{"a well link carries its child grid",
-			rpc.Tile{Kind: rpc.KindWell, Reference: true, ChildGridID: fs + "/1"}, fs + "/1"},
+			&gridwellv1.Tile{Kind: rpc.KindWell, Reference: true, ChildGridId: fs + "/1"}, fs + "/1"},
 		{"a leaf link carries its target",
-			rpc.Tile{Kind: rpc.KindText, Reference: true, LinkTargetID: fs + "/42"}, fs + "/42"},
+			&gridwellv1.Tile{Kind: rpc.KindText, Reference: true, LinkTargetId: fs + "/42"}, fs + "/42"},
 		{"an owned interior well is not a link",
-			rpc.Tile{Kind: rpc.KindWell, ChildGridID: node + "/9"}, ""},
+			&gridwellv1.Tile{Kind: rpc.KindWell, ChildGridId: node + "/9"}, ""},
 		{"an owned text tile is not a link",
-			rpc.Tile{Kind: rpc.KindText}, ""},
+			&gridwellv1.Tile{Kind: rpc.KindText}, ""},
 		{"a childless reference is a menu swatch, not a link into anywhere",
-			rpc.Tile{Kind: rpc.KindWell, Reference: true}, ""},
+			&gridwellv1.Tile{Kind: rpc.KindWell, Reference: true}, ""},
 	}
 	for _, c := range cases {
 		tile := c.tile
-		if got := TargetID(&tile); got != c.want {
+		if got := TargetID(tile); got != c.want {
 			t.Errorf("%s: TargetID = %q, want %q", c.name, got, c.want)
 		}
 	}
@@ -110,16 +111,16 @@ func TestTargetIDCoversBothLinkShapesAndOnlyLinks(t *testing.T) {
 // DeadTile is the two joined: an owned tile is never dead however missing
 // its ids look, and a link into a missing namespace is.
 func TestDeadTile(t *testing.T) {
-	dead := rpc.Tile{Kind: rpc.KindWell, Reference: true, ChildGridID: gone + "/1"}
-	if !DeadTile(&dead, roster(), node) {
+	dead := &gridwellv1.Tile{Kind: rpc.KindWell, Reference: true, ChildGridId: gone + "/1"}
+	if !DeadTile(dead, roster(), node) {
 		t.Error("a link into an undeclared namespace is dead")
 	}
-	live := rpc.Tile{Kind: rpc.KindWell, Reference: true, ChildGridID: fs + "/1"}
-	if DeadTile(&live, roster(), node) {
+	live := &gridwellv1.Tile{Kind: rpc.KindWell, Reference: true, ChildGridId: fs + "/1"}
+	if DeadTile(live, roster(), node) {
 		t.Error("a link into a declared plugin is alive, whatever that plugin's health")
 	}
-	owned := rpc.Tile{Kind: rpc.KindWell, ChildGridID: gone + "/1"}
-	if DeadTile(&owned, roster(), node) {
+	owned := &gridwellv1.Tile{Kind: rpc.KindWell, ChildGridId: gone + "/1"}
+	if DeadTile(owned, roster(), node) {
 		t.Error("an owned well is not a link and has no dead verdict")
 	}
 }

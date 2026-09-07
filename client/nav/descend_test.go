@@ -1,6 +1,7 @@
 package nav
 
 import (
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"testing"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -75,26 +76,26 @@ func only(t *testing.T, p Plan, k EffectKind) Effect {
 	return found[0]
 }
 
-func descendGesture(paneID string, door rpc.Tile) Gesture {
+func descendGesture(paneID string, door *gridwellv1.Tile) Gesture {
 	return Gesture{Kind: GestureDescend, PaneID: paneID, Door: door}
 }
 
 func TestDescendPlans(t *testing.T) {
-	well := rpc.Tile{ID: "w1", Kind: rpc.KindWell, GridID: "g1",
-		X: 2, Y: 3, W: 4, H: 4, ChildGridID: "g2"}
-	link := rpc.Tile{ID: "u1/l1", Kind: rpc.KindWell, GridID: "g1",
-		X: 1, Y: 1, W: 2, H: 2, ChildGridID: "u2/root", Reference: true}
-	text := rpc.Tile{ID: "t1", Kind: rpc.KindText, GridID: "g1", X: 0, Y: 0, W: 3, H: 2}
-	url := rpc.Tile{ID: "r1", Kind: rpc.KindURL, GridID: "g1", X: 0, Y: 0, W: 3, H: 2,
-		URLString: "https://example.test/"}
-	shell := rpc.Tile{ID: "s1", Kind: rpc.KindShell, GridID: "g1", X: 0, Y: 0, W: 3, H: 2}
-	page := rpc.Tile{ID: "p1t", Kind: rpc.KindText, GridID: "g1", X: 0, Y: 0, W: 3, H: 2,
+	well := &gridwellv1.Tile{Id: "w1", Kind: rpc.KindWell, GridId: "g1",
+		X: 2, Y: 3, W: 4, H: 4, ChildGridId: "g2"}
+	link := &gridwellv1.Tile{Id: "u1/l1", Kind: rpc.KindWell, GridId: "g1",
+		X: 1, Y: 1, W: 2, H: 2, ChildGridId: "u2/root", Reference: true}
+	text := &gridwellv1.Tile{Id: "t1", Kind: rpc.KindText, GridId: "g1", X: 0, Y: 0, W: 3, H: 2}
+	url := &gridwellv1.Tile{Id: "r1", Kind: rpc.KindURL, GridId: "g1", X: 0, Y: 0, W: 3, H: 2,
+		UrlString: "https://example.test/"}
+	shell := &gridwellv1.Tile{Id: "s1", Kind: rpc.KindShell, GridId: "g1", X: 0, Y: 0, W: 3, H: 2}
+	page := &gridwellv1.Tile{Id: "p1t", Kind: rpc.KindText, GridId: "g1", X: 0, Y: 0, W: 3, H: 2,
 		ServesPage: true}
-	wsTile := rpc.Tile{ID: "pt1", Kind: rpc.KindPane, GridID: "g1", X: 0, Y: 0, W: 2, H: 2}
+	wsTile := &gridwellv1.Tile{Id: "pt1", Kind: rpc.KindPane, GridId: "g1", X: 0, Y: 0, W: 2, H: 2}
 
 	cases := []struct {
 		name string
-		door rpc.Tile
+		door *gridwellv1.Tile
 		dw   DoorWorld
 		want []EffectKind
 	}{{
@@ -160,8 +161,8 @@ func TestDescendPlans(t *testing.T) {
 }
 
 func TestDescendWellPushesGridFrame(t *testing.T) {
-	well := rpc.Tile{ID: "w1", Kind: rpc.KindWell, GridID: "g1",
-		X: 2, Y: 3, W: 4, H: 4, ChildGridID: "g2"}
+	well := &gridwellv1.Tile{Id: "w1", Kind: rpc.KindWell, GridId: "g1",
+		X: 2, Y: 3, W: 4, H: 4, ChildGridId: "g2"}
 	w := baseWorld(gridPane("pane1", "g1"))
 	w.Door = &DoorWorld{}
 	plan := New().Do(descendGesture("pane1", well), w)
@@ -193,8 +194,8 @@ func TestDescendWellPushesGridFrame(t *testing.T) {
 }
 
 func TestDescendLinkCarriesTargetGridAndCapturesMenu(t *testing.T) {
-	link := rpc.Tile{ID: "u1/l1", Kind: rpc.KindWell, GridID: "g1",
-		X: 1, Y: 1, W: 2, H: 2, ChildGridID: "u2/root", Reference: true}
+	link := &gridwellv1.Tile{Id: "u1/l1", Kind: rpc.KindWell, GridId: "g1",
+		X: 1, Y: 1, W: 2, H: 2, ChildGridId: "u2/root", Reference: true}
 	w := baseWorld(gridPane("pane1", "g1"))
 	w.Door = &DoorWorld{IsLink: true}
 	w.MenuOpenOn = "pane1"
@@ -219,8 +220,8 @@ func TestDescendLinkCarriesTargetGridAndCapturesMenu(t *testing.T) {
 }
 
 func TestDescendLinkLeavesAnUnopenedMenuAlone(t *testing.T) {
-	link := rpc.Tile{ID: "u1/l1", Kind: rpc.KindWell, GridID: "g1",
-		X: 1, Y: 1, W: 2, H: 2, ChildGridID: "u2/root", Reference: true}
+	link := &gridwellv1.Tile{Id: "u1/l1", Kind: rpc.KindWell, GridId: "g1",
+		X: 1, Y: 1, W: 2, H: 2, ChildGridId: "u2/root", Reference: true}
 	w := baseWorld(gridPane("pane1", "g1"))
 	w.Door = &DoorWorld{IsLink: true}
 	w.MenuOpenOn = "other"
@@ -232,7 +233,7 @@ func TestDescendLinkLeavesAnUnopenedMenuAlone(t *testing.T) {
 }
 
 func TestDescendLinkWithNoChildGrid(t *testing.T) {
-	link := rpc.Tile{ID: "u1/l1", Kind: rpc.KindWell, GridID: "g1",
+	link := &gridwellv1.Tile{Id: "u1/l1", Kind: rpc.KindWell, GridId: "g1",
 		W: 2, H: 2, Reference: true, AltText: "files"}
 
 	t.Run("health notice", func(t *testing.T) {
@@ -261,7 +262,7 @@ func TestDescendLinkWithNoChildGrid(t *testing.T) {
 }
 
 func TestDescendContentPushesContentFrame(t *testing.T) {
-	text := rpc.Tile{ID: "t1", Kind: rpc.KindText, GridID: "g1",
+	text := &gridwellv1.Tile{Id: "t1", Kind: rpc.KindText, GridId: "g1",
 		X: 5, Y: 7, W: 3, H: 2, TextX: 11, TextY: 13, TextMode: rpc.TextModeText}
 	w := baseWorld(gridPane("pane1", "g1"))
 	w.Door = &DoorWorld{}
@@ -306,7 +307,7 @@ func TestDescendContentPushesContentFrame(t *testing.T) {
 func TestDescendContentOverContentAnimatesInTheGridBehind(t *testing.T) {
 	p := gridPane("pane1", "g1")
 	p.Stack.Push(pane.ContentFrame("t0", pane.Footprint{W: 2, H: 2}, 3, rpc.TextModeText, 0, 0))
-	url := rpc.Tile{ID: "r1", Kind: rpc.KindURL, GridID: "g1", W: 3, H: 2}
+	url := &gridwellv1.Tile{Id: "r1", Kind: rpc.KindURL, GridId: "g1", W: 3, H: 2}
 	w := baseWorld(p)
 	w.Door = &DoorWorld{}
 	plan := New().Do(descendGesture("pane1", url), w)
@@ -327,45 +328,45 @@ func TestDescendContentOverContentAnimatesInTheGridBehind(t *testing.T) {
 func TestDescendLandGoesLive(t *testing.T) {
 	cases := []struct {
 		name  string
-		tile  rpc.Tile
+		tile  *gridwellv1.Tile
 		caps  caps.Caps
 		alive map[string]bool
 		known map[string]bool
 		want  []EffectKind
 	}{{
 		name: "url opens the native view",
-		tile: rpc.Tile{ID: "r1", Kind: rpc.KindURL, GridID: "g1", W: 2, H: 2},
+		tile: &gridwellv1.Tile{Id: "r1", Kind: rpc.KindURL, GridId: "g1", W: 2, H: 2},
 		caps: caps.Caps{LiveURL: true, LiveShell: true},
 		want: []EffectKind{EffInstallPlace, EffScaleContent, EffRefreshOverlay,
 			EffOpenStream, EffScheduleURLUpdate},
 	}, {
 		name: "a browser host stays frozen",
-		tile: rpc.Tile{ID: "r1", Kind: rpc.KindURL, GridID: "g1", W: 2, H: 2},
+		tile: &gridwellv1.Tile{Id: "r1", Kind: rpc.KindURL, GridId: "g1", W: 2, H: 2},
 		caps: caps.Caps{LiveShell: true},
 		want: []EffectKind{EffInstallPlace, EffScaleContent, EffRefreshOverlay,
 			EffScheduleURLUpdate},
 	}, {
 		name: "a frozen url stays frozen",
-		tile: rpc.Tile{ID: "r1", Kind: rpc.KindURL, GridID: "g1", W: 2, H: 2, URLFrozen: true},
+		tile: &gridwellv1.Tile{Id: "r1", Kind: rpc.KindURL, GridId: "g1", W: 2, H: 2, UrlFrozen: true},
 		caps: caps.Caps{LiveURL: true, LiveShell: true},
 		want: []EffectKind{EffInstallPlace, EffScaleContent, EffRefreshOverlay,
 			EffScheduleURLUpdate},
 	}, {
 		name: "a fresh shell creates",
-		tile: rpc.Tile{ID: "s1", Kind: rpc.KindShell, GridID: "g1", W: 2, H: 2},
+		tile: &gridwellv1.Tile{Id: "s1", Kind: rpc.KindShell, GridId: "g1", W: 2, H: 2},
 		caps: caps.Caps{LiveURL: true, LiveShell: true},
 		want: []EffectKind{EffInstallPlace, EffScaleContent, EffRefreshOverlay,
 			EffOpenStream, EffScheduleURLUpdate},
 	}, {
 		name:  "a shell with an unknown session probes first",
-		tile:  rpc.Tile{ID: "s1", Kind: rpc.KindShell, GridID: "g1", W: 2, H: 2, PreviewBlobID: 9},
+		tile:  &gridwellv1.Tile{Id: "s1", Kind: rpc.KindShell, GridId: "g1", W: 2, H: 2, PreviewBlobId: 9},
 		caps:  caps.Caps{LiveURL: true, LiveShell: true},
 		want:  []EffectKind{EffInstallPlace, EffScaleContent, EffRefreshOverlay, EffAwait, EffScheduleURLUpdate},
 		alive: map[string]bool{},
 		known: map[string]bool{},
 	}, {
 		name:  "a shell known dead stays frozen",
-		tile:  rpc.Tile{ID: "s1", Kind: rpc.KindShell, GridID: "g1", W: 2, H: 2, PreviewBlobID: 9},
+		tile:  &gridwellv1.Tile{Id: "s1", Kind: rpc.KindShell, GridId: "g1", W: 2, H: 2, PreviewBlobId: 9},
 		caps:  caps.Caps{LiveURL: true, LiveShell: true},
 		alive: map[string]bool{"s1": false},
 		known: map[string]bool{"s1": true},
@@ -373,7 +374,7 @@ func TestDescendLandGoesLive(t *testing.T) {
 			EffScheduleURLUpdate},
 	}, {
 		name: "text stays frozen",
-		tile: rpc.Tile{ID: "t1", Kind: rpc.KindText, GridID: "g1", W: 2, H: 2},
+		tile: &gridwellv1.Tile{Id: "t1", Kind: rpc.KindText, GridId: "g1", W: 2, H: 2},
 		caps: caps.Caps{LiveURL: true, LiveShell: true},
 		want: []EffectKind{EffInstallPlace, EffScaleContent, EffRefreshOverlay,
 			EffScheduleURLUpdate},

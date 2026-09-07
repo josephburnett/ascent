@@ -31,6 +31,7 @@ import (
 
 	"connectrpc.com/connect"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	gwrpc "github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/internal/connection/dial/dialtest"
 )
@@ -337,7 +338,7 @@ func TestConnectionSpawn(t *testing.T) {
 	// remote edits until one of their events arrives.
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	gotEvents := make(chan gwrpc.Event, 64)
+	gotEvents := make(chan *gridwellv1.Event, 64)
 	subErr := make(chan error, 1)
 	go func() {
 		defer close(gotEvents)
@@ -375,7 +376,7 @@ func TestConnectionSpawn(t *testing.T) {
 	deadline2 := time.After(25 * time.Second)
 	wrote := 0
 	for {
-		var arrived *gwrpc.TileChanged
+		var arrived *gridwellv1.TileChanged
 		select {
 		case <-writeTick.C:
 			body := fmt.Sprintf("# edited on the remote, take %d", wrote)
@@ -398,9 +399,8 @@ func TestConnectionSpawn(t *testing.T) {
 					t.Fatal("local Subscribe stream ended before the remote edit's event arrived")
 				}
 			}
-			if ev.Kind == gwrpc.EventTileChanged && ev.TileChanged != nil &&
-				ev.TileChanged.Tile.ID == txtID {
-				arrived = ev.TileChanged
+			if c := ev.GetTileChanged(); c != nil && c.GetTile().GetId() == txtID {
+				arrived = c
 			}
 		case <-deadline2:
 			t.Fatalf("no TileChanged for %s arrived on the local stream after %d remote edits — events do not cross the ssh mount", txtID, wrote)
@@ -411,8 +411,8 @@ func TestConnectionSpawn(t *testing.T) {
 		if arrived.Tile.Version < 1 {
 			t.Fatalf("event version = %d, want a remote EDIT's bumped version (create is 0)", arrived.Tile.Version)
 		}
-		if arrived.Tile.GridID != wellChild {
-			t.Fatalf("event grid id = %q, want the chained %q", arrived.Tile.GridID, wellChild)
+		if arrived.Tile.GridId != wellChild {
+			t.Fatalf("event grid id = %q, want the chained %q", arrived.Tile.GridId, wellChild)
 		}
 		break
 	}

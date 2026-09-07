@@ -11,7 +11,9 @@
 # scope is the client and the wire types it reads. A _test.go file is exempt,
 # because a test may build any shape it likes, and so is
 # client/wasm/testhook.go, which reports fields to the e2e harness and decides
-# nothing. A comment is not a read.
+# nothing. A comment is not a read, and neither is a "kind:" key in a
+# composite literal: that tags an outgoing CreateTile or SetTile with the arm
+# it wants. Only a comparison asks a question.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -25,6 +27,7 @@ while read -r pat allow; do
   # Strip whole-line comments before matching: only code counts as a read.
   hits=$(printf '%s\n' "$files" | xargs grep -n -- "$pat" \
     | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
+    | grep -vE 'Kind:[[:space:]]*rpc\.Kind' \
     | grep -vE "^($allow)" || true)
   if [ -n "$hits" ]; then
     echo "exception field read outside its owner ($pat):"

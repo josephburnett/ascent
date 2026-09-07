@@ -70,7 +70,7 @@ func TestWorkspaceDeleteBlipDoesNotReap(t *testing.T) {
 	cl := rpc.NewClient(hs.Client(), hs.URL, connect.WithProtoJSON())
 	root := uuid + "/" + bare
 
-	pt, err := cl.CreatePane(ctx, &rpc.CreatePaneRequest{GridID: root, X: 0, Y: 0, W: 2, H: 2, Label: "ops"})
+	pt, err := cl.CreateTile(ctx, &pb.CreateTileRequest{GridId: root, Tile: &pb.Tile{Kind: rpc.KindPane, X: 0, Y: 0, W: 2, H: 2, AltText: "ops"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,26 +78,24 @@ func TestWorkspaceDeleteBlipDoesNotReap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	eph, err := cl.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: g.Grid.ScratchGridID, X: 0, Y: 0, W: 1, H: 1, Data: []byte("# scratch"),
-	})
+	eph, err := cl.CreateWithContent(ctx, &pb.CreateTileRequest{GridId: g.Grid.ScratchGridId, Tile: &pb.Tile{Kind: rpc.KindText, X: 0, Y: 0, W: 1, H: 1}}, []byte("# scratch"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	layout := `{"v":1,"root":{"pane":{"id":"p1","anchor":"` + root +
-		`","cx":0.5,"cy":0.5,"zoom":1,"text_focus":"` + eph.ID + `"}},"focus":"p1"}`
-	if _, err := cl.WriteContent(ctx, pt.ID, pt.Version, []byte(layout)); err != nil {
+		`","cx":0.5,"cy":0.5,"zoom":1,"text_focus":"` + eph.Id + `"}},"focus":"p1"}`
+	if _, err := cl.WriteContent(ctx, pt.Id, pt.Version, []byte(layout)); err != nil {
 		t.Fatal(err)
 	}
 
-	_, paneLocal, _ := rpc.SplitID(pt.ID)
+	_, paneLocal, _ := rpc.SplitID(pt.Id)
 	bc.armID = paneLocal
-	if err := cl.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: pt.ID}); err != nil {
+	if err := cl.DeleteTile(ctx, &pb.DeleteTileRequest{TileId: pt.Id}); err != nil {
 		t.Fatalf("DeleteTile: %v", err)
 	}
 	bc.blip.Store(false)
 
-	if _, err := cl.GetTile(ctx, eph.ID); err != nil {
+	if _, err := cl.GetTile(ctx, eph.Id); err != nil {
 		t.Fatalf("ephemeral reaped on a transport blip: %v", err)
 	}
 }

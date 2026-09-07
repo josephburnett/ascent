@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/errsurface"
@@ -32,32 +33,32 @@ type paneLayoutEntry struct {
 // Returns (nil, false) for a never-arranged tile with no blob, a
 // not-yet-fetched layout, or a corrupt or newer-format blob, reported once
 // per blob generation.
-func (a *App) paneTileLayout(n *rpc.Tile) (*pane.Tree, bool) {
-	if n.BlobID == 0 {
+func (a *App) paneTileLayout(n *gridwellv1.Tile) (*pane.Tree, bool) {
+	if n.BlobId == 0 {
 		return nil, false
 	}
-	e := a.views.paneLayouts[n.ID]
-	if e != nil && e.blobID == n.BlobID {
+	e := a.views.paneLayouts[n.Id]
+	if e != nil && e.blobID == n.BlobId {
 		return e.tree, e.tree != nil
 	}
-	body, ok := a.c.TileContent(n.ID)
+	body, ok := a.c.TileContent(n.Id)
 	if !ok {
-		a.fetchTileContent(n.ID)
+		a.fetchTileContent(n.Id)
 		if e != nil && e.tree != nil {
 			return e.tree, true
 		}
 		return nil, false
 	}
-	prefix := pane.ChainPrefix(n.ID)
+	prefix := pane.ChainPrefix(n.Id)
 	tree, err := pane.DecodeLayout(body, func(id string) string { return prefix + id }, "")
 	if err != nil {
 		// Once per blob generation: the memo entry below short-circuits the
 		// next frames, so a corrupt layout cannot spam the strip.
-		a.reportErr(errsurface.Error, "layout:"+n.ID, "workspace layout unreadable: "+err.Error())
-		a.views.paneLayouts[n.ID] = &paneLayoutEntry{blobID: n.BlobID}
+		a.reportErr(errsurface.Error, "layout:"+n.Id, "workspace layout unreadable: "+err.Error())
+		a.views.paneLayouts[n.Id] = &paneLayoutEntry{blobID: n.BlobId}
 		return nil, false
 	}
-	a.views.paneLayouts[n.ID] = &paneLayoutEntry{blobID: n.BlobID, tree: tree}
+	a.views.paneLayouts[n.Id] = &paneLayoutEntry{blobID: n.BlobId, tree: tree}
 	return tree, true
 }
 
@@ -67,7 +68,7 @@ func (a *App) paneTileLayout(n *rpc.Tile) (*pane.Tree, bool) {
 // previews use. "One level deep, flat beyond" holds here too: a well or pane
 // tile inside a leaf draws as its flat face. A never-arranged or
 // not-yet-loaded layout shows the split glyph.
-func (a *App) drawPaneTilePreview(n *rpc.Tile, x, y, w, h float64, selected, outside, dashed bool) {
+func (a *App) drawPaneTilePreview(n *gridwellv1.Tile, x, y, w, h float64, selected, outside, dashed bool) {
 	c := a.cctx
 	c.Set("fillStyle", colorPaneTileFill)
 	c.Call("fillRect", x, y, w, h)
@@ -126,10 +127,9 @@ func (a *App) drawPaneLeafPreview(leaf panepreview.Leaf) {
 // bar-title rename — and with no layout blob, so it is never-arranged and the
 // first descent installs the default single pane.
 func (a *App) createPaneAtCell(gid string, cellX, cellY int64) {
-	req := &rpc.CreatePaneRequest{
-		GridID: gid, X: cellX, Y: cellY, W: 1, H: 1,
-	}
-	a.postTileMutate("CreatePane", gid, func(ctx context.Context) (*rpc.Tile, error) {
-		return a.cl.CreatePane(ctx, req)
+	req := &gridwellv1.CreateTileRequest{GridId: gid,
+		Tile: &gridwellv1.Tile{Kind: rpc.KindPane, X: cellX, Y: cellY, W: 1, H: 1}}
+	a.postTileMutate("CreatePane", gid, func(ctx context.Context) (*gridwellv1.Tile, error) {
+		return a.cl.CreateTile(ctx, req)
 	}, nil)
 }
