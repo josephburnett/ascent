@@ -68,8 +68,7 @@ func TestRowColFromOffset(t *testing.T) {
 	}
 }
 
-// TestRoundTrip: for offsets that land at a real character position,
-// OffsetFromRowCol(RowColFromOffset) is the identity.
+// At a real character position, OffsetFromRowCol inverts RowColFromOffset.
 func TestRoundTrip(t *testing.T) {
 	srcs := []string{"", "x", "ab\ncde\n\nfg", "a\r\nb\r\nc", "\n\n\n", "no newline at all"}
 	for _, src := range srcs {
