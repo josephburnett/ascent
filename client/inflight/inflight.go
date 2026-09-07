@@ -12,7 +12,8 @@
 //
 // So a claim is bounded and cancellable, and there are exactly two ways it
 // ends: the fetch returns (done), or the link it rode is declared gone
-// (CancelAll, which the event stream's reconnect resync calls). Deadline is
+// (CancelIf — every claim on the event stream's reconnect resync, one
+// source's on that source's health flap). Deadline is
 // the backstop for the reconnect that never comes. A zombie's release can
 // never take a fresher claim's key with it, because done is scoped to the
 // claim that made it.
@@ -54,7 +55,7 @@ func New(d time.Duration) *Set {
 
 // Begin claims key for one fetch. ok is false when a fetch already holds the
 // key and the caller must not start a second one. The returned context is the
-// one the fetch must use: it carries the deadline and it is what CancelAll
+// one the fetch must use: it carries the deadline and it is what CancelIf
 // cancels. done releases the claim and must be called when the fetch returns.
 func (s *Set) Begin(key string) (ctx context.Context, done func(), ok bool) {
 	s.mu.Lock()
@@ -70,14 +71,14 @@ func (s *Set) Begin(key string) (ctx context.Context, done func(), ok bool) {
 
 // Context is a bounded context with no claim, for a fetch that is not deduped
 // — the boot URL walk, which blocks on its own answer. It is bounded like
-// every other fetch; it is simply not something CancelAll can reach, so the
+// every other fetch; it is simply not something CancelIf can reach, so the
 // caller must cancel it.
 func (s *Set) Context() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), s.d)
 }
 
 // release drops c's claim on key, if c still holds it. A fetch cancelled by
-// CancelAll returns late, after a fresh fetch has taken the key: the late
+// CancelIf returns late, after a fresh fetch has taken the key: the late
 // release must not free the fresh claim, or the dogpile guard is gone for
 // exactly as long as the new fetch runs.
 func (s *Set) release(key string, c *claim) {
@@ -89,19 +90,24 @@ func (s *Set) release(key string, c *claim) {
 	c.cancel()
 }
 
-// CancelAll drops every claim and cancels its fetch, returning the keys it
-// dropped in sorted order. The link those fetches rode is gone: they will
-// never answer, and their claims would keep every retry away. The caller
-// decides which of the returned keys to ask for again over the new link.
-func (s *Set) CancelAll() []string {
+// CancelIf drops and cancels every claim whose key match reports, returning
+// the keys it dropped in sorted order. The link those fetches rode is gone:
+// they will never answer, and their claims would keep every retry away. The
+// caller decides which of the returned keys to ask for again over the new
+// link — and which fetches lost a link at all, because one source going dark
+// leaves every other source's fetches alive and still owed an answer.
+func (s *Set) CancelIf(match func(key string) bool) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	keys := make([]string, 0, len(s.m))
 	for k, c := range s.m {
+		if !match(k) {
+			continue
+		}
 		keys = append(keys, k)
 		c.cancel()
+		delete(s.m, k)
 	}
-	clear(s.m)
 	sort.Strings(keys)
 	return keys
 }

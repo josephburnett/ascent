@@ -1025,9 +1025,11 @@ func prependTileResp(ns string, resp *gridwellv1.TileResponse) *gridwellv1.TileR
 }
 
 // stripPrefix removes "<ns>/" from an id qualified from this frame,
-// leaving other ids untouched.
+// leaving other ids untouched. rpc.ChainedThrough is the one owner of "is
+// this id behind that namespace", so the peel and every reader that asks the
+// question cannot drift apart.
 func stripPrefix(id, ns string) string {
-	if strings.HasPrefix(id, ns+"/") {
+	if rpc.ChainedThrough(id, ns) {
 		return id[len(ns)+1:]
 	}
 	return id

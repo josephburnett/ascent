@@ -122,3 +122,20 @@ func OwnerNamespaceOf(id, nodeID string) string {
 	}
 	return first + "/" + second
 }
+
+// ChainedThrough reports whether a qualified id is served through the
+// namespace chain ns: the inverse of QualifyID, at any depth. Chains compose
+// by concatenation — every hop prepends exactly one segment to ids AND to a
+// health event's plugin uuid alike (TransitQualifyGrid, QualifyEventIDs) — so
+// "is this id behind that namespace" is exactly "does the chain start with
+// it", on a segment boundary. "n1/laptop" is chained through neither "n1x"
+// nor "n1/laptop" itself, and "n1/laptop/far9xyz/1" is chained through both
+// "n1/laptop" and "n1/laptop/far9xyz".
+//
+// Not OwnerNamespaceOf, which peels only what ONE node routes by and stops:
+// it cannot name a far node's plugin, and a health event names exactly that
+// once the transition crosses a hop. Whoever asks "which ids does this source
+// answer for" needs the whole chain, not one node's peel.
+func ChainedThrough(id, ns string) bool {
+	return ns != "" && strings.HasPrefix(id, ns+"/")
+}

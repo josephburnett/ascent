@@ -90,10 +90,24 @@ parks a retry thunk under `Key{Op, ID}`, any verdict acks. One live entry
 per key, last-writer-wins, order preserved. `inflight.Set` bounds and
 cancels fetches so a request that died with its link cannot hold a dedupe
 claim forever. `App.startSSE` marks a `gap` on any stream break and fires
-`retryKick(true)` on the next successful subscribe: clear the failure
-latches, `CancelAll` the three fetch sets, refetch every named and known
-grid, then `syncContentOutbox` and drain. `retryBackstop` runs
-`retryKick(false)` every 30s while anything is parked.
+`retryKick(true, cache.EverySource)` on the next successful subscribe: clear
+the failure latches, cancel the three fetch sets, refetch every named and
+known grid, then `syncContentOutbox` and drain. `retryBackstop` runs
+`retryKick(false, …)` every 30s while anything is parked.
+
+The kick's second argument is its SCOPE, and `client/cache` owns what that
+covers. A health event names one source; every cached id says which source
+serves it, because a hop prepends one segment to a health uuid exactly as it
+does to ids; so `cache.ServedBy` is the join of those two facts
+(`rpc.ChainedThrough` — a chain prefix, not an equality, so a connection's
+flap covers the far node's home store and the far node's plugins alike), and
+`Cache.ResyncSet` is the grids one source answers for. A health flap passes
+that source and touches nothing else: only its grids refetch, only its
+latches clear, only its in-flight fetches are cancelled — the others kept
+their link and are still owed an answer. A stream gap passes
+`cache.EverySource` and stays blunt, because a window with no cursor never
+says whose events it swallowed. The outbox drain is scoped by neither: a
+parked write is owed a verdict whatever flapped.
 
 ## Trace (a): a stale serve corrects itself
 
@@ -184,19 +198,21 @@ deadness.
 **On the client.** `App.startSSE` routes `rpc.EventPluginHealth` to
 `App.reportPluginHealth`. Unhealthy posts a sticky notice keyed
 `plugin:<node>/<conn>` ("live updates stopped — …") and then calls
-`retryKick(true)`. The down direction resyncs exactly as the up one does: a
-source going down changes what its grids ARE, and which grids belong to
-which source is routing state the client deliberately does not keep.
+`retryKick(true, h.PluginUUID)`. The down direction resyncs exactly as the up
+one does, and at exactly the same scope: a source going down changes what its
+grids ARE, and which grids those are is the join `cache.ServedBy` makes of
+the health uuid and the ids the client already holds.
 
 **Up.** The next `namespace.Follow` establishes; `noteHealth(ns, true, "")`
 publishes the recovery, and `learnRoot` publishes one too on a first or
 healed landing. `Layer.applyEvent` clears `dark[conn]`; the next successful
 pass-through call would have cleared it anyway through `noteReach`.
-`App.reportPluginHealth` resolves the notice and fires `retryKick(true)`,
-which cancels every in-flight fetch whose link is gone, clears the latches,
-and refetches every known grid. Those reads hit the cache inside their
-windows with the source no longer dark, so they serve unstamped and the chip
-clears.
+`App.reportPluginHealth` resolves the notice and fires
+`retryKick(true, h.PluginUUID)`, which cancels this source's in-flight
+fetches, clears its latches, and refetches `Cache.ResyncSet` of it — every
+cached grid chained through it, and nobody else's. Those reads hit the cache
+inside their windows with the source no longer dark, so they serve unstamped
+and the chip clears.
 
 Note what does NOT happen on a single connection's recovery: the
 whole-source prefetch walk. `Layer.kickPrefetch` fires from `Layer.Subscribe`,
@@ -251,8 +267,11 @@ The version interlock, the outbox park, and the drain.
    cache patch back on a verdict and keeps it on transport, where it is the
    value the retry will land.
 9. The drain. `startSSE` sets `gap` on any stream error and on a clean EOF —
-   Subscribe has no cursor, so both are gaps — and calls `retryKick(true)` on
-   the next successful subscribe. `syncContentOutbox` re-derives the content
+   Subscribe has no cursor, so both are gaps — and calls
+   `retryKick(true, cache.EverySource)` on the next successful subscribe. The
+   drain itself is never scoped by a source: a parked write is the user's
+   bytes and is owed a verdict whatever flapped.
+   `syncContentOutbox` re-derives the content
    entries from their one owner, the cache, then `out.Drain()` runs each thunk
    in first-parked order. A thunk that fails on transport again re-parks
    itself through `Record`, so a drain against a still-dead link converges
@@ -266,9 +285,10 @@ The version interlock, the outbox park, and the drain.
 **An event gap loses events.** `Subscribe` has no cursor. A break on either
 side — the client's stream (`startSSE`'s `gap`) or the server's re-dial
 (`fanInEvents`) — loses whatever happened in the window, and nothing replays
-it. The cure is blunt resync: `retryKick(true)` refetches every known grid.
-A per-source resync would need routing state the client does not keep, so one
-plugin's recovery resyncs everything.
+it. The cure is blunt resync: `retryKick(true, cache.EverySource)` refetches
+every known grid. Blunt on purpose, and only here — the gap names no source,
+so there is nothing to scope it to. A health flap DOES name one, and resyncs
+that source's grids alone (`cache.ServedBy`).
 
 **A slow subscriber loses events.** `Layer.emitGridChanged` and
 `Adapter.emit` drop onto a full 64-slot buffer rather than blocking a
@@ -334,7 +354,10 @@ Each cross-layer behaviour in the three traces, and what pins it.
 | The stale bit reaches the bar as the cached chip | `apps/desktop/e2e-web/web-remote-menu.spec.ts` ("a dark mount serves the remembered room, marked stale") |
 | Health uuid gains one segment per hop | `internal/server/routing_pure_test.go:TestQualifyEvent` (pure only) |
 | A connection's health event reaches a real client stream as `<node>/<conn>` | `internal/server/transport_seam_test.go:TestConnectionHealthArrivesQualified` |
-| The client's health arms: `reportPluginHealth` fires `retryKick(true)` in BOTH directions, and the notice resolves on recovery | The same revived-mount spec: the `plugin:` notice arrives on the down transition and leaves the strip on recovery, and each direction's kick is what refetches the room — the chip appears, and later clears, with no gesture either time |
+| The client's health arms: `reportPluginHealth` kicks in BOTH directions, and the notice resolves on recovery | The same revived-mount spec: the `plugin:` notice arrives on the down transition and leaves the strip on recovery, and each direction's kick is what refetches the room — the chip appears, and later clears, with no gesture either time |
+| A flap resyncs the flapping source's grids and NOBODY else's, including a chain through it | `client/cache/resync_test.go:TestAFlapResyncsOnlyTheGridsItsSourceServes`, `TestAConnectionsFlapOwnsEveryGridChainedThroughIt`; the chain rule at its owner, `api/rpc/segment_test.go:TestChainedThroughIsTheWholeChainNotOneNodesPeel` |
+| The gap paths keep their breadth: `cache.EverySource` is the whole cache | `client/cache/resync_test.go:TestEverySourceIsTheWholeCache` |
+| A flap cancels only the fetches that rode through it | `client/inflight/inflight_test.go:TestCancelIfLeavesTheFetchesThatKeptTheirLink` |
 | A single connection's recovery does NOT re-warm the whole source | `sourcecache/prefetch_seam_test.go:TestOneConnectionsRecoveryDoesNotReWalkTheSource`, and the comments in `prefetch.go` and `Layer.Subscribe` |
 
 ### Trace (c)

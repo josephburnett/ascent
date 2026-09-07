@@ -3,9 +3,13 @@ package inflight
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
+
+// everyKey is the blunt scope: what a broken client-to-server link means.
+func everyKey(string) bool { return true }
 
 func TestBeginDedupesAndDoneReleases(t *testing.T) {
 	s := New(time.Minute)
@@ -50,14 +54,14 @@ func TestDeadlineBoundsAFetchThatNeverAnswers(t *testing.T) {
 	}
 }
 
-func TestCancelAllCancelsAndNamesEveryFetch(t *testing.T) {
+func TestCancelIfOverEveryKeyCancelsAndNamesEveryFetch(t *testing.T) {
 	s := New(time.Minute)
 	ctxA, _, _ := s.Begin("a")
 	ctxB, _, _ := s.Begin("b")
 
-	got := s.CancelAll()
+	got := s.CancelIf(everyKey)
 	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
-		t.Fatalf("CancelAll = %v, want the two keys sorted", got)
+		t.Fatalf("CancelIf(everyKey) = %v, want the two keys sorted", got)
 	}
 	if !errors.Is(ctxA.Err(), context.Canceled) || !errors.Is(ctxB.Err(), context.Canceled) {
 		t.Errorf("both fetches must be cancelled: a=%v b=%v", ctxA.Err(), ctxB.Err())
@@ -70,6 +74,29 @@ func TestCancelAllCancelsAndNamesEveryFetch(t *testing.T) {
 	}
 }
 
+// One source going dark kills only the fetches that rode through it. The
+// others are still owed an answer over a link that never broke, and
+// cancelling them abandons a request nothing re-asks.
+func TestCancelIfLeavesTheFetchesThatKeptTheirLink(t *testing.T) {
+	s := New(time.Minute)
+	dark, _, _ := s.Begin("n1abcde/laptop/far9xyz/1")
+	alive, _, _ := s.Begin("fs9xyzw/1")
+
+	got := s.CancelIf(func(k string) bool { return strings.HasPrefix(k, "n1abcde/laptop/") })
+	if len(got) != 1 || got[0] != "n1abcde/laptop/far9xyz/1" {
+		t.Fatalf("CancelIf = %v, want only the dark source's key", got)
+	}
+	if !errors.Is(dark.Err(), context.Canceled) {
+		t.Errorf("the dark source's fetch must be cancelled: %v", dark.Err())
+	}
+	if alive.Err() != nil {
+		t.Errorf("an unrelated source's fetch must still be alive: %v", alive.Err())
+	}
+	if keys := s.Keys(); len(keys) != 1 || keys[0] != "fs9xyzw/1" {
+		t.Errorf("Keys = %v, want the surviving claim still held", keys)
+	}
+}
+
 func TestZombieReleaseKeepsTheFreshClaim(t *testing.T) {
 	// The order that actually happens: the reconnect cancels the fetch, the
 	// caller re-asks at once, and only then does the cancelled fetch return
@@ -78,7 +105,7 @@ func TestZombieReleaseKeepsTheFreshClaim(t *testing.T) {
 	// be the zombie's cancelled context that got released.
 	s := New(time.Minute)
 	_, zombieDone, _ := s.Begin("g1")
-	s.CancelAll()
+	s.CancelIf(everyKey)
 
 	fresh, freshDone, ok := s.Begin("g1")
 	if !ok {

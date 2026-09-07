@@ -10,6 +10,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strconv"
 	"syscall/js"
 	"time"
@@ -1249,7 +1250,9 @@ func (a *App) startSSE() {
 		a.resolveErr("events")
 		if gap {
 			gap = false
-			a.retryKick(true)
+			// Every source: the gap swallowed events without saying whose,
+			// so there is no source to scope this to.
+			a.retryKick(true, cache.EverySource)
 		}
 		for {
 			ev, ok, err := stream.Recv()
@@ -1302,35 +1305,47 @@ func (a *App) startSSE() {
 }
 
 // retryKick drains everything a transport gap left behind. Fired on an event
-// stream reconnect after a gap, with a resync, because the gap's events are
-// unrecoverable and cached grids must refetch; on a mount's health recovery;
-// and by the slow backstop timer, without a resync, because nothing says the
-// cache is stale, only that unacknowledged writes exist. The order is: clear
-// the latches and launch the refetches, then drain the one outbox in the
-// order the writes were made — framing, captures, layout, and the user's
-// unsaved bytes through the same door. The async pieces converge through the
-// cache's one Apply door: a refetch racing a parked write's echo lands
-// whichever finishes last, and the echo of the newer write is what the server
-// holds.
-func (a *App) retryKick(resync bool) {
+// stream reconnect after a gap, with a resync over every source, because the
+// gap's events are unrecoverable and cached grids must refetch; on a source's
+// health transition, with a resync scoped to that source; and by the slow
+// backstop timer, without a resync, because nothing says the cache is stale,
+// only that unacknowledged writes exist. The order is: clear the latches and
+// launch the refetches, then drain the one outbox in the order the writes
+// were made — framing, captures, layout, and the user's unsaved bytes through
+// the same door. The async pieces converge through the cache's one Apply
+// door: a refetch racing a parked write's echo lands whichever finishes last,
+// and the echo of the newer write is what the server holds.
+//
+// source scopes the resync, and cache.ServedBy owns what that covers: a
+// health event names a source, every cached id says which source serves it,
+// and the resync is the join of the two. The stream-gap callers pass
+// cache.EverySource and stay blunt on purpose — a window with no cursor says
+// nothing about whose events it swallowed. The outbox drain below is never
+// scoped either: a parked write is the user's bytes, owed a server verdict
+// whatever flapped.
+func (a *App) retryKick(resync bool, source string) {
 	if resync {
+		served := func(id string) bool { return cache.ServedBy(id, source) }
 		// Failure latches are gap state: a grid that failed while the link
 		// was down deserves a fresh attempt, and a tile id latched by a
-		// verdict re-verifies once per reconnect, at one GetTile.
-		clear(a.fetch.tileLoadFailed)
-		clear(a.fetch.gridLoadFailed)
+		// verdict re-verifies once per reconnect, at one GetTile. This
+		// source's only — nothing happened to another source's verdict.
+		maps.DeleteFunc(a.fetch.tileLoadFailed, func(id string, _ bool) bool { return served(id) })
+		maps.DeleteFunc(a.fetch.gridLoadFailed, func(id string, _ bool) bool { return served(id) })
 		// So is a fetch still in flight. The link it rode is gone, and a
 		// request that dies with a link need never return: nothing answers
 		// it, nothing fails it, and its dedupe claim would keep every retry
-		// away forever. Cancel them all, and re-ask for the grids by name —
-		// a pane waiting on a grid it never received is not in the cache, so
-		// the known-grid sweep below cannot speak for it. The cancelled tile
-		// and content reads are re-asked by the draw the refetches schedule,
-		// off the same cache misses that asked the first time.
-		stuck := a.fetch.gridFetch.CancelAll()
-		a.fetch.tileFetch.CancelAll()
-		a.fetch.contentFetch.CancelAll()
-		for _, gid := range append(stuck, a.c.KnownGridIDs()...) {
+		// away forever. Cancel this source's, and re-ask for the grids by
+		// name — a pane waiting on a grid it never received is not in the
+		// cache, so the served-grid sweep below cannot speak for it. The
+		// cancelled tile and content reads are re-asked by the draw the
+		// refetches schedule, off the same cache misses that asked the first
+		// time. A fetch through a source that did not flap keeps its claim:
+		// its link is still there and its answer is still coming.
+		stuck := a.fetch.gridFetch.CancelIf(served)
+		a.fetch.tileFetch.CancelIf(served)
+		a.fetch.contentFetch.CancelIf(served)
+		for _, gid := range append(stuck, a.c.ResyncSet(source)...) {
 			a.fetchGrid(gid)
 		}
 	}
@@ -1349,7 +1364,7 @@ func (a *App) retryBackstop() {
 		time.Sleep(30 * time.Second)
 		a.syncContentOutbox()
 		if a.persist.out.Len() > 0 {
-			a.retryKick(false)
+			a.retryKick(false, cache.EverySource)
 		}
 	}
 }
@@ -1457,11 +1472,11 @@ func (a *App) reportPluginHealth(h rpc.PluginHealth) {
 		// A recovered plugin is a healed gap for its tiles: the server-side
 		// fan-in resumed with no backlog, so this client missed that
 		// plugin's events too. The kick resyncs and drains, the same
-		// reasoning as the stream reconnect kick — one plugin narrower in
-		// cause, but the same cure, since a per-plugin resync would need
-		// routing state the client deliberately does not keep.
+		// reasoning as the stream reconnect kick — but scoped to the source
+		// the event names, because the ids the client already holds say
+		// which grids that is (cache.ServedBy).
 		a.resolveErr(source)
-		a.retryKick(true)
+		a.retryKick(true, h.PluginUUID)
 		return
 	}
 	label := h.PluginUUID
@@ -1473,7 +1488,6 @@ func (a *App) reportPluginHealth(h rpc.PluginHealth) {
 	// stop being live answers and become the node's memory of them, stamped
 	// stale and worn as the bar's cached chip. Nothing on screen says so until
 	// the client re-reads, so the down transition resyncs exactly as the up
-	// one does — the same blunt cure for the same reason, since which grids
-	// belong to which source is routing state the client does not keep.
-	a.retryKick(true)
+	// one does — same scope, same cure, off the same join.
+	a.retryKick(true, h.PluginUUID)
 }

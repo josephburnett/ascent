@@ -245,3 +245,39 @@ func TestOwnerNamespaceOfIsTheRoutersPeel(t *testing.T) {
 		t.Errorf("OwnerNamespaceOf with no node id = %q, want the first segment %q", got, node)
 	}
 }
+
+// ChainedThrough is the peel's complement: not "which of my namespaces owns
+// this" but "is this behind that chain, at any depth". A health event names a
+// chain that can be deeper than one node's peel, and every id it answers for
+// starts with it.
+func TestChainedThroughIsTheWholeChainNotOneNodesPeel(t *testing.T) {
+	const node = "n1abcde"
+	cases := []struct {
+		id, ns string
+		want   bool
+	}{
+		{"p9xyzab/1", "p9xyzab", true},
+		{"p9xyzab/" + KeyTileID("/home/joe"), "p9xyzab", true},
+		{"p9xyzabx/1", "p9xyzab", false}, // a segment boundary, not a byte prefix
+		{"p9xyzab", "p9xyzab", false},    // a namespace is not a thing it serves
+		{"q9zzzzz/1", "p9xyzab", false},  // a different plugin
+		{node + "/1", node, true},        // the node's own home store
+		{node + "/laptop/1", node, true}, // its connections chain under it too
+		{node + "/laptop/1", node + "/laptop", true},
+		{node + "/1", node + "/laptop", false},
+		// Deeper than any one node's peel: the far node's home store and the
+		// far node's plugin each name a chain of their own.
+		{node + "/laptop/far9xyz/1", node + "/laptop", true},
+		{node + "/laptop/far9xyz/1", node + "/laptop/far9xyz", true},
+		{node + "/laptop/rp9plug/4", node + "/laptop/far9xyz", false},
+		// A bare id belongs to no chain, and no id is behind no namespace.
+		{"1", node, false},
+		{node + "/1", "", false},
+		{"", "", false},
+	}
+	for _, c := range cases {
+		if got := ChainedThrough(c.id, c.ns); got != c.want {
+			t.Errorf("ChainedThrough(%q, %q) = %v, want %v", c.id, c.ns, got, c.want)
+		}
+	}
+}

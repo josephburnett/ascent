@@ -9,6 +9,7 @@ package cache
 import (
 	"bytes"
 	"maps"
+	"sort"
 	"sync"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -278,16 +279,47 @@ func (c *Cache) Grid(id string) (*Grid, bool) {
 	return out, true
 }
 
-// KnownGridIDs returns the set of grid ids the cache currently holds.
-func (c *Cache) KnownGridIDs() []string {
+// EverySource names no source, and so names them all: a resync with no
+// source behind it must sweep the whole cache. It is what a lost-event
+// window leaves the client with — Subscribe has no cursor, so a stream gap
+// says nothing about which source's events it swallowed.
+const EverySource = ""
+
+// ServedBy reports whether a cached id — a grid, a tile — is served through
+// source, the namespace chain a health event names. It is the join behind a
+// flap's resync: a health uuid gains one segment per hop exactly as ids do
+// (rpc.QualifyEventIDs, rpc.TransitQualifyGrid), so a source's uuid is a
+// chain prefix of every id it answers for, and rpc.ChainedThrough is the one
+// owner of that rule. Prefix, not equality: a connection's flap owns the far
+// node's home grids and the grids of the far node's plugins alike, because
+// all of them chain through it.
+//
+// EverySource is true for everything, including a bare unqualified id, which
+// belongs to no chain and so can only be reached by a sweep of everything.
+func ServedBy(id, source string) bool {
+	return source == EverySource || rpc.ChainedThrough(id, source)
+}
+
+// ResyncSet answers "which grids does this source's flap refetch": every
+// cached grid served through source, sorted. One owner, so the down
+// direction and the up direction of a health transition cannot disagree —
+// and the client narrows while keeping no second copy of what serves what,
+// because the grid ids it already holds ARE that fact.
+func (c *Cache) ResyncSet(source string) []string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	out := make([]string, 0, len(c.grids))
 	for id := range c.grids {
-		out = append(out, id)
+		if ServedBy(id, source) {
+			out = append(out, id)
+		}
 	}
+	sort.Strings(out)
 	return out
 }
+
+// KnownGridIDs returns the set of grid ids the cache currently holds.
+func (c *Cache) KnownGridIDs() []string { return c.ResyncSet(EverySource) }
 
 // UpdateTile replaces a single tile row in the named grid. No-op if
 // the grid or tile is not cached. Used by URLStream nav events to

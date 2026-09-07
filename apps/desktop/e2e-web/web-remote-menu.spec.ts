@@ -305,8 +305,10 @@ test('a dark mount serves the remembered room, marked stale', async ({ gw, windo
 //
 //   (a) the client's GridChanged arm: the event clears the per-grid failure
 //       latch and refetches, so the cached chip clears with no gesture.
-//   (b) the client's health arms: reportPluginHealth fires retryKick(true) in
-//       BOTH directions, and its sticky notice resolves on recovery.
+//   (b) the client's health arms: reportPluginHealth kicks a resync scoped to
+//       the source the event names, in BOTH directions, and its sticky notice
+//       resolves on recovery. This room is served through the connection that
+//       flapped, so it is inside that scope (cache.ServedBy).
 //
 // Both are asserted the same way, because both are only observable as absence
 // of a gesture: after the far node dies, and again after it revives, this spec
@@ -339,8 +341,8 @@ test('a revived mount clears its chip and its notice with nobody touching anythi
     })
     .toContain('live updates stopped');
   // And the down direction resyncs: a source going down changes what its grids
-  // ARE, so retryKick(true) refetches this room with no gesture, and the answer
-  // it gets back is the node's memory of it, stamped.
+  // ARE, so the kick scoped to that source refetches this room with no gesture,
+  // and the answer it gets back is the node's memory of it, stamped.
   await expect
     .poll(focusedStale, {
       message: 'the chip appears with no gesture: the down kick refetched',
