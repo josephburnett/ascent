@@ -150,10 +150,10 @@ type RestoreWorld struct {
 	// Failed is the grid-load latch: a grid the server already refused is not
 	// asked again, and the walk stops there rather than suspending.
 	Failed map[string]bool
-	// RootViews is the framing each plugin root grid was left at, from the row
+	// RootViews is the framing each doorway's grid was left at, from the row
 	// that owns it (persistedGridView's root arm), against the focused pane's
-	// rect — the only pane a restore targets. Keyed by root grid id, because
-	// which one the address names is the machine's to decode. A root with
+	// rect — the only pane a restore targets. Keyed by that grid's id, because
+	// which one the address names is the machine's to decode. A grid with
 	// nothing persisted is absent.
 	RootViews map[string]Viewport
 }

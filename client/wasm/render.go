@@ -397,9 +397,10 @@ type paletteItem struct {
 }
 
 // paletteItems returns the palette entries for pane p, in display order: the
-// plugin section first — every configured plugin in server.yaml order, with
-// its declared root entries — as the palette's top row, then, only when the
-// pane's current grid is writable, the tile primitives. The section is folded
+// doorway section first — one swatch per declared doorway, rows in
+// server.yaml order and each row's collections after it — as the palette's
+// top row, then, only when the pane's current grid is writable, the tile
+// primitives. The section is folded
 // away unless the user has opened it on this menu opening, and a folded
 // section contributes NO items: every palette consumer — layout, hit-testing,
 // drag ghosts, the test hook — reads this one list, so a swatch that is not

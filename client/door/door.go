@@ -54,8 +54,8 @@ func EntryPlugin(pl rpc.PluginInfo, e rpc.MenuEntry) rpc.PluginInfo {
 }
 
 // Kind says what the resolved door is, which decides renamability: a real
-// well row takes the rename gesture; a declaration (a plugin root, a root
-// menu entry) is config-owned and read-only.
+// well row takes the rename gesture; a declaration (a node's own home, a
+// declared menu entry) is config-owned and read-only.
 type Kind int
 
 const (
@@ -63,9 +63,11 @@ const (
 	// Well: a real tile row (the well actually descended through, or the
 	// instance well naming the same place) — renamable where you stand.
 	Well
-	// Entry: a plugin root MenuEntry's pseudo swatch (the trashcan).
+	// Entry: a declared MenuEntry's pseudo swatch — one of a plugin's
+	// collections, the home's trashcan.
 	Entry
-	// Root: the plugin's own root swatch.
+	// Root: a row's own swatch, for a row that is a place — a node's home,
+	// a connection's far home. A plugin has none.
 	Root
 )
 
@@ -85,11 +87,11 @@ func WellInto(anchor string, tiles map[string]rpc.Tile) (rpc.Tile, bool) {
 // first:
 //  1. the parent level's well whose child is anchor — the tile actually
 //     descended through (grid-tile descents, adopted plugin wells);
-//  2. a plugin root MenuEntry declaring anchor — a menu-swatch descent
-//     (the trashcan);
-//  3. the plugin whose RootGridID is anchor — its own swatch (a connection
-//     menu row lands here too: its label is the row's, its framing the
-//     row's view).
+//  2. a MenuEntry declaring anchor — a menu-swatch descent into one of a
+//     plugin's collections, or the home's trashcan;
+//  3. the row whose RootGridID is anchor — its own swatch (a node's home, a
+//     connection's far home: its label is the row's, its framing the row's
+//     view).
 //
 // A None result means the level has no derivable door (a workspace root,
 // an uncached world) — callers keep their fallback.
@@ -117,7 +119,7 @@ func Find(anchor string, parentTiles map[string]rpc.Tile, plugins []rpc.PluginIn
 	return rpc.Tile{}, None
 }
 
-// EntryGlyph is the glyph a plugin root entry declares for gridID, or ""
+// EntryGlyph is the glyph a declared menu entry declares for gridID, or ""
 // when no entry names it — the one override the grid itself cannot carry
 // (the trash grid is an ordinary local grid; only the declaration knows its
 // face).

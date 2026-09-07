@@ -21,8 +21,8 @@ import (
 // A right-click on the title opens the rename input when the name is
 // user-editable: Enter or blur commits the versioned SetTile rename, a
 // user-owned name the automatic captures never overwrite; Escape cancels; and
-// an unchanged value never writes. Read-only contexts — a plugin root, an
-// ephemeral visit, a text tile's derived name — just show their label. A
+// an unchanged value never writes. Read-only contexts — a declared doorway,
+// an ephemeral visit, a text tile's derived name — just show their label. A
 // left-click on the title toggles the tmux-style pane zoom
 // (Tree.ToggleZoom).
 //
@@ -36,7 +36,7 @@ import (
 //     ephemeral tiles die on ascent, so naming one is a lie.
 //   - inside a well's grid: the containing well (the last path segment),
 //     resolved from the parent grid — renaming the room names its door.
-//   - a plugin root: nothing, since plugin names are config-owned.
+//   - a declared doorway: nothing, since a declaration is config-owned.
 func (a *App) renameTarget(p *pane.Pane) (rpc.Tile, bool) {
 	if p == nil {
 		return rpc.Tile{}, false
@@ -52,7 +52,7 @@ func (a *App) renameTarget(p *pane.Pane) (rpc.Tile, bool) {
 		// A namespace level (a connection, a linked world): the door tile,
 		// the well descended through, is a real row, and renaming the room
 		// names its door, exactly like the containing-well arm below.
-		// Declarations — plugin roots, menu entries — stay unrenamable.
+		// Declarations — a node's home, a menu entry — stay unrenamable.
 		if t, kind := a.doorFind(p); kind == door.Well {
 			return t, true
 		}

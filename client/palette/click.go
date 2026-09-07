@@ -21,8 +21,8 @@ const (
 	// a swatch that only creates by being dragged must do NOTHING when
 	// clicked, never something the canvas behind the popover would have done.
 	ClickNothing ClickTarget = iota
-	// ClickEnter: a plugin or connection row, or a plugin-declared root entry
-	// — descend into the grid it roots.
+	// ClickEnter: any doorway swatch — a node's home, a connection's far
+	// home, one of a plugin's collections — descend into the grid it names.
 	ClickEnter
 	// ClickHere: the bar's promote crumb, which stands for the visit the pane
 	// is already showing. Clicking where you already are does nothing, but it
