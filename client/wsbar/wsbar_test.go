@@ -2,8 +2,8 @@ package wsbar
 
 import "testing"
 
-// Render and input read the same rects, so the crumb drawn at a point is
-// the crumb a click there resolves to.
+// Render and input read the same rects, so the crumb drawn at a point is the
+// crumb a click there resolves to.
 func TestLayoutAndHitTestAgree(t *testing.T) {
 	segs := Layout(squares(7), 900)
 	if len(segs) != 7 {
@@ -24,8 +24,7 @@ func TestLayoutAndHitTestAgree(t *testing.T) {
 	}
 }
 
-// Every crumb is a full RowH square, abutting its neighbor, starting at
-// x=0 — one uniform chain.
+// Every crumb is a full RowH square abutting its neighbor, starting at x=0.
 func TestLayoutSquares(t *testing.T) {
 	segs := Layout(squares(3), 1000)
 	if segs[0].X != 0 || segs[0].Index != 0 {
@@ -41,9 +40,8 @@ func TestLayoutSquares(t *testing.T) {
 	}
 }
 
-// Overflow truncates from the left: the tail — where you are — keeps
-// priority, survivors keep full size, and Index keeps addressing the
-// caller's full crumb list.
+// Overflow truncates from the left: the tail keeps priority, survivors keep
+// full size, and Index still addresses the caller's full crumb list.
 func TestLayoutTruncatesFromLeft(t *testing.T) {
 	width := SlotW + 3*RowH + 10 // room for exactly 3 squares
 	segs := Layout(squares(10), width)
@@ -56,7 +54,7 @@ func TestLayoutTruncatesFromLeft(t *testing.T) {
 	if segs[0].X != 0 {
 		t.Fatalf("first visible crumb starts at %v, want 0", segs[0].X)
 	}
-	// A truncated-away crumb has no rect; SegmentAt says so.
+	// A truncated-away crumb has no rect.
 	if _, ok := SegmentAt(segs, 2); ok {
 		t.Error("truncated crumb must not resolve")
 	}
@@ -83,16 +81,15 @@ func squares(n int) []float64 {
 	return out
 }
 
-// A boundary crumb is a wide bar among the squares; truncation still drops
-// whole crumbs from the left, wide or not.
+// A boundary crumb is a wide bar among the squares, and truncation still drops
+// whole crumbs from the left.
 func TestLayoutMixedWidths(t *testing.T) {
 	widths := []float64{RowH, BoundaryW, RowH, RowH}
 	segs := Layout(widths, 900)
 	if len(segs) != 4 || segs[1].W != BoundaryW || segs[2].X != RowH+BoundaryW {
 		t.Fatalf("mixed layout = %+v", segs)
 	}
-	// Width for the last three only (boundary + 2 squares): the leading
-	// square drops.
+	// Width for the last three only, so the leading square drops.
 	tight := SlotW + BoundaryW + 2*RowH + 4
 	segs = Layout(widths, tight)
 	if len(segs) != 3 || segs[0].Index != 1 || segs[0].W != BoundaryW {
@@ -100,8 +97,8 @@ func TestLayoutMixedWidths(t *testing.T) {
 	}
 }
 
-// The band is reserved layout: panes end exactly where it starts, whether or
-// not a notice strip is up, and the two numbers come from one computation.
+// The band is reserved layout: panes end where it starts, with or without a
+// notice strip, and both numbers come from one computation.
 func TestBandReservesTheStripBelowThePanes(t *testing.T) {
 	paneH, ok := Band(800, 0)
 	if !ok || paneH != 800-RowH {
@@ -114,9 +111,9 @@ func TestBandReservesTheStripBelowThePanes(t *testing.T) {
 	}
 }
 
-// The bar rides the focused pane's span, but the band it rides in does not:
-// the vertical reservation is the same number whatever has focus, so panes
-// never resize as focus moves — only the chrome slides.
+// The bar rides the focused pane's span while the band does not: the vertical
+// reservation is the same number whatever has focus, so panes never resize as
+// focus moves and only the chrome slides.
 func TestRectRidesTheFocusedPane(t *testing.T) {
 	const winW, winH = 1600.0, 800.0
 	left, top, w, ok := Rect(winW, winH, 0, 0, 600)
@@ -137,19 +134,19 @@ func TestRectRidesTheFocusedPane(t *testing.T) {
 }
 
 // A pane that cannot fit, or that hangs off an edge, still gets a bar wholly
-// inside the window: the chrome is never drawn half off-screen.
+// inside the window.
 func TestRectClampsIntoTheWindow(t *testing.T) {
-	// Wider than the window: the window's width, centered on the pane.
+	// Wider than the window gives the window's width, centered on the pane.
 	x, _, w, ok := Rect(1000, 800, 0, -100, 1200)
 	if !ok || x != 0 || w != 1000 {
 		t.Fatalf("oversize pane: x=%v w=%v ok=%v; want 0, 1000, true", x, w, ok)
 	}
-	// Hanging off the right edge: slid back in, full width kept.
+	// Hanging off the right edge slides back in, keeping full width.
 	x, _, w, ok = Rect(1000, 800, 0, 800, 400)
 	if !ok || x != 600 || w != 400 {
 		t.Fatalf("overhanging pane: x=%v w=%v; want 600, 400", x, w)
 	}
-	// Hanging off the left edge: slid back in.
+	// Hanging off the left edge slides back in.
 	x, _, w, ok = Rect(1000, 800, 0, -50, 400)
 	if !ok || x != 0 || w != 400 {
 		t.Fatalf("left-overhanging pane: x=%v w=%v; want 0, 400", x, w)
@@ -169,8 +166,8 @@ func TestRectRefusesWithNothingToSitUnder(t *testing.T) {
 	}
 }
 
-// The band's leftover space is nobody's: it is not the bar, and it is not a
-// pane either, so a point there is swallowed rather than passed down.
+// The band's leftover space is neither bar nor pane, so a point there is
+// swallowed rather than passed down.
 func TestWhereSeparatesTheBarFromItsBand(t *testing.T) {
 	const top = 768.0
 	x, w := 600.0, 400.0
@@ -195,7 +192,7 @@ func TestWhereSeparatesTheBarFromItsBand(t *testing.T) {
 }
 
 func TestBandRefusesAWindowTooShortToHoldIt(t *testing.T) {
-	// Not even one row left: no band, and the panes get what remains.
+	// With less than one row left there is no band and the panes get the rest.
 	paneH, ok := Band(RowH-1, 0)
 	if ok || paneH != RowH-1 {
 		t.Fatalf("Band(%v, 0) = %v, %v; want %v, false", RowH-1, paneH, ok, RowH-1)
