@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/internal/doctype"
 )
@@ -19,17 +20,17 @@ import (
 // or shell tile shares its content or preview blob with the refcount bumped.
 // Nothing else is shared between the two copies, so editing one can never
 // touch the other.
-func (s *Store) CloneTile(ctx context.Context, req *rpc.CloneTileRequest) (*rpc.Tile, error) {
-	tileID, err := parseID(req.TileID)
+func (s *Store) CloneTile(ctx context.Context, req *gridwellv1.CloneTileRequest) (*gridwellv1.Tile, error) {
+	tileID, err := parseID(req.TileId)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tile_id", ErrInvalidArgument)
 	}
-	destGridID, err := parseID(req.DestGridID)
+	destGridID, err := parseID(req.DestGridId)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid dest_grid_id", ErrInvalidArgument)
 	}
-	var out *rpc.Tile
-	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		n, err := s.loadForWrite(ctx, tx, tileID, "", nil)
 		if err != nil {
 			return err
@@ -74,7 +75,7 @@ func (s *Store) CloneTile(ctx context.Context, req *rpc.CloneTileRequest) (*rpc.
 
 // writeTextContent replaces a text tile's blob with new bytes: the text arm of
 // WriteContent. Text is a content edit, so it bumps.
-func (s *Store) writeTextContent(ctx context.Context, tileIDStr string, version int64, data []byte) (*rpc.Tile, error) {
+func (s *Store) writeTextContent(ctx context.Context, tileIDStr string, version int64, data []byte) (*gridwellv1.Tile, error) {
 	if int64(len(data)) > MaxBlobBytes {
 		return nil, fmt.Errorf("%w: text too large", ErrInvalidArgument)
 	}
@@ -82,8 +83,8 @@ func (s *Store) writeTextContent(ctx context.Context, tileIDStr string, version 
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tile_id", ErrInvalidArgument)
 	}
-	var out *rpc.Tile
-	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		n, err := s.claimContentVersion(ctx, tx, tileID, version)
 		if err != nil {
 			return err

@@ -4,11 +4,11 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
-func gridEvent(id string) rpc.Event {
-	return rpc.Event{Kind: rpc.EventGridChanged, GridChanged: &rpc.GridChanged{GridID: id}}
+func gridEvent(id string) *gridwellv1.Event {
+	return &gridwellv1.Event{Payload: &gridwellv1.Event_GridChanged{GridChanged: &gridwellv1.GridChanged{GridId: id}}}
 }
 
 // TestPublishFansOutToAllSubscribers: every open Subscribe stream sees each
@@ -23,9 +23,9 @@ func TestPublishFansOutToAllSubscribers(t *testing.T) {
 
 	s.publish(gridEvent("g1"))
 
-	for _, c := range []<-chan rpc.Event{chA, chB} {
+	for _, c := range []<-chan *gridwellv1.Event{chA, chB} {
 		got := drainEvents(t, c)
-		if len(got) != 1 || got[0].GridChanged.GridID != "g1" {
+		if len(got) != 1 || got[0].GetGridChanged().GridId != "g1" {
 			t.Errorf("subscriber got %+v, want one GridChanged(g1)", got)
 		}
 	}
@@ -54,7 +54,7 @@ func TestPublishNeverBlocksAndCoalescesSameEntity(t *testing.T) {
 	if len(got) == 0 || len(got) >= overflow {
 		t.Fatalf("delivered %d events, want >0 and far fewer than %d (coalesced)", len(got), overflow)
 	}
-	if last := got[len(got)-1]; last.GridChanged.GridID != "g" {
+	if last := got[len(got)-1]; last.GetGridChanged().GridId != "g" {
 		t.Errorf("last event = %+v, want GridChanged(g)", last)
 	}
 }
@@ -76,7 +76,7 @@ func TestPublishNeverDropsDistinctEntities(t *testing.T) {
 	got := drainEvents(t, ch)
 	seen := map[string]bool{}
 	for _, ev := range got {
-		seen[ev.GridChanged.GridID] = true
+		seen[ev.GetGridChanged().GridId] = true
 	}
 	if len(seen) != n {
 		t.Errorf("distinct grids delivered = %d, want %d (nothing dropped)", len(seen), n)
@@ -93,16 +93,16 @@ func TestRemovalNeverMaskedByPendingChange(t *testing.T) {
 	defer cancel()
 
 	for i := 0; i < 50; i++ {
-		s.publish(rpc.Event{Kind: rpc.EventTileChanged, TileChanged: &rpc.TileChanged{Tile: rpc.Tile{ID: "7", GridID: "g"}}})
+		s.publish(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{TileChanged: &gridwellv1.TileChanged{Tile: &gridwellv1.Tile{Id: "7", GridId: "g"}}}})
 	}
-	s.publish(rpc.Event{Kind: rpc.EventTileRemoved, TileRemoved: &rpc.TileRemoved{GridID: "g", TileID: "7"}})
+	s.publish(&gridwellv1.Event{Payload: &gridwellv1.Event_TileRemoved{TileRemoved: &gridwellv1.TileRemoved{GridId: "g", TileId: "7"}}})
 
 	got := drainEvents(t, ch)
 	if len(got) == 0 {
 		t.Fatal("no events delivered")
 	}
-	if last := got[len(got)-1]; last.Kind != rpc.EventTileRemoved {
-		t.Errorf("last event for the tile = %v, want the removal to win", last.Kind)
+	if last := got[len(got)-1]; last.GetTileRemoved() == nil {
+		t.Errorf("last event for the tile = %v, want the removal to win", last)
 	}
 }
 

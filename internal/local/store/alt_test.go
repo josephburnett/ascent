@@ -3,8 +3,6 @@ package store
 import (
 	"context"
 	"testing"
-
-	"github.com/josephburnett/gridwell/api/rpc"
 )
 
 // A user-set name, from the rename gesture, owns alt_text: the automatic
@@ -17,19 +15,17 @@ func TestUserRenameWinsOverCaptures(t *testing.T) {
 	ctx := context.Background()
 	root := rootID(t, s)
 
-	tile, err := s.CreateURL(ctx, &rpc.CreateURLRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, URL: "https://example.com",
-	})
+	tile, err := s.CreateURL(ctx, root, 0, 0, 1, 1, "https://example.com")
 	if err != nil {
 		t.Fatalf("CreateURL: %v", err)
 	}
-	id := mustParseID(t, tile.ID)
+	id := mustParseID(t, tile.Id)
 
 	// A capture before any rename lands normally.
 	if err := s.SetTileAlt(ctx, id, "captured-title", false); err != nil {
 		t.Fatalf("capture: %v", err)
 	}
-	if got := altOf(t, s, tile.ID); got != "captured-title" {
+	if got := altOf(t, s, tile.Id); got != "captured-title" {
 		t.Fatalf("alt = %q, want the capture", got)
 	}
 
@@ -39,12 +35,12 @@ func TestUserRenameWinsOverCaptures(t *testing.T) {
 	}
 
 	// A later capture must NOT overwrite (and must not bump the version).
-	before, _ := s.GetTile(ctx, tile.ID)
+	before, _ := s.GetTile(ctx, tile.Id)
 	if err := s.SetTileAlt(ctx, id, "sneaky-capture", false); err != nil {
 		t.Fatalf("post-rename capture errored (should no-op): %v", err)
 	}
-	after, _ := s.GetTile(ctx, tile.ID)
-	if got := altOf(t, s, tile.ID); got != "my-name" {
+	after, _ := s.GetTile(ctx, tile.Id)
+	if got := altOf(t, s, tile.Id); got != "my-name" {
 		t.Errorf("alt = %q, want the user's name to survive the capture", got)
 	}
 	if after.Version != before.Version {
@@ -52,12 +48,10 @@ func TestUserRenameWinsOverCaptures(t *testing.T) {
 	}
 
 	// The url-title capture path (SetURLState) must respect the latch too.
-	if _, err := s.SetURLState(ctx, &rpc.SetURLStateRequest{
-		TileID: tile.ID, URL: "https://example.com/x", Title: "page-title",
-	}); err != nil {
+	if _, err := s.SetURLState(ctx, tile.Id, nil, "https://example.com/x", "page-title", ""); err != nil {
 		t.Fatalf("SetURLState: %v", err)
 	}
-	if got := altOf(t, s, tile.ID); got != "my-name" {
+	if got := altOf(t, s, tile.Id); got != "my-name" {
 		t.Errorf("alt = %q after SetURLState, want the user's name", got)
 	}
 
@@ -65,7 +59,7 @@ func TestUserRenameWinsOverCaptures(t *testing.T) {
 	if err := s.SetTileAlt(ctx, id, "renamed-again", true); err != nil {
 		t.Fatalf("second rename: %v", err)
 	}
-	if got := altOf(t, s, tile.ID); got != "renamed-again" {
+	if got := altOf(t, s, tile.Id); got != "renamed-again" {
 		t.Errorf("alt = %q, want the second rename", got)
 	}
 }
@@ -76,18 +70,14 @@ func TestURLTitleCaptureStillWorksUnnamed(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	root := rootID(t, s)
-	tile, err := s.CreateURL(ctx, &rpc.CreateURLRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, URL: "https://example.com",
-	})
+	tile, err := s.CreateURL(ctx, root, 0, 0, 1, 1, "https://example.com")
 	if err != nil {
 		t.Fatalf("CreateURL: %v", err)
 	}
-	if _, err := s.SetURLState(ctx, &rpc.SetURLStateRequest{
-		TileID: tile.ID, Title: "page-title",
-	}); err != nil {
+	if _, err := s.SetURLState(ctx, tile.Id, nil, "", "page-title", ""); err != nil {
 		t.Fatalf("SetURLState: %v", err)
 	}
-	if got := altOf(t, s, tile.ID); got != "page-title" {
+	if got := altOf(t, s, tile.Id); got != "page-title" {
 		t.Errorf("alt = %q, want the captured title", got)
 	}
 }

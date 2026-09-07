@@ -1,11 +1,13 @@
 package store
 
 import (
+	"bytes"
 	"context"
-	"reflect"
 	"testing"
 
-	"github.com/josephburnett/gridwell/api/rpc"
+	"google.golang.org/protobuf/proto"
+
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
 // TestSynchronousPinned confirms Open pins PRAGMA synchronous to NORMAL (1).
@@ -35,24 +37,18 @@ func TestReopenRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	root := rootID(t, s)
 
-	txt, err := s.CreateText(ctx, &rpc.CreateTextRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, Data: []byte("# hello world"),
-	})
+	txt, err := s.CreateText(ctx, root, 0, 0, 1, 1, []byte("# hello world"))
 	if err != nil {
 		t.Fatalf("create text: %v", err)
 	}
-	if _, err := s.CreateURL(ctx, &rpc.CreateURLRequest{
-		GridID: root, X: 2, Y: 0, W: 1, H: 1, URL: "https://example.com",
-	}); err != nil {
+	if _, err := s.CreateURL(ctx, root, 2, 0, 1, 1, "https://example.com"); err != nil {
 		t.Fatalf("create url: %v", err)
 	}
-	if _, err := s.CreateWell(ctx, &rpc.CreateWellRequest{
-		GridID: root, X: 4, Y: 0, W: 1, H: 1,
-	}); err != nil {
+	if _, err := s.CreateWell(ctx, root, 4, 0, 1, 1, ""); err != nil {
 		t.Fatalf("create well: %v", err)
 	}
 
-	before := snapshotDB(t, s, root, txt.BlobID)
+	before := snapshotDB(t, s, root, txt.BlobId)
 	if err := s.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -62,9 +58,9 @@ func TestReopenRoundTrip(t *testing.T) {
 		t.Fatalf("reopen %s: %v", path, err)
 	}
 	defer reopened.Close()
-	after := snapshotDB(t, reopened, root, txt.BlobID)
+	after := snapshotDB(t, reopened, root, txt.BlobId)
 
-	if !reflect.DeepEqual(before, after) {
+	if !before.same(after) {
 		t.Errorf("state changed across reopen:\n before = %+v\n after  = %+v", before, after)
 	}
 }
@@ -74,10 +70,17 @@ func TestReopenRoundTrip(t *testing.T) {
 // version. Compared before/after a reopen to prove nothing drifted.
 type dbState struct {
 	userVersion int64
-	grid        rpc.Grid
-	tiles       []rpc.Tile
+	grid        *gridwellv1.GetGridResponse
 	textBytes   []byte
 	textMedia   string
+}
+
+// same compares two snapshots. The grid arm goes through proto.Equal: a
+// generated message carries reflection bookkeeping that a structural compare
+// would read as a difference.
+func (d dbState) same(o dbState) bool {
+	return d.userVersion == o.userVersion && proto.Equal(d.grid, o.grid) &&
+		bytes.Equal(d.textBytes, o.textBytes) && d.textMedia == o.textMedia
 }
 
 func snapshotDB(t *testing.T, s *Store, gridID string, textBlobID int64) dbState {
@@ -95,5 +98,5 @@ func snapshotDB(t *testing.T, s *Store, gridID string, textBlobID int64) dbState
 	if err != nil {
 		t.Fatalf("read user_version: %v", err)
 	}
-	return dbState{userVersion: uv, grid: g.Grid, tiles: g.Tiles, textBytes: data, textMedia: media}
+	return dbState{userVersion: uv, grid: g, textBytes: data, textMedia: media}
 }

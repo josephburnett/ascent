@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -37,20 +38,20 @@ func TestCloneExitWellSharesReferenceNoNewGrid(t *testing.T) {
 	}
 	before := gridRowCount(t, s)
 
-	clone, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     ew.ID,
-		DestGridID: root, X: 2, Y: 0,
+	clone, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     ew.Id,
+		DestGridId: root, X: 2, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("clone exit well: %v", err)
 	}
 	// The clone is a distinct row but carries the SAME qualified child verbatim
 	// — a deep copy would have re-pointed it at a fresh local grid.
-	if clone.ID == ew.ID {
+	if clone.Id == ew.Id {
 		t.Error("clone reused the source row id")
 	}
-	if clone.ChildGridID != remoteChild {
-		t.Errorf("clone child = %q, want the shared reference %q", clone.ChildGridID, remoteChild)
+	if clone.ChildGridId != remoteChild {
+		t.Errorf("clone child = %q, want the shared reference %q", clone.ChildGridId, remoteChild)
 	}
 	if after := gridRowCount(t, s); after != before {
 		t.Errorf("clone of an exit well created %d local grid(s); the far grid is shared, not copied", after-before)
@@ -65,7 +66,7 @@ func TestDeleteExitWellDropsReferenceOnly(t *testing.T) {
 
 	// An interior well alongside it, whose LOCAL child grid must survive the
 	// exit-well delete untouched.
-	interior, err := s.CreateWell(ctx, &rpc.CreateWellRequest{GridID: root, X: 5, Y: 5, W: 1, H: 1})
+	interior, err := s.CreateWell(ctx, root, 5, 5, 1, 1, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,14 +77,14 @@ func TestDeleteExitWellDropsReferenceOnly(t *testing.T) {
 	primeTrash(t, s) // count the delete, not first-use trash minting
 	before := gridRowCount(t, s)
 
-	hardDelete(t, s, ew.ID)
+	hardDelete(t, s, ew.Id)
 	// No local grid was torn down (the well's own grid count drops by one only
 	// for an interior well; an exit well owns none).
 	if after := gridRowCount(t, s); after != before {
 		t.Errorf("deleting an exit well removed %d local grid(s); it owns none", before-after)
 	}
 	// The interior well's local child grid is still readable.
-	if _, err := s.GetGrid(ctx, interior.ChildGridID); err != nil {
+	if _, err := s.GetGrid(ctx, interior.ChildGridId); err != nil {
 		t.Errorf("interior well's child grid was collaterally damaged: %v", err)
 	}
 	verifyRefcounts(t, s)
@@ -98,15 +99,15 @@ func TestMoveExitWellPreservesReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	moved, err := s.PlaceTile(ctx, &rpc.PlaceTileRequest{
-		TileID: ew.ID,
-		GridID: root, X: 3, Y: 3, W: ew.W, H: ew.H,
+	moved, err := s.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+		TileId: ew.Id,
+		GridId: root, X: 3, Y: 3, W: ew.W, H: ew.H,
 	})
 	if err != nil {
 		t.Fatalf("move exit well: %v", err)
 	}
-	if moved.ChildGridID != remoteChild {
-		t.Errorf("moved exit well child = %q, want %q", moved.ChildGridID, remoteChild)
+	if moved.ChildGridId != remoteChild {
+		t.Errorf("moved exit well child = %q, want %q", moved.ChildGridId, remoteChild)
 	}
 	if moved.X != 3 || moved.Y != 3 {
 		t.Errorf("moved to (%d,%d), want (3,3)", moved.X, moved.Y)

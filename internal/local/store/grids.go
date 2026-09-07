@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
 // GetGrid returns the grid plus all of its tiles. It is a pure read: home
 // holds only Gridwell-owned grids, so there is no host-state reconciliation
 // here. That lives in the plugins, which the server routes to.
-func (s *Store) GetGrid(ctx context.Context, gridID string) (*rpc.GetGridResponse, error) {
+func (s *Store) GetGrid(ctx context.Context, gridID string) (*gridwellv1.GetGridResponse, error) {
 	id, err := parseID(gridID)
 	if err != nil {
 		return nil, ErrNotFound
@@ -25,7 +25,7 @@ func (s *Store) GetGrid(ctx context.Context, gridID string) (*rpc.GetGridRespons
 	if err != nil {
 		return nil, err
 	}
-	return &rpc.GetGridResponse{Grid: *g, Tiles: tiles}, nil
+	return &gridwellv1.GetGridResponse{Grid: g, Tiles: tiles}, nil
 }
 
 // gridReader is the interface needed to read grid and tile rows. Both *sql.DB
@@ -37,12 +37,12 @@ type gridReader interface {
 }
 
 // gridColumns is the SELECT list for a grid row: the grids columns that are on
-// the wire. Everything else on rpc.Grid — writable, node_ns, menu_entries —
+// the wire. Everything else on gridwellv1.Grid — writable, node_ns, menu_entries —
 // is derived by the serving node and never read from a row.
 var gridColumns = wireColumns(gridsColumns)
 
-func (s *Store) loadGrid(ctx context.Context, q gridReader, gridID int64) (*rpc.Grid, error) {
-	var g rpc.Grid
+func (s *Store) loadGrid(ctx context.Context, q gridReader, gridID int64) (*gridwellv1.Grid, error) {
+	var g gridwellv1.Grid
 	err := q.QueryRowContext(ctx,
 		`SELECT `+gridColumns+` FROM grids WHERE id = ? AND ns = ''`, gridID,
 	).Scan(scanDests(gridsColumns, &g)...)
@@ -60,18 +60,18 @@ func (s *Store) loadGrid(ctx context.Context, q gridReader, gridID int64) (*rpc.
 // order, so the list and the scan cannot fall out of step.
 var tileColumns = wireColumns(tilesColumns)
 
-// scanTile scans a single row into an rpc.Tile.
+// scanTile scans a single row into an gridwellv1.Tile.
 func scanTile(scanner interface {
 	Scan(dest ...any) error
-}) (*rpc.Tile, error) {
-	var n rpc.Tile
+}) (*gridwellv1.Tile, error) {
+	var n gridwellv1.Tile
 	if err := scanner.Scan(scanDests(tilesColumns, &n)...); err != nil {
 		return nil, err
 	}
 	return &n, nil
 }
 
-func (s *Store) loadTile(ctx context.Context, q gridReader, tileID int64) (*rpc.Tile, error) {
+func (s *Store) loadTile(ctx context.Context, q gridReader, tileID int64) (*gridwellv1.Tile, error) {
 	row := q.QueryRowContext(ctx, `SELECT `+tileColumns+` FROM tiles WHERE id = ? AND ns = ''`, tileID)
 	n, err := scanTile(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -83,25 +83,25 @@ func (s *Store) loadTile(ctx context.Context, q gridReader, tileID int64) (*rpc.
 	return n, nil
 }
 
-func (s *Store) loadTilesInGrid(ctx context.Context, q gridReader, gridID int64) ([]rpc.Tile, error) {
+func (s *Store) loadTilesInGrid(ctx context.Context, q gridReader, gridID int64) ([]*gridwellv1.Tile, error) {
 	rows, err := q.QueryContext(ctx, `SELECT `+tileColumns+` FROM tiles WHERE grid_id = ? AND ns = '' ORDER BY id`, gridID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []rpc.Tile
+	var out []*gridwellv1.Tile
 	for rows.Next() {
 		n, err := scanTile(rows)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, *n)
+		out = append(out, n)
 	}
 	return out, rows.Err()
 }
 
 // GetTile returns a single tile by ID.
-func (s *Store) GetTile(ctx context.Context, tileID string) (*rpc.Tile, error) {
+func (s *Store) GetTile(ctx context.Context, tileID string) (*gridwellv1.Tile, error) {
 	id, err := parseID(tileID)
 	if err != nil {
 		return nil, ErrNotFound

@@ -1,7 +1,6 @@
 // Package local is the node's home: the namespace over the local SQLite
 // store. It satisfies namespace.Namespace as an in-process Go value the
-// router calls directly, delegating every verb to store.Store and
-// translating between the proto wire types and the rpc.* types.
+// router calls directly, delegating every verb to store.Store.
 //
 // This is where the user's own space lives: wells, text, url, and shell
 // tiles. Plugins project external state; home owns everything the user
@@ -85,10 +84,10 @@ func (p *Plugin) CleanupScratch(ctx context.Context) (int, error) {
 	}
 	n := 0
 	for _, t := range g.Tiles {
-		if refs[t.ID] {
+		if refs[t.Id] {
 			continue // a pane tile's ephemeral: owned, not leaked
 		}
-		if err := p.st.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: t.ID}); err != nil {
+		if err := p.st.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: t.Id}); err != nil {
 			return n, err
 		}
 		n++
@@ -163,15 +162,11 @@ func (p *Plugin) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwell
 // grid row. Framing carries no version claim and never bumps a content
 // version. The server routes on whichever target the request names.
 func (p *Plugin) SetFraming(ctx context.Context, req *gridwellv1.SetFramingRequest) (*gridwellv1.SetFramingResponse, error) {
-	t, err := p.st.SetFraming(ctx, &rpc.SetFramingRequest{
-		TileID:     req.TileId,
-		RootGridID: req.RootGridId,
-		Framing:    rpc.Framing{Cx: req.Cx, Cy: req.Cy, Zoom: req.Zoom},
-	})
+	t, err := p.st.SetFraming(ctx, req)
 	if err != nil {
 		return nil, errToStatus(err)
 	}
-	return &gridwellv1.SetFramingResponse{Tile: rpc.TileToProto(t)}, nil
+	return &gridwellv1.SetFramingResponse{Tile: t}, nil
 }
 
 func (p *Plugin) Probe(ctx context.Context, req *gridwellv1.ProbeRequest) (*gridwellv1.ProbeResponse, error) {
@@ -192,7 +187,7 @@ func (p *Plugin) GetGrid(ctx context.Context, req *gridwellv1.GetGridRequest) (*
 	if err != nil {
 		return nil, errToStatus(err)
 	}
-	return rpc.GetGridResponseToProto(r), nil
+	return r, nil
 }
 
 func (p *Plugin) GetTilePreview(ctx context.Context, req *gridwellv1.GetTilePreviewRequest) (*gridwellv1.GetTilePreviewResponse, error) {
@@ -216,11 +211,7 @@ func (p *Plugin) Search(ctx context.Context, req *gridwellv1.SearchRequest) (*gr
 	if err != nil {
 		return nil, errToStatus(err)
 	}
-	out := &gridwellv1.SearchResponse{}
-	for i := range res {
-		out.Results = append(out.Results, rpc.SearchResultToProto(&res[i]))
-	}
-	return out, nil
+	return &gridwellv1.SearchResponse{Results: res}, nil
 }
 
 // contentChunkBytes is the ReadContent chunk size. Small enough to stream a
@@ -289,7 +280,7 @@ func (p *Plugin) WriteContent(ctx context.Context, recv func() (*gridwellv1.Writ
 	if err != nil {
 		return nil, errToStatus(err)
 	}
-	return &gridwellv1.TileResponse{Tile: rpc.TileToProto(tile)}, nil
+	return &gridwellv1.TileResponse{Tile: tile}, nil
 }
 
 // ── Creates ──────────────────────────────────────────────────────────────────
@@ -322,9 +313,9 @@ func (p *Plugin) CreateTile(ctx context.Context, req *gridwellv1.CreateTileReque
 				t.ChildGridId, t.AltText,
 				rpc.Framing{Cx: t.ViewCx, Cy: t.ViewCy, Zoom: t.ViewZoom}))
 		}
-		return tileResp(p.st.CreateWell(ctx, &rpc.CreateWellRequest{GridID: req.GridId, X: t.X, Y: t.Y, W: t.W, H: t.H, Label: t.AltText}))
+		return tileResp(p.st.CreateWell(ctx, req.GridId, t.X, t.Y, t.W, t.H, t.AltText))
 	case rpc.KindText:
-		return tileResp(p.st.CreateText(ctx, &rpc.CreateTextRequest{GridID: req.GridId, X: t.X, Y: t.Y, W: t.W, H: t.H}))
+		return tileResp(p.st.CreateText(ctx, req.GridId, t.X, t.Y, t.W, t.H, nil))
 	case rpc.KindURL:
 		// A url create targeting the scratch grid is an ephemeral visit —
 		// descending into a url without placing a tile — so it is routed
@@ -333,7 +324,7 @@ func (p *Plugin) CreateTile(ctx context.Context, req *gridwellv1.CreateTileReque
 		if scratch, err := p.st.ScratchGridID(ctx); err == nil && req.GridId == scratch {
 			return tileResp(p.st.CreateScratchURL(ctx, t.UrlString))
 		}
-		return tileResp(p.st.CreateURL(ctx, &rpc.CreateURLRequest{GridID: req.GridId, X: t.X, Y: t.Y, W: t.W, H: t.H, URL: t.UrlString}))
+		return tileResp(p.st.CreateURL(ctx, req.GridId, t.X, t.Y, t.W, t.H, t.UrlString))
 	case rpc.KindShell:
 		// A shell create targeting the scratch grid is an ephemeral shell,
 		// clicked rather than dragged from the + palette: off-grid,
@@ -342,7 +333,7 @@ func (p *Plugin) CreateTile(ctx context.Context, req *gridwellv1.CreateTileReque
 		if scratch, err := p.st.ScratchGridID(ctx); err == nil && req.GridId == scratch {
 			return tileResp(p.st.CreateScratchShell(ctx))
 		}
-		return tileResp(p.st.CreateShell(ctx, &rpc.CreateShellRequest{GridID: req.GridId, X: t.X, Y: t.Y, W: t.W, H: t.H}))
+		return tileResp(p.st.CreateShell(ctx, req.GridId, t.X, t.Y, t.W, t.H))
 	case rpc.KindPane:
 		// A pane tile, created with no layout blob: a NULL blob_id means
 		// never arranged, and the first arrangement rides WriteContent.
@@ -356,14 +347,14 @@ func (p *Plugin) CreateTile(ctx context.Context, req *gridwellv1.CreateTileReque
 // ── Mutations ────────────────────────────────────────────────────────────────
 
 func (p *Plugin) CloneTile(ctx context.Context, req *gridwellv1.CloneTileRequest) (*gridwellv1.TileResponse, error) {
-	return tileResp(p.st.CloneTile(ctx, rpc.CloneTileRequestFromProto(req)))
+	return tileResp(p.st.CloneTile(ctx, req))
 }
 
 // PlaceTile is the single placement writeback: one verb owns
 // (grid, x, y, w, h), and the store derives the well-into-own-subtree
 // refusal itself.
 func (p *Plugin) PlaceTile(ctx context.Context, req *gridwellv1.PlaceTileRequest) (*gridwellv1.TileResponse, error) {
-	return tileResp(p.st.PlaceTile(ctx, rpc.PlaceTileRequestFromProto(req)))
+	return tileResp(p.st.PlaceTile(ctx, req))
 }
 
 // SetTile is the single capture and framing writeback: tile.kind selects the
@@ -395,14 +386,10 @@ func (p *Plugin) SetTile(ctx context.Context, req *gridwellv1.SetTileRequest) (*
 		return tileResp(p.st.RenameTile(ctx, req.TileId, req.Version, req.Rename))
 	}
 	if req.ContentZoom != nil {
-		return tileResp(p.st.SetContentZoom(ctx, &rpc.SetContentZoomRequest{
-			TileID: req.TileId, ContentZoom: *req.ContentZoom,
-		}))
+		return tileResp(p.st.SetContentZoom(ctx, req.TileId, *req.ContentZoom))
 	}
 	if req.UrlFrozen != nil {
-		return tileResp(p.st.SetURLFrozen(ctx, &rpc.SetURLFrozenRequest{
-			TileID: req.TileId, Frozen: *req.UrlFrozen,
-		}))
+		return tileResp(p.st.SetURLFrozen(ctx, req.TileId, *req.UrlFrozen))
 	}
 	t := req.Tile
 	if t == nil {
@@ -415,11 +402,11 @@ func (p *Plugin) SetTile(ctx context.Context, req *gridwellv1.SetTileRequest) (*
 		// framing, a doorway tile and a root grid.
 		return nil, status.Error(codes.InvalidArgument, "set: well framing rides SetFraming")
 	case rpc.KindText:
-		return tileResp(p.st.SetTextView(ctx, &rpc.SetTextViewRequest{TileID: req.TileId, TextX: t.TextX, TextY: t.TextY, TextW: t.TextW, TextH: t.TextH, TextMode: t.TextMode}))
+		return tileResp(p.st.SetTextView(ctx, req.TileId, t.TextX, t.TextY, t.TextW, t.TextH, t.TextMode))
 	case rpc.KindShell:
-		return tileResp(p.st.SetShellPreview(ctx, &rpc.SetShellPreviewRequest{TileID: req.TileId, JPEG: req.Preview}))
+		return tileResp(p.st.SetShellPreview(ctx, req.TileId, req.Preview))
 	case rpc.KindURL:
-		return tileResp(p.st.SetURLState(ctx, &rpc.SetURLStateRequest{TileID: req.TileId, JPEG: req.Preview, URL: t.UrlString, Title: t.AltText, History: t.UrlHistory}))
+		return tileResp(p.st.SetURLState(ctx, req.TileId, req.Preview, t.UrlString, t.AltText, t.UrlHistory))
 	case rpc.KindPane:
 		// Refused so the kind-to-operation mapping stays total: the layout
 		// blob rides the content door, WriteContent, which is framing-class
@@ -465,7 +452,7 @@ func (p *Plugin) OpenShell(sctx context.Context, recv func() (*gridwellv1.OpenSh
 	// tile must not, because that would fabricate state behind the JPEG.
 	allowCreate := true
 	if tile, gerr := p.st.GetTile(sctx, tileID); gerr == nil {
-		allowCreate = tile.PreviewBlobID == 0
+		allowCreate = tile.PreviewBlobId == 0
 	}
 
 	session, stopOld, err := p.shell.Acquire(tileID, allowCreate, cols, rows)
@@ -541,7 +528,7 @@ func (p *Plugin) captureShellTitle(tileID string) {
 
 func (p *Plugin) DeleteTile(ctx context.Context, req *gridwellv1.DeleteTileRequest) (*gridwellv1.DeleteTileResponse, error) {
 	tileID := req.TileId
-	if err := p.st.DeleteTile(ctx, rpc.DeleteTileRequestFromProto(req)); err != nil {
+	if err := p.st.DeleteTile(ctx, req); err != nil {
 		return nil, errToStatus(err)
 	}
 	// Reap the tile's shell session once its row is gone. A cloned shell is
@@ -567,10 +554,7 @@ func (p *Plugin) Subscribe(ctx context.Context, _ *gridwellv1.SubscribeRequest, 
 			if !ok {
 				return nil
 			}
-			// A fresh proto per subscriber: the store's hub hands the same
-			// internal event to every listener, and with no wire between them
-			// an in-place qualification would reach them all.
-			if err := send(rpc.EventToProto(ev)); err != nil {
+			if err := send(ev); err != nil {
 				return err
 			}
 		case <-ctx.Done():
@@ -581,11 +565,11 @@ func (p *Plugin) Subscribe(ctx context.Context, _ *gridwellv1.SubscribeRequest, 
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-func tileResp(t *rpc.Tile, err error) (*gridwellv1.TileResponse, error) {
+func tileResp(t *gridwellv1.Tile, err error) (*gridwellv1.TileResponse, error) {
 	if err != nil {
 		return nil, errToStatus(err)
 	}
-	return &gridwellv1.TileResponse{Tile: rpc.TileToProto(t)}, nil
+	return &gridwellv1.TileResponse{Tile: t}, nil
 }
 
 // errToStatus maps a store sentinel error to a gRPC status code so the

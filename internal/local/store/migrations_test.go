@@ -289,7 +289,7 @@ func TestMigrateV10OverAGenuineV9File(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read the adopted well after reopen: %v", err)
 	}
-	if reopened.Kind != "well" || reopened.ChildGridID == "" || reopened.AltText != "gpu box" {
+	if reopened.Kind != "well" || reopened.ChildGridId == "" || reopened.AltText != "gpu box" {
 		t.Errorf("adopted well after reopen = %+v, want a named well with a child grid", reopened)
 	}
 }

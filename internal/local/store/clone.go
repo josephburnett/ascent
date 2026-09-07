@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -51,8 +52,7 @@ func (s *Store) cloneSubtree(ctx context.Context, tx *sql.Tx, srcGridID int64) (
 	if err != nil {
 		return 0, err
 	}
-	for i := range tiles {
-		src := &tiles[i]
+	for _, src := range tiles {
 		child, err := s.childGridForClone(ctx, tx, src)
 		if err != nil {
 			return 0, err
@@ -73,14 +73,14 @@ func (s *Store) cloneSubtree(ctx context.Context, tx *sql.Tx, srcGridID int64) (
 //     cross-plugin reference, since the child grid is owned by another
 //     plugin and is not duplicated;
 //   - everything else gets nil.
-func (s *Store) childGridForClone(ctx context.Context, tx *sql.Tx, n *rpc.Tile) (any, error) {
-	if n.ChildGridID == "" {
+func (s *Store) childGridForClone(ctx context.Context, tx *sql.Tx, n *gridwellv1.Tile) (any, error) {
+	if n.ChildGridId == "" {
 		return nil, nil
 	}
-	childID, err := strconv.ParseInt(n.ChildGridID, 10, 64)
+	childID, err := strconv.ParseInt(n.ChildGridId, 10, 64)
 	if err != nil {
 		// Qualified cross-plugin reference: preserve it verbatim.
-		return n.ChildGridID, nil
+		return n.ChildGridId, nil
 	}
 	if n.Kind == rpc.KindWell {
 		newChild, err := s.cloneSubtree(ctx, tx, childID)
@@ -102,40 +102,40 @@ func placeholders(n int) string {
 // bumped. The per-kind column nullability mirrors the schema CHECK
 // constraint. Used by CloneTile for one tile and by cloneSubtree for every
 // tile in a subtree.
-func (s *Store) insertTileCopy(ctx context.Context, tx *sql.Tx, gridID int64, n *rpc.Tile, x, y int64, child any, now int64) (int64, error) {
+func (s *Store) insertTileCopy(ctx context.Context, tx *sql.Tx, gridID int64, n *gridwellv1.Tile, x, y int64, child any, now int64) (int64, error) {
 	var (
 		blob, previewBlob sql.NullInt64
 		urlStr, textMode  sql.NullString
 		urlHist           sql.NullString
 		linkTarget        sql.NullString
 	)
-	if n.LinkTargetID != "" {
+	if n.LinkTargetId != "" {
 		// A copy of a link is another link to the same target. The link row
 		// holds no content, so there is nothing else to copy: the CHECK's
 		// link branch requires every content column NULL.
-		linkTarget = sql.NullString{String: n.LinkTargetID, Valid: true}
+		linkTarget = sql.NullString{String: n.LinkTargetId, Valid: true}
 	}
 	switch {
-	case n.LinkTargetID != "":
+	case n.LinkTargetId != "":
 		// No content columns on a link row; skip the per-kind content copy.
 	case n.Kind == rpc.KindURL:
-		urlStr = sql.NullString{String: n.URLString, Valid: true}
-		if n.PreviewBlobID != 0 {
-			previewBlob = sql.NullInt64{Int64: n.PreviewBlobID, Valid: true}
+		urlStr = sql.NullString{String: n.UrlString, Valid: true}
+		if n.PreviewBlobId != 0 {
+			previewBlob = sql.NullInt64{Int64: n.PreviewBlobId, Valid: true}
 		}
-		if n.URLHistory != "" {
-			urlHist = sql.NullString{String: n.URLHistory, Valid: true}
+		if n.UrlHistory != "" {
+			urlHist = sql.NullString{String: n.UrlHistory, Valid: true}
 		}
 	case n.Kind == rpc.KindShell:
 		// A PTY cannot be copied, so a cloned shell is a screenshot: it
 		// carries the frozen preview blob but not the live session, which is
 		// keyed by tile id.
-		if n.PreviewBlobID != 0 {
-			previewBlob = sql.NullInt64{Int64: n.PreviewBlobID, Valid: true}
+		if n.PreviewBlobId != 0 {
+			previewBlob = sql.NullInt64{Int64: n.PreviewBlobId, Valid: true}
 		}
 	case n.Kind == rpc.KindText:
-		if n.BlobID != 0 {
-			blob = sql.NullInt64{Int64: n.BlobID, Valid: true}
+		if n.BlobId != 0 {
+			blob = sql.NullInt64{Int64: n.BlobId, Valid: true}
 		}
 		if n.TextMode != "" {
 			textMode = sql.NullString{String: n.TextMode, Valid: true}
@@ -144,17 +144,17 @@ func (s *Store) insertTileCopy(ctx context.Context, tx *sql.Tx, gridID int64, n 
 		// The layout blob is shared by refcount like a text body, and the copy
 		// diverges on its first edit through content addressing. A NULL blob,
 		// meaning never arranged, copies as NULL.
-		if n.BlobID != 0 {
-			blob = sql.NullInt64{Int64: n.BlobID, Valid: true}
+		if n.BlobId != 0 {
+			blob = sql.NullInt64{Int64: n.BlobId, Valid: true}
 		}
 	}
-	// alt_user is storage-only, deliberately not on rpc.Tile, so the latch is
+	// alt_user is storage-only, deliberately not on gridwellv1.Tile, so the latch is
 	// read straight from the source row: a user-owned name must stay
 	// user-owned on the copy, or the next automatic title capture clobbers
 	// it.
-	srcID, err := parseID(n.ID)
+	srcID, err := parseID(n.Id)
 	if err != nil {
-		return 0, fmt.Errorf("tile copy: source id %q: %w", n.ID, err)
+		return 0, fmt.Errorf("tile copy: source id %q: %w", n.Id, err)
 	}
 	var altUser int64
 	if err := tx.QueryRowContext(ctx,
@@ -175,7 +175,7 @@ func (s *Store) insertTileCopy(ctx context.Context, tx *sql.Tx, gridID int64, n 
 		"url_string": urlStr, "preview_blob_id": previewBlob,
 		"alt_text": n.AltText, "alt_user": altUser,
 		"content_zoom": n.ContentZoom, "url_history": urlHist,
-		"link_target_id": linkTarget, "url_frozen": boolToInt(n.URLFrozen),
+		"link_target_id": linkTarget, "url_frozen": boolToInt(n.UrlFrozen),
 		"created_at": now, "updated_at": now,
 	})
 	if err != nil {

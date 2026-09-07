@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/internal/doctype"
 )
@@ -25,7 +26,7 @@ const MaxBlobBytes = 16 * 1024 * 1024
 // its only callers are the writes that change the user's content bytes:
 // WriteContent's text and url arms, and RenameTile. "version is the claim for
 // content and nothing else" is enforced by who can reach this function.
-func (s *Store) claimContentVersion(ctx context.Context, q gridReader, tileID, claimed int64) (*rpc.Tile, error) {
+func (s *Store) claimContentVersion(ctx context.Context, q gridReader, tileID, claimed int64) (*gridwellv1.Tile, error) {
 	t, err := s.loadTile(ctx, q, tileID)
 	if err != nil {
 		return nil, err
@@ -43,7 +44,7 @@ func (s *Store) claimContentVersion(ctx context.Context, q gridReader, tileID, c
 // rule that check the returned tile themselves. No version is consulted:
 // these writes are last-writer-wins, so there is nothing here for a racing
 // capture to conflict with.
-func (s *Store) loadForWrite(ctx context.Context, tx *sql.Tx, tileID int64, wantKind string, wrongKindErr error) (*rpc.Tile, error) {
+func (s *Store) loadForWrite(ctx context.Context, tx *sql.Tx, tileID int64, wantKind string, wrongKindErr error) (*gridwellv1.Tile, error) {
 	n, err := s.loadTile(ctx, tx, tileID)
 	if err != nil {
 		return nil, err
@@ -61,12 +62,12 @@ func (s *Store) loadForWrite(ctx context.Context, tx *sql.Tx, tileID int64, want
 // the whole tile, so a capture still reaches every client; it just arrives as
 // last-writer-wins state instead of a new claim. Content writers go through
 // finishContentEdit.
-func (s *Store) emitTileChanged(ctx context.Context, tx *sql.Tx, tileID int64, events *[]rpc.Event) (*rpc.Tile, error) {
+func (s *Store) emitTileChanged(ctx context.Context, tx *sql.Tx, tileID int64, events *[]*gridwellv1.Event) (*gridwellv1.Tile, error) {
 	out, err := s.loadTile(ctx, tx, tileID)
 	if err != nil {
 		return nil, err
 	}
-	*events = append(*events, rpc.Event{Kind: rpc.EventTileChanged, TileChanged: &rpc.TileChanged{Tile: *out}})
+	*events = append(*events, &gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{TileChanged: &gridwellv1.TileChanged{Tile: out}}})
 	return out, nil
 }
 
@@ -77,7 +78,7 @@ func (s *Store) emitTileChanged(ctx context.Context, tx *sql.Tx, tileID int64, e
 // open-coded bump a new mutation can forget or wrongly add, is what keeps
 // that invariant from drifting. Its callers are exactly the content writes,
 // and version_rule_test.go pins the whole table.
-func (s *Store) finishContentEdit(ctx context.Context, tx *sql.Tx, tileID int64, events *[]rpc.Event) (*rpc.Tile, error) {
+func (s *Store) finishContentEdit(ctx context.Context, tx *sql.Tx, tileID int64, events *[]*gridwellv1.Event) (*gridwellv1.Tile, error) {
 	if err := bumpTileVersion(ctx, tx, tileID); err != nil {
 		return nil, err
 	}
@@ -92,7 +93,7 @@ func (s *Store) createTile(
 	ctx context.Context,
 	gridIDStr string, x, y, w, h int64,
 	insert func(tx *sql.Tx, gridID, now int64) (tileID int64, err error),
-) (*rpc.Tile, error) {
+) (*gridwellv1.Tile, error) {
 	gridID, err := parseID(gridIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid grid_id", ErrInvalidArgument)
@@ -100,8 +101,8 @@ func (s *Store) createTile(
 	if w <= 0 || h <= 0 {
 		return nil, fmt.Errorf("%w: w and h must be positive", ErrInvalidArgument)
 	}
-	var out *rpc.Tile
-	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		// grid_id is authoritative; no descent path is on the wire. The load
 		// refuses a create into a grid that does not exist.
 		if _, err := s.loadGrid(ctx, tx, gridID); err != nil {
@@ -136,9 +137,9 @@ func (s *Store) createTile(
 // Label, when set, is stored as the well's alt_text, the user-given name of
 // the grid. Wells have no content to derive an alt from, so this is alt's
 // only writer.
-func (s *Store) CreateWell(ctx context.Context, req *rpc.CreateWellRequest) (*rpc.Tile, error) {
-	return s.createTile(ctx, req.GridID, req.X, req.Y, req.W, req.H,
-		func(tx *sql.Tx, gridID, now int64) (int64, error) {
+func (s *Store) CreateWell(ctx context.Context, gridID string, x, y, w, h int64, label string) (*gridwellv1.Tile, error) {
+	return s.createTile(ctx, gridID, x, y, w, h,
+		func(tx *sql.Tx, gid, now int64) (int64, error) {
 			res, err := tx.ExecContext(ctx,
 				`INSERT INTO grids (created_at, updated_at) VALUES (?, ?)`,
 				now, now)
@@ -154,7 +155,7 @@ func (s *Store) CreateWell(ctx context.Context, req *rpc.CreateWellRequest) (*rp
 					view_cx, view_cy, view_zoom, child_grid_id, alt_text,
 					created_at, updated_at)
 				VALUES (?, 'well', ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?)`,
-				gridID, req.X, req.Y, req.W, req.H, childGridID, req.Label, now, now)
+				gid, x, y, w, h, childGridID, label, now, now)
 			if err != nil {
 				return 0, fmt.Errorf("insert well: %w", err)
 			}
@@ -173,7 +174,7 @@ func (s *Store) CreateWell(ctx context.Context, req *rpc.CreateWellRequest) (*rp
 // cross-plugin clone of a framed well, so the link previews and descends
 // exactly where the source did. A zero zoom means never visited, so the
 // default view.
-func (s *Store) CreateExitWell(ctx context.Context, gridID string, x, y, w, h int64, childGridID, alt string, view rpc.Framing) (*rpc.Tile, error) {
+func (s *Store) CreateExitWell(ctx context.Context, gridID string, x, y, w, h int64, childGridID, alt string, view rpc.Framing) (*gridwellv1.Tile, error) {
 	if childGridID == "" {
 		return nil, fmt.Errorf("%w: child_grid_id required", ErrInvalidArgument)
 	}
@@ -193,15 +194,15 @@ func (s *Store) CreateExitWell(ctx context.Context, gridID string, x, y, w, h in
 }
 
 // CreateText creates a markdown text tile.
-func (s *Store) CreateText(ctx context.Context, req *rpc.CreateTextRequest) (*rpc.Tile, error) {
-	if int64(len(req.Data)) > MaxBlobBytes {
+func (s *Store) CreateText(ctx context.Context, gridID string, x, y, w, h int64, data []byte) (*gridwellv1.Tile, error) {
+	if int64(len(data)) > MaxBlobBytes {
 		return nil, fmt.Errorf("%w: text too large", ErrInvalidArgument)
 	}
-	hash := hashBytes(req.Data)
-	alt := doctype.AltFromSource(string(req.Data))
-	return s.createTile(ctx, req.GridID, req.X, req.Y, req.W, req.H,
-		func(tx *sql.Tx, gridID, now int64) (int64, error) {
-			blobID, err := s.putBlob(ctx, tx, hash, req.Data, mediaMarkdown)
+	hash := hashBytes(data)
+	alt := doctype.AltFromSource(string(data))
+	return s.createTile(ctx, gridID, x, y, w, h,
+		func(tx *sql.Tx, gid, now int64) (int64, error) {
+			blobID, err := s.putBlob(ctx, tx, hash, data, mediaMarkdown)
 			if err != nil {
 				return 0, err
 			}
@@ -209,7 +210,7 @@ func (s *Store) CreateText(ctx context.Context, req *rpc.CreateTextRequest) (*rp
 				INSERT INTO tiles (grid_id, kind, x, y, w, h,
 					blob_id, alt_text, created_at, updated_at)
 				VALUES (?, 'text', ?, ?, ?, ?, ?, ?, ?, ?)`,
-				gridID, req.X, req.Y, req.W, req.H, blobID, alt, now, now)
+				gid, x, y, w, h, blobID, alt, now, now)
 			if err != nil {
 				return 0, fmt.Errorf("insert text tile: %w", err)
 			}
@@ -243,14 +244,14 @@ func insertURLRow(ctx context.Context, tx *sql.Tx, gridID, x, y, w, h int64, url
 // legal unconfigured state — drop first, prompt on first descent — and the
 // address arrives later as the tile's content, through WriteContent's url
 // arm.
-func (s *Store) CreateURL(ctx context.Context, req *rpc.CreateURLRequest) (*rpc.Tile, error) {
-	urlString := strings.TrimSpace(req.URL)
+func (s *Store) CreateURL(ctx context.Context, gridID string, x, y, w, h int64, url string) (*gridwellv1.Tile, error) {
+	urlString := strings.TrimSpace(url)
 	if urlString != "" && !urlSchemeAllowed(urlString) {
 		return nil, fmt.Errorf("%w: only http/https URLs allowed", ErrInvalidArgument)
 	}
-	return s.createTile(ctx, req.GridID, req.X, req.Y, req.W, req.H,
-		func(tx *sql.Tx, gridID, now int64) (int64, error) {
-			return insertURLRow(ctx, tx, gridID, req.X, req.Y, req.W, req.H, urlString, now)
+	return s.createTile(ctx, gridID, x, y, w, h,
+		func(tx *sql.Tx, gid, now int64) (int64, error) {
+			return insertURLRow(ctx, tx, gid, x, y, w, h, urlString, now)
 		})
 }
 
@@ -261,7 +262,7 @@ func (s *Store) CreateURL(ctx context.Context, req *rpc.CreateURLRequest) (*rpc.
 // position there is meaningless and two visits may share a cell. The result
 // is otherwise a normal, persistent url tile — durable visited-url history,
 // and a resolvable deep link — it just lives off-grid. See ScratchGridID.
-func (s *Store) CreateScratchURL(ctx context.Context, url string) (*rpc.Tile, error) {
+func (s *Store) CreateScratchURL(ctx context.Context, url string) (*gridwellv1.Tile, error) {
 	urlString := strings.TrimSpace(url)
 	if !urlSchemeAllowed(urlString) {
 		return nil, fmt.Errorf("%w: only http/https URLs allowed", ErrInvalidArgument)
@@ -274,8 +275,8 @@ func (s *Store) CreateScratchURL(ctx context.Context, url string) (*rpc.Tile, er
 	if err != nil {
 		return nil, err
 	}
-	var out *rpc.Tile
-	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		now := s.now().Unix()
 		tileID, err := insertURLRow(ctx, tx, gridID, 0, 0, 1, 1, urlString, now)
 		if err != nil {
@@ -295,7 +296,7 @@ func (s *Store) CreateScratchURL(ctx context.Context, url string) (*rpc.Tile, er
 // and no overlap check. Unlike a placed shell it is deleted on ascent — the
 // client drives that, and the delete kills the tmux session — so nothing
 // persists.
-func (s *Store) CreateScratchShell(ctx context.Context) (*rpc.Tile, error) {
+func (s *Store) CreateScratchShell(ctx context.Context) (*gridwellv1.Tile, error) {
 	scratch, err := s.ScratchGridID(ctx)
 	if err != nil {
 		return nil, err
@@ -304,8 +305,8 @@ func (s *Store) CreateScratchShell(ctx context.Context) (*rpc.Tile, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out *rpc.Tile
-	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		now := s.now().Unix()
 		res, err := tx.ExecContext(ctx, `
 			INSERT INTO tiles (grid_id, kind, x, y, w, h,
@@ -331,24 +332,24 @@ func (s *Store) CreateScratchShell(ctx context.Context) (*rpc.Tile, error) {
 // SetTextView updates a text tile's framed-document window and its rendered
 // or text mode. Like SetFraming this is framing, not content: an in-place
 // write that carries no version claim and does not bump the tile version.
-func (s *Store) SetTextView(ctx context.Context, req *rpc.SetTextViewRequest) (*rpc.Tile, error) {
-	tileID, err := parseID(req.TileID)
+func (s *Store) SetTextView(ctx context.Context, tileIDStr string, textX, textY, textW, textH int64, textMode string) (*gridwellv1.Tile, error) {
+	tileID, err := parseID(tileIDStr)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tile_id", ErrInvalidArgument)
 	}
-	var out *rpc.Tile
-	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		n, err := s.loadForWrite(ctx, tx, tileID, rpc.KindText, ErrNotTextTile)
 		if err != nil {
 			return err
 		}
-		if n.LinkTargetID != "" {
+		if n.LinkTargetId != "" {
 			// A link row persists the framed window only: the CHECK keeps
 			// text_mode NULL on a link, because framing is per-link local and
 			// the mode is not. Writing it would fail the whole framing save.
 			_, err := tx.ExecContext(ctx,
 				`UPDATE tiles SET text_x = ?, text_y = ?, text_w = ?, text_h = ?, updated_at = ? WHERE id = ?`,
-				req.TextX, req.TextY, req.TextW, req.TextH, s.now().Unix(), tileID)
+				textX, textY, textW, textH, s.now().Unix(), tileID)
 			if err != nil {
 				return err
 			}
@@ -356,12 +357,12 @@ func (s *Store) SetTextView(ctx context.Context, req *rpc.SetTextViewRequest) (*
 			return err
 		}
 		var textModeArg any
-		if req.TextMode != "" {
-			textModeArg = req.TextMode
+		if textMode != "" {
+			textModeArg = textMode
 		}
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE tiles SET text_x = ?, text_y = ?, text_w = ?, text_h = ?, text_mode = ?, updated_at = ? WHERE id = ?`,
-			req.TextX, req.TextY, req.TextW, req.TextH, textModeArg, s.now().Unix(), tileID); err != nil {
+			textX, textY, textW, textH, textModeArg, s.now().Unix(), tileID); err != nil {
 			return err
 		}
 		out, err = s.emitTileChanged(ctx, tx, tileID, events)
@@ -380,19 +381,19 @@ func (s *Store) SetTextView(ctx context.Context, req *rpc.SetTextViewRequest) (*
 // child_grid_id that does not parse as a local grid id, so no local child is
 // collected and only the reference is dropped. Tiles inside a plugin's grids
 // are deleted by that plugin, which the server routes to.
-func (s *Store) DeleteTile(ctx context.Context, req *rpc.DeleteTileRequest) error {
-	tileID, err := parseID(req.TileID)
+func (s *Store) DeleteTile(ctx context.Context, req *gridwellv1.DeleteTileRequest) error {
+	tileID, err := parseID(req.TileId)
 	if err != nil {
 		return fmt.Errorf("%w: invalid tile_id", ErrInvalidArgument)
 	}
-	return s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	return s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		t, err := s.loadForWrite(ctx, tx, tileID, "", nil)
 		if err != nil {
 			return err
 		}
-		srcGrid, err := parseID(t.GridID)
+		srcGrid, err := parseID(t.GridId)
 		if err != nil {
-			return fmt.Errorf("tile %d: bad grid_id %q: %w", tileID, t.GridID, err)
+			return fmt.Errorf("tile %d: bad grid_id %q: %w", tileID, t.GridId, err)
 		}
 		bypass, err := s.deleteBypassesTrash(ctx, tx, srcGrid)
 		if err != nil {
@@ -404,15 +405,15 @@ func (s *Store) DeleteTile(ctx context.Context, req *rpc.DeleteTileRequest) erro
 		if _, err := tx.ExecContext(ctx, `DELETE FROM tiles WHERE id = ?`, tileID); err != nil {
 			return err
 		}
-		childGridID, _ := strconv.ParseInt(t.ChildGridID, 10, 64)
-		if err := s.decTileRefs(ctx, tx, t.Kind, childGridID, t.BlobID, t.PreviewBlobID); err != nil {
+		childGridID, _ := strconv.ParseInt(t.ChildGridId, 10, 64)
+		if err := s.decTileRefs(ctx, tx, t.Kind, childGridID, t.BlobId, t.PreviewBlobId); err != nil {
 			return err
 		}
-		gridID, _ := parseID(t.GridID)
+		gridID, _ := parseID(t.GridId)
 		if err := s.bumpGridVersion(ctx, tx, gridID); err != nil {
 			return err
 		}
-		*events = append(*events, rpc.Event{Kind: rpc.EventTileRemoved, TileRemoved: &rpc.TileRemoved{GridID: t.GridID, TileID: t.ID}})
+		*events = append(*events, &gridwellv1.Event{Payload: &gridwellv1.Event_TileRemoved{TileRemoved: &gridwellv1.TileRemoved{GridId: t.GridId, TileId: t.Id}}})
 		return nil
 	})
 }

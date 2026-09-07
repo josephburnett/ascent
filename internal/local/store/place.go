@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
 // PlaceTile is the single placement writeback: placement is one fact,
@@ -23,27 +23,27 @@ import (
 // Moving a well into its own subtree is refused by walking ancestors of the
 // destination grid, in wellWouldContainItself: a fact the server derives
 // itself rather than trusting a client-supplied path.
-func (s *Store) PlaceTile(ctx context.Context, req *rpc.PlaceTileRequest) (*rpc.Tile, error) {
+func (s *Store) PlaceTile(ctx context.Context, req *gridwellv1.PlaceTileRequest) (*gridwellv1.Tile, error) {
 	if req.W <= 0 || req.H <= 0 {
 		return nil, fmt.Errorf("%w: w and h must be positive", ErrInvalidArgument)
 	}
-	tileID, err := parseID(req.TileID)
+	tileID, err := parseID(req.TileId)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid tile_id", ErrInvalidArgument)
 	}
-	destGridID, err := parseID(req.GridID)
+	destGridID, err := parseID(req.GridId)
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid grid_id", ErrInvalidArgument)
 	}
-	var out *rpc.Tile
-	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]rpc.Event) error {
+	var out *gridwellv1.Tile
+	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
 		n, err := s.loadForWrite(ctx, tx, tileID, "", nil)
 		if err != nil {
 			return err
 		}
-		srcGrid, err := parseID(n.GridID)
+		srcGrid, err := parseID(n.GridId)
 		if err != nil {
-			return fmt.Errorf("tile %d: bad grid_id %q: %w", tileID, n.GridID, err)
+			return fmt.Errorf("tile %d: bad grid_id %q: %w", tileID, n.GridId, err)
 		}
 		if _, err := s.loadGrid(ctx, tx, destGridID); err != nil {
 			return fmt.Errorf("%w: destination grid %d: %v", ErrInvalidArgument, destGridID, err)
@@ -77,10 +77,10 @@ func (s *Store) PlaceTile(ctx context.Context, req *rpc.PlaceTileRequest) (*rpc.
 			if err := s.bumpGridVersion(ctx, tx, destGridID); err != nil {
 				return err
 			}
-			*events = append(*events, rpc.Event{Kind: rpc.EventTileRemoved, TileRemoved: &rpc.TileRemoved{
-				GridID: strconv.FormatInt(srcGrid, 10),
-				TileID: strconv.FormatInt(tileID, 10),
-			}})
+			*events = append(*events, &gridwellv1.Event{Payload: &gridwellv1.Event_TileRemoved{TileRemoved: &gridwellv1.TileRemoved{
+				GridId: strconv.FormatInt(srcGrid, 10),
+				TileId: strconv.FormatInt(tileID, 10),
+			}}})
 		}
 		out, err = s.emitTileChanged(ctx, tx, tileID, events)
 		return err
@@ -96,11 +96,11 @@ func (s *Store) PlaceTile(ctx context.Context, req *rpc.PlaceTileRequest) (*rpc.
 // — so the ancestor chain is a server-derived fact and needs no client path.
 // Non-well tiles and exit wells, whose qualified child_grid_id names another
 // plugin's subtree, have no local subtree and pass trivially.
-func (s *Store) wellWouldContainItself(ctx context.Context, tx *sql.Tx, n *rpc.Tile, destGridID int64) error {
+func (s *Store) wellWouldContainItself(ctx context.Context, tx *sql.Tx, n *gridwellv1.Tile, destGridID int64) error {
 	if !isWellKind(n.Kind) {
 		return nil
 	}
-	childGrid, err := strconv.ParseInt(n.ChildGridID, 10, 64)
+	childGrid, err := strconv.ParseInt(n.ChildGridId, 10, 64)
 	if err != nil {
 		return nil // qualified, an exit well or link: no local subtree
 	}

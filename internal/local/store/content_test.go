@@ -19,7 +19,7 @@ func TestWriteContentTextBumpsAndPairsWithRead(t *testing.T) {
 	root := rootID(t, s)
 	tile := placeText(t, s, root, 0, 0)
 
-	got, err := s.WriteContent(ctx, tile.ID, tile.Version, []byte("# New Title\n\nbody"))
+	got, err := s.WriteContent(ctx, tile.Id, tile.Version, []byte("# New Title\n\nbody"))
 	if err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestWriteContentTextBumpsAndPairsWithRead(t *testing.T) {
 		t.Errorf("alt derives from the first line: got %q", got.AltText)
 	}
 
-	data, media, version, err := s.ReadContent(ctx, tile.ID)
+	data, media, version, err := s.ReadContent(ctx, tile.Id)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestWriteContentPaneLayoutNeverBumps(t *testing.T) {
 		t.Fatalf("create pane: %v", err)
 	}
 
-	got, err := s.WriteContent(ctx, pane.ID, pane.Version, []byte(`{"v":1}`))
+	got, err := s.WriteContent(ctx, pane.Id, pane.Version, []byte(`{"v":1}`))
 	if err != nil {
 		t.Fatalf("write layout: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestWriteContentRefusesKindsWithoutContent(t *testing.T) {
 	root := rootID(t, s)
 	well := placeWell(t, s, root, 0, 0)
 
-	if _, err := s.WriteContent(ctx, well.ID, well.Version, []byte("x")); !errors.Is(err, ErrInvalidArgument) {
+	if _, err := s.WriteContent(ctx, well.Id, well.Version, []byte("x")); !errors.Is(err, ErrInvalidArgument) {
 		t.Errorf("well: got %v, want ErrInvalidArgument", err)
 	}
 }
@@ -83,27 +83,27 @@ func TestWriteContentURLSetsAddress(t *testing.T) {
 	root := rootID(t, s)
 
 	// An address-less url tile is the legal unconfigured state.
-	url, err := s.CreateURL(ctx, &rpc.CreateURLRequest{GridID: root, X: 0, Y: 0, W: 1, H: 1})
+	url, err := s.CreateURL(ctx, root, 0, 0, 1, 1, "")
 	if err != nil {
 		t.Fatalf("create empty url: %v", err)
 	}
-	if url.URLString != "" {
-		t.Errorf("unconfigured url tile: URLString = %q, want empty", url.URLString)
+	if url.UrlString != "" {
+		t.Errorf("unconfigured url tile: URLString = %q, want empty", url.UrlString)
 	}
 
-	got, err := s.WriteContent(ctx, url.ID, url.Version, []byte("https://example.com"))
+	got, err := s.WriteContent(ctx, url.Id, url.Version, []byte("https://example.com"))
 	if err != nil {
 		t.Fatalf("write address: %v", err)
 	}
 	if got.Version <= url.Version {
 		t.Errorf("the address write is a content edit — version %d must bump past %d", got.Version, url.Version)
 	}
-	if got.URLString != "https://example.com" {
-		t.Errorf("URLString = %q", got.URLString)
+	if got.UrlString != "https://example.com" {
+		t.Errorf("URLString = %q", got.UrlString)
 	}
 
 	// Read pairs the address with the row version (the save-basis contract).
-	data, _, version, err := s.ReadContent(ctx, url.ID)
+	data, _, version, err := s.ReadContent(ctx, url.Id)
 	if err != nil {
 		t.Fatalf("read: %v", err)
 	}
@@ -112,23 +112,23 @@ func TestWriteContentURLSetsAddress(t *testing.T) {
 	}
 
 	// Garbage refused loudly; the old address stays byte-for-byte intact.
-	if _, err := s.WriteContent(ctx, got.ID, got.Version, []byte("javascript:alert(1)")); !errors.Is(err, ErrInvalidArgument) {
+	if _, err := s.WriteContent(ctx, got.Id, got.Version, []byte("javascript:alert(1)")); !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("non-http scheme: got %v, want ErrInvalidArgument", err)
 	}
 	// So is an EMPTY write — configuring must produce a real address.
-	if _, err := s.WriteContent(ctx, got.ID, got.Version, nil); !errors.Is(err, ErrInvalidArgument) {
+	if _, err := s.WriteContent(ctx, got.Id, got.Version, nil); !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("empty address write: got %v, want ErrInvalidArgument", err)
 	}
 	// Stale claim refused.
-	if _, err := s.WriteContent(ctx, got.ID, got.Version+7, []byte("https://other.example")); !errors.Is(err, ErrVersionConflict) {
+	if _, err := s.WriteContent(ctx, got.Id, got.Version+7, []byte("https://other.example")); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale claim: got %v, want ErrVersionConflict", err)
 	}
-	after, err := s.GetTile(ctx, got.ID)
+	after, err := s.GetTile(ctx, got.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.URLString != "https://example.com" || after.Version != got.Version {
-		t.Errorf("refused writes mutated the row: %q v%d", after.URLString, after.Version)
+	if after.UrlString != "https://example.com" || after.Version != got.Version {
+		t.Errorf("refused writes mutated the row: %q v%d", after.UrlString, after.Version)
 	}
 }
 
@@ -142,7 +142,7 @@ func TestWriteContentLinkRefused(t *testing.T) {
 		t.Fatalf("create leaf link: %v", err)
 	}
 
-	_, err = s.WriteContent(ctx, link.ID, link.Version, []byte("stomp"))
+	_, err = s.WriteContent(ctx, link.Id, link.Version, []byte("stomp"))
 	if !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("a link owns no content — write must be refused, got %v", err)
 	}
@@ -152,19 +152,17 @@ func TestRenameTileVersionedAndLatches(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	root := rootID(t, s)
-	url, err := s.CreateURL(ctx, &rpc.CreateURLRequest{
-		GridID: root, X: 0, Y: 0, W: 1, H: 1, URL: "https://example.com",
-	})
+	url, err := s.CreateURL(ctx, root, 0, 0, 1, 1, "https://example.com")
 	if err != nil {
 		t.Fatalf("create url: %v", err)
 	}
 
 	// Stale claim refused — the rename is a real user edit now.
-	if _, err := s.RenameTile(ctx, url.ID, url.Version+7, "My Page"); !errors.Is(err, ErrVersionConflict) {
+	if _, err := s.RenameTile(ctx, url.Id, url.Version+7, "My Page"); !errors.Is(err, ErrVersionConflict) {
 		t.Fatalf("stale rename: got %v, want ErrVersionConflict", err)
 	}
 
-	renamed, err := s.RenameTile(ctx, url.ID, url.Version, "My Page")
+	renamed, err := s.RenameTile(ctx, url.Id, url.Version, "My Page")
 	if err != nil {
 		t.Fatalf("rename: %v", err)
 	}
@@ -173,9 +171,7 @@ func TestRenameTileVersionedAndLatches(t *testing.T) {
 	}
 
 	// A later automatic title capture must defer to the user-owned name.
-	after, err := s.SetURLState(ctx, &rpc.SetURLStateRequest{
-		TileID: url.ID, Title: "Captured Page Title",
-	})
+	after, err := s.SetURLState(ctx, url.Id, nil, "", "Captured Page Title", "")
 	if err != nil {
 		t.Fatalf("freeze: %v", err)
 	}
@@ -185,7 +181,7 @@ func TestRenameTileVersionedAndLatches(t *testing.T) {
 
 	// Text tiles derive their name from content; rename is refused.
 	text := placeText(t, s, root, 5, 5)
-	if _, err := s.RenameTile(ctx, text.ID, text.Version, "nope"); !errors.Is(err, ErrInvalidArgument) {
+	if _, err := s.RenameTile(ctx, text.Id, text.Version, "nope"); !errors.Is(err, ErrInvalidArgument) {
 		t.Errorf("text rename: got %v, want ErrInvalidArgument", err)
 	}
 }

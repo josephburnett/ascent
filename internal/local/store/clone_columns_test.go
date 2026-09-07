@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/josephburnett/gridwell/api/rpc"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
 // TestClonePreservesAllContentColumns — clone is an EAGER, COMPLETE copy
@@ -21,36 +21,29 @@ func TestClonePreservesAllContentColumns(t *testing.T) {
 	root := rootID(t, s)
 	ctx := context.Background()
 
-	tile, err := s.CreateURL(ctx, &rpc.CreateURLRequest{
-		GridID: root, X: 0, Y: 0, W: 2, H: 1, URL: "https://example.com",
-	})
+	tile, err := s.CreateURL(ctx, root, 0, 0, 2, 1, "https://example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// A freeze that stored a navigation back-stack...
 	history := `[{"url":"https://example.com"},{"url":"https://example.com/page"}]`
-	if _, err := s.SetURLState(ctx, &rpc.SetURLStateRequest{
-		TileID: tile.ID,
-		URL:    "https://example.com/page", History: history,
-	}); err != nil {
+	if _, err := s.SetURLState(ctx, tile.Id, nil, "https://example.com/page", "", history); err != nil {
 		t.Fatal(err)
 	}
 	// ...a content zoom, which is framing and bumps no version...
-	if _, err := s.SetContentZoom(ctx, &rpc.SetContentZoomRequest{
-		TileID: tile.ID, ContentZoom: 1.5,
-	}); err != nil {
+	if _, err := s.SetContentZoom(ctx, tile.Id, 1.5); err != nil {
 		t.Fatal(err)
 	}
 	// ...and a user rename, which latches alt_user.
-	tileIDInt, _ := parseID(tile.ID)
+	tileIDInt, _ := parseID(tile.Id)
 	if err := s.SetTileAlt(ctx, tileIDInt, "my page", true); err != nil {
 		t.Fatal(err)
 	}
 
-	clone, err := s.CloneTile(ctx, &rpc.CloneTileRequest{
-		TileID:     tile.ID,
-		DestGridID: root, X: 5, Y: 0,
+	clone, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
+		TileId:     tile.Id,
+		DestGridId: root, X: 5, Y: 0,
 	})
 	if err != nil {
 		t.Fatalf("clone: %v", err)
@@ -59,8 +52,8 @@ func TestClonePreservesAllContentColumns(t *testing.T) {
 	if clone.ContentZoom != 1.5 {
 		t.Errorf("clone content_zoom = %v, want 1.5 (the source's zoom)", clone.ContentZoom)
 	}
-	if clone.URLHistory != history {
-		t.Errorf("clone url_history = %q, want the source's back-stack", clone.URLHistory)
+	if clone.UrlHistory != history {
+		t.Errorf("clone url_history = %q, want the source's back-stack", clone.UrlHistory)
 	}
 	if clone.AltText != "my page" {
 		t.Errorf("clone alt_text = %q, want %q", clone.AltText, "my page")
@@ -69,11 +62,11 @@ func TestClonePreservesAllContentColumns(t *testing.T) {
 	// The behavioral half of alt_user: an automatic (non-user) title capture
 	// on the CLONE must defer to the copied user-owned name, exactly as it
 	// would on the source.
-	cloneIDInt, _ := parseID(clone.ID)
+	cloneIDInt, _ := parseID(clone.Id)
 	if err := s.SetTileAlt(ctx, cloneIDInt, "Captured Page Title", false); err != nil {
 		t.Fatal(err)
 	}
-	after, err := s.GetTile(ctx, clone.ID)
+	after, err := s.GetTile(ctx, clone.Id)
 	if err != nil {
 		t.Fatal(err)
 	}
