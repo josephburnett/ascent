@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// fakeImage records bytes + revoked state so tests can assert
-// resource-release semantics.
+// fakeImage records bytes and revoked state so tests can assert that resources
+// are released.
 type fakeImage struct {
 	bytes   []byte
 	revoked atomic.Bool
@@ -16,10 +16,9 @@ type fakeImage struct {
 func (i *fakeImage) Truthy() bool { return !i.revoked.Load() }
 func (i *fakeImage) Revoke()      { i.revoked.Store(true) }
 
-// fakeDecoder buffers Decode calls so tests can resolve them in any
-// order. This is the difference between "easy to test" and "can test
-// the concurrent-Put invariant": a synchronous decoder would always
-// resolve in call order, hiding races.
+// fakeDecoder buffers Decode calls so tests can resolve them in any order. A
+// synchronous decoder would always resolve in call order and hide the
+// out-of-order Put case.
 type fakeDecoder struct {
 	mu      sync.Mutex
 	pending []pendingDecode
@@ -37,9 +36,8 @@ func (d *fakeDecoder) Decode(b []byte, onReady func(Image), onError func()) {
 	d.pending = append(d.pending, pendingDecode{append([]byte(nil), b...), onReady, onError})
 }
 
-// resolveAll fires onReady for every queued decode, in order, with a
-// fakeImage carrying the corresponding bytes. Returns the resulting
-// images so tests can inspect Revoke() calls on them.
+// resolveAll fires onReady for every queued decode in order and returns the
+// images, so tests can inspect Revoke calls on them.
 func (d *fakeDecoder) resolveAll() []*fakeImage {
 	d.mu.Lock()
 	pending := d.pending
@@ -54,8 +52,7 @@ func (d *fakeDecoder) resolveAll() []*fakeImage {
 	return out
 }
 
-// resolve fires the i-th queued decode in isolation, leaving later
-// decodes still pending. Used to assert ordering invariants.
+// resolve fires the i-th queued decode alone, leaving later decodes pending.
 func (d *fakeDecoder) resolve(i int) *fakeImage {
 	d.mu.Lock()
 	p := d.pending[i]
@@ -81,9 +78,7 @@ func (d *fakeDecoder) pendingCount() int {
 	return len(d.pending)
 }
 
-// TestGetEmptyReturnsNotOK: a brand-new cache has nothing in it.
-// Establishes baseline before any Put-driven test runs against a
-// dirty cache by accident.
+// TestGetEmptyReturnsNotOK pins that a new cache has nothing in it.
 func TestGetEmptyReturnsNotOK(t *testing.T) {
 	c := NewCache(&fakeDecoder{})
 	if _, ok := c.Get("42", 1); ok {
@@ -91,10 +86,10 @@ func TestGetEmptyReturnsNotOK(t *testing.T) {
 	}
 }
 
-// TestPutEmptySettlesTheMiss: a completed "no preview" answer is recorded —
-// KnownEmpty for that blob id — so the caller stops re-asking every frame. A
-// changed blob id (the server minted a real preview) invalidates it, and a
-// real image is never downgraded to a miss.
+// TestPutEmptySettlesTheMiss pins that a completed no-preview answer becomes
+// KnownEmpty for that blob id, so the caller stops re-asking every frame. A
+// changed blob id invalidates it, and a real image is never downgraded to a
+// miss.
 func TestPutEmptySettlesTheMiss(t *testing.T) {
 	d := &fakeDecoder{}
 	c := NewCache(d)
@@ -110,7 +105,7 @@ func TestPutEmptySettlesTheMiss(t *testing.T) {
 		t.Error("a NEW blob id must invalidate the recorded miss (refetch)")
 	}
 
-	// A real Put supersedes; a later PutEmpty must not downgrade it.
+	// A real Put supersedes, and a later PutEmpty does not downgrade it.
 	c.Put("42", 8, []byte("jpeg-bytes"), nil)
 	d.resolveAll()
 	c.PutEmpty("42", 8)
@@ -119,9 +114,8 @@ func TestPutEmptySettlesTheMiss(t *testing.T) {
 	}
 }
 
-// TestPutGetRoundTrip: the obvious happy path. Put bytes under a
-// known blob id, decode, Get with that blob id returns the same
-// image.
+// TestPutGetRoundTrip pins the happy path: bytes put under a blob id decode,
+// and Get with that blob id returns the same image.
 func TestPutGetRoundTrip(t *testing.T) {
 	d := &fakeDecoder{}
 	c := NewCache(d)
@@ -144,9 +138,9 @@ func TestPutGetRoundTrip(t *testing.T) {
 	}
 }
 
-// TestGetWithMismatchedBlobIDReturnsNotOK locks in the headline invariant:
-// when the server says the tile's preview is now blob N+1 but the cache still
-// holds blob N, Get misses so the renderer re-fetches.
+// TestGetWithMismatchedBlobIDReturnsNotOK pins the invalidation rule: when the
+// server says the preview is now blob N+1 and the cache holds blob N, Get
+// misses so the renderer re-fetches.
 func TestGetWithMismatchedBlobIDReturnsNotOK(t *testing.T) {
 	d := &fakeDecoder{}
 	c := NewCache(d)
@@ -155,15 +149,15 @@ func TestGetWithMismatchedBlobIDReturnsNotOK(t *testing.T) {
 	if _, ok := c.Get("42", 8); ok {
 		t.Errorf("Get(42, 8) returned ok despite cached entry being blob 7")
 	}
-	// And the same blob id still hits — staleness is asymmetric.
+	// The same blob id still hits, so staleness is asymmetric.
 	if _, ok := c.Get("42", 7); !ok {
 		t.Errorf("Get(42, 7) missed despite cached entry being blob 7")
 	}
 }
 
-// TestGetWithZeroBlobIDAlwaysMisses: a tile with PreviewBlobID == 0
-// has no preview server-side. Callers must not see a stale cached
-// image just because the cache happens to remember one.
+// TestGetWithZeroBlobIDAlwaysMisses pins that a tile with PreviewBlobID 0 has
+// no server-side preview, so a caller does not see a cached image the server
+// says is not there.
 func TestGetWithZeroBlobIDAlwaysMisses(t *testing.T) {
 	d := &fakeDecoder{}
 	c := NewCache(d)
@@ -174,10 +168,9 @@ func TestGetWithZeroBlobIDAlwaysMisses(t *testing.T) {
 	}
 }
 
-// TestPutWildcardMatchesAnyBlobID covers the freeze / live-stream
-// path: bytes captured locally before the server-side blob id is
-// known must still satisfy renderer Gets regardless of what blob id
-// the tile advertises.
+// TestPutWildcardMatchesAnyBlobID covers the freeze and live-stream path: bytes
+// captured before the server-side blob id is known still satisfy renderer Gets
+// whatever blob id the tile advertises.
 func TestPutWildcardMatchesAnyBlobID(t *testing.T) {
 	d := &fakeDecoder{}
 	c := NewCache(d)
@@ -188,23 +181,21 @@ func TestPutWildcardMatchesAnyBlobID(t *testing.T) {
 			t.Errorf("wildcard entry missed Get(42, %d)", want)
 		}
 	}
-	// wantBlobID=0 hits too: a tile that has never had a server-side
-	// preview advertises PreviewBlobID 0, and the very first freeze parks
-	// its frame under the wildcard before SetURLState or SetShellPreview
-	// round-trips. If zero missed, the just-frozen frame would stay a
-	// placeholder glyph until the event echo landed. Zero-miss protection
-	// is only for entries keyed to a real blob id (see
-	// TestGetWithZeroBlobIDAlwaysMisses): those are server state that may be
-	// stale, while a wildcard is a local capture that is fresher than the
-	// server by definition.
+	// A wantBlobID of 0 hits too. A tile that has never had a server-side
+	// preview advertises PreviewBlobID 0, and the first freeze parks its frame
+	// under the wildcard before SetURLState or SetShellPreview round-trips, so
+	// a miss would leave the just-frozen frame as a placeholder glyph. The
+	// zero-miss rule covers only entries keyed to a real blob id, see
+	// TestGetWithZeroBlobIDAlwaysMisses, because those are server state that
+	// may be stale while a wildcard is a fresher local capture.
 	if _, ok := c.Get("42", 0); !ok {
 		t.Errorf("wildcard entry missed Get(42, 0); the first-ever freeze of a tile must show immediately")
 	}
 }
 
-// TestPutSupersedesPreviousImage: a second Put for the same tile
-// installs the new image and revokes the old one. This is what makes
-// "shell ascent updates the cache" work end-to-end.
+// TestPutSupersedesPreviousImage pins that a second Put for the same tile
+// installs the new image and revokes the old one, which is how a shell ascent
+// updates the cache.
 func TestPutSupersedesPreviousImage(t *testing.T) {
 	d := &fakeDecoder{}
 	c := NewCache(d)
@@ -221,23 +212,23 @@ func TestPutSupersedesPreviousImage(t *testing.T) {
 	}
 }
 
-// TestPutLateResultIsDiscarded: when Put A's decode finishes AFTER
-// Put B has been issued and resolved, A's late-arriving image must
-// be revoked and not installed. Without generation tracking the cache
-// would forget B and show A.
+// TestPutLateResultIsDiscarded pins that when the first Put's decode finishes
+// after a second Put has resolved, the late image is revoked and not installed.
+// Without the generation counter the cache would forget the second and show the
+// first.
 func TestPutLateResultIsDiscarded(t *testing.T) {
 	d := &fakeDecoder{}
 	c := NewCache(d)
 	c.Put("42", 1, []byte("first"), nil)  // pending[0]
 	c.Put("42", 2, []byte("second"), nil) // pending[1]
-	// Resolve the second one first. It should install.
+	// The second resolves first and installs.
 	imgSecond := d.resolve(1)
 	got, ok := c.Get("42", 2)
 	if !ok || got != imgSecond {
 		t.Fatalf("Get did not return the in-order winner")
 	}
-	// Now the first decode finishes (late). It must be revoked and
-	// must not displace the second.
+	// The first decode finishes late, so it is revoked and does not displace
+	// the second.
 	imgFirst := d.resolve(0)
 	if !imgFirst.revoked.Load() {
 		t.Errorf("late-arriving first decode was not revoked")
@@ -248,9 +239,8 @@ func TestPutLateResultIsDiscarded(t *testing.T) {
 	}
 }
 
-// TestPutWithEmptyBytesIsNoOp: a zero-length payload from a misbehaving
-// caller (canvas.toDataURL returning nothing, say) must not poison the cache.
-// Without this guard the Decoder would have to handle an empty decode.
+// TestPutWithEmptyBytesIsNoOp pins that a zero-length payload does not reach
+// the cache or the Decoder.
 func TestPutWithEmptyBytesIsNoOp(t *testing.T) {
 	d := &fakeDecoder{}
 	c := NewCache(d)
@@ -261,32 +251,29 @@ func TestPutWithEmptyBytesIsNoOp(t *testing.T) {
 	}
 }
 
-// TestPutDecodeErrorLeavesEntryUntouched: if the browser fails to
-// decode (corrupt JPEG bytes), the existing cached image — if any —
-// must survive. A decode failure shouldn't blank the screen.
+// TestPutDecodeErrorLeavesEntryUntouched pins that a failed decode leaves any
+// existing cached image in place, so a corrupt JPEG does not blank the screen.
 func TestPutDecodeErrorLeavesEntryUntouched(t *testing.T) {
 	d := &fakeDecoder{}
 	c := NewCache(d)
 	c.Put("42", 1, []byte("good"), nil)
 	d.resolveAll()
-	// Get baseline image.
 	good, ok := c.Get("42", 1)
 	if !ok {
 		t.Fatal("setup: good Put didn't land")
 	}
-	// Now a Put whose decode will fail.
+	// A Put whose decode fails.
 	c.Put("42", 2, []byte("corrupt"), nil)
 	d.failNext(0)
-	// The good image must still be present (under blob 1).
+	// The good image is still there under blob 1.
 	got, ok := c.Get("42", 1)
 	if !ok || got != good {
 		t.Errorf("decode failure clobbered the prior good entry")
 	}
 }
 
-// TestDropRemovesEntry: deleting a tile drops its cache row and
-// revokes the image. Idempotent: a second Drop on the same tile is a
-// no-op.
+// TestDropRemovesEntry pins that deleting a tile drops its cache row, revokes
+// the image, and takes a second Drop without complaint.
 func TestDropRemovesEntry(t *testing.T) {
 	d := &fakeDecoder{}
 	c := NewCache(d)
@@ -302,14 +289,12 @@ func TestDropRemovesEntry(t *testing.T) {
 	c.Drop("42") // must not panic
 }
 
-// TestGetWhileDecodingReturnsNotOK: between Put and the decoder's
-// onReady, Get must not return a stale or zero image. The cache
-// only flips to ok once decode is installed.
+// TestGetWhileDecodingReturnsNotOK pins that between Put and onReady, Get
+// misses. The cache turns ok only once the decode is installed.
 func TestGetWhileDecodingReturnsNotOK(t *testing.T) {
 	d := &fakeDecoder{}
 	c := NewCache(d)
 	c.Put("42", 1, []byte("pending"), nil)
-	// Decode not yet resolved.
 	if _, ok := c.Get("42", 1); ok {
 		t.Errorf("Get returned ok while decode was still pending")
 	}
@@ -319,9 +304,9 @@ func TestGetWhileDecodingReturnsNotOK(t *testing.T) {
 	}
 }
 
-// TestRevokedImageReportsNotTruthyAndGetMisses: an entry whose Image
-// has been revoked externally must not satisfy Get, so a leaked
-// previous-decode image can't get drawn after teardown.
+// TestRevokedImageReportsNotTruthyAndGetMisses pins that an entry whose Image
+// was revoked elsewhere does not satisfy Get, so a leaked image is not drawn
+// after teardown.
 func TestRevokedImageReportsNotTruthyAndGetMisses(t *testing.T) {
 	d := &fakeDecoder{}
 	c := NewCache(d)
