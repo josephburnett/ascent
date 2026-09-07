@@ -8,13 +8,11 @@ import (
 	"path/filepath"
 )
 
-// RunClearBrowserData implements `gridwell clear-browser-data`: it deletes
-// the desktop app's persist:gridwell partition storage, the one host-local
-// Chromium session every live url tile browses on, including cookies, local
-// storage, and caches. Clearing browser state is an operator action on the
-// profile, not an in-page gesture. It refuses while the app is running,
-// because Chromium owns the profile then — it holds SingletonLock in it —
-// and would race the delete.
+// RunClearBrowserData deletes the desktop app's persist:gridwell partition,
+// the one host-local Chromium session every live url tile browses on.
+// Clearing it is an operator action, not an in-page gesture, and it refuses
+// while the app runs, because Chromium owns the profile then and would race
+// the delete.
 func RunClearBrowserData(args []string) int {
 	fs := flag.NewFlagSet("clear-browser-data", flag.ExitOnError)
 	userData := fs.String("user-data", "",
@@ -32,8 +30,7 @@ func RunClearBrowserData(args []string) int {
 	return clearBrowserData(os.Stderr, dir)
 }
 
-// clearBrowserData is the testable body: refuse on a live profile, no-op
-// cleanly when there is nothing to clear, otherwise remove the partition.
+// clearBrowserData is the testable body.
 func clearBrowserData(w io.Writer, userData string) int {
 	if _, err := os.Lstat(filepath.Join(userData, "SingletonLock")); err == nil {
 		fmt.Fprintln(w, "refusing: the Gridwell desktop app appears to be running (SingletonLock present) — close it first")

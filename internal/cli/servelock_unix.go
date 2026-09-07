@@ -2,8 +2,7 @@
 
 package cli
 
-// The flock half of the serve lock. servelock.go holds the contract and the
-// error type both halves present.
+// The flock half of the serve lock; servelock.go holds the contract.
 
 import (
 	"fmt"
@@ -31,7 +30,7 @@ func acquireServeLock(home string) (*serveLock, error) {
 		f.Close()
 		return nil, &errServeLockHeld{banner: strings.TrimSpace(string(banner))}
 	}
-	// Won: any content is a crashed holder's leftover, since a clean Release
+	// Any content is a crashed holder's leftover, since a clean Release
 	// removes the file. Empty it until our banner is known.
 	if err := f.Truncate(0); err != nil {
 		f.Close()
@@ -40,18 +39,15 @@ func acquireServeLock(home string) (*serveLock, error) {
 	return &serveLock{f: f}, nil
 }
 
-// WriteBanner records the holder's serve banner: the line a conflicting
-// serve re-emits so the desktop app connects to this one instead.
+// WriteBanner records the line a conflicting serve re-emits.
 func (l *serveLock) WriteBanner(banner string) {
 	_, _ = l.f.WriteAt([]byte(banner+"\n"), 0)
 	_ = l.f.Sync()
 }
 
-// probeServeLock answers "is anyone serving this home?" without acquiring:
-// a shared, non-blocking LOCK_SH flock, which coexists with other probes
-// and never truncates or unlinks. Taking the exclusive lock for the test
-// would let a read-only question beat a starting serve to the flock and
-// manufacture a failure.
+// probeServeLock answers "is anyone serving this home?" with a shared
+// non-blocking flock. Taking the exclusive lock would let a read-only
+// question beat a starting serve to it and manufacture a failure.
 func probeServeLock(home string) (banner string, held bool, err error) {
 	path := filepath.Join(home, "serve.lock")
 	f, oerr := os.Open(path)
@@ -67,14 +63,12 @@ func probeServeLock(home string) (banner string, held bool, err error) {
 		b, _ := os.ReadFile(path)
 		return strings.TrimSpace(string(b)), true, nil
 	}
-	// A shared lock means nobody holds the exclusive one. Closing drops it;
-	// the file stays, as the crashed-holder breadcrumb.
+	// Closing drops the shared lock; the file stays as the crash breadcrumb.
 	return "", false, nil
 }
 
 // Release drops the lock and removes the file, so a leftover serve.lock
-// means the holder crashed. That is informational only: the flock is what
-// gates, and a dead holder's flock is already gone.
+// means the holder crashed. Informational only: the flock is what gates.
 func (l *serveLock) Release() {
 	_ = os.Remove(l.f.Name())
 	_ = l.f.Close() // closing drops the flock

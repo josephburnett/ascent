@@ -42,8 +42,8 @@ func TestClearBrowserData(t *testing.T) {
 		if err := os.MkdirAll(part, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		// Chromium's lock is a symlink on Linux. A dangling one still counts
-		// as running for a safe CLI, and Lstat sees it.
+		// Chromium's lock is a symlink on Linux, and a dangling one still
+		// counts as running, so Lstat and not Stat.
 		if err := os.Symlink("host-123", filepath.Join(ud, "SingletonLock")); err != nil {
 			t.Fatal(err)
 		}

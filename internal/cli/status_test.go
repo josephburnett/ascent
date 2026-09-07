@@ -4,10 +4,8 @@ package cli
 
 import "testing"
 
-// `gridwell status` is the desktop app's --no-server discovery verb: it
-// must say "already serving" with exit 0 exactly when the serve lock is
-// held, and "not serving" with exit 1 otherwise. Probing must never disturb
-// a stale banner file.
+// `gridwell status` says "already serving" with exit 0 exactly when the
+// serve lock is held, and never disturbs a stale banner file.
 func TestRunStatus(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("GRIDWELL_HOME", home)
