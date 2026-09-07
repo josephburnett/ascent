@@ -172,3 +172,67 @@ func TestGlyphForReadsDeclarationsOnly(t *testing.T) {
 		})
 	}
 }
+
+// A doorway carries the framing of the grid behind it, and each doorway
+// carries its own: a menu entry's pseudo-row takes the entry's view, never
+// the declaring row's, so entering a collection lands where it was left
+// rather than where the row's own grid was.
+func TestEntryPluginCarriesTheEntrysFraming(t *testing.T) {
+	row := rpc.PluginInfo{UUID: "hey", Label: "hey", RootViewCx: 9, RootViewCy: 9, RootViewZoom: 9}
+	e := rpc.MenuEntry{ID: "feed", Label: "Feed", GridID: "hey/2",
+		ViewCx: 3.5, ViewCy: -2.25, ViewZoom: 1.75}
+	got := EntryPlugin(row, e)
+	if got.RootViewCx != 3.5 || got.RootViewCy != -2.25 || got.RootViewZoom != 1.75 {
+		t.Errorf("view = %v/%v/%v, want the entry's", got.RootViewCx, got.RootViewCy, got.RootViewZoom)
+	}
+	blank := EntryPlugin(row, rpc.MenuEntry{ID: "imbox", GridID: "hey/1"})
+	if blank.RootViewZoom != 0 {
+		t.Errorf("an unvisited entry must carry no view, got zoom %v", blank.RootViewZoom)
+	}
+}
+
+// PlacesOf enumerates what a row is a doorway onto: its own grid where it
+// names one, then each entry that names one, in declaration order. A plugin
+// names none of its own, so its places are exactly its collections.
+func TestPlacesOf(t *testing.T) {
+	cases := []struct {
+		name string
+		row  rpc.PluginInfo
+		want []string
+	}{
+		{"a home, then its trashcan", plugins[0], []string{"loc/1", "loc/9"}},
+		{"a connection's far home", plugins[1], []string{"sshc/ns1/rp1/root7"}},
+		{"a plugin is its collections", rpc.PluginInfo{UUID: "hey", Label: "hey",
+			MenuEntries: []rpc.MenuEntry{{ID: "imbox", GridID: "hey/1"}, {ID: "feed", GridID: "hey/2"}}},
+			[]string{"hey/1", "hey/2"}},
+		{"an entry with no grid is not a doorway", rpc.PluginInfo{UUID: "hey", Label: "hey",
+			MenuEntries: []rpc.MenuEntry{{ID: "feed"}}}, nil},
+		{"a row that declares nothing is a doorway onto nothing",
+			rpc.PluginInfo{UUID: "fs", Label: "files"}, nil},
+	}
+	for _, c := range cases {
+		got := PlacesOf(c.row)
+		if len(got) != len(c.want) {
+			t.Errorf("%s: %d places, want %d", c.name, len(got), len(c.want))
+			continue
+		}
+		for i := range got {
+			if got[i].Plugin.RootGridID != c.want[i] {
+				t.Errorf("%s: place %d = %q, want %q", c.name, i, got[i].Plugin.RootGridID, c.want[i])
+			}
+		}
+	}
+}
+
+// ByRoot resolves a declared entry's grid as well as a row's own: the framing
+// of a collection is remembered against the same doorway the menu descends
+// through, so a reframe inside one has somewhere to land.
+func TestByRootResolvesADeclaredEntry(t *testing.T) {
+	got, ok := ByRoot("loc/9", plugins)
+	if !ok || got.Label != "home · trash" || got.RootGridID != "loc/9" {
+		t.Fatalf("ByRoot = %+v (%v), want the trash entry's doorway", got, ok)
+	}
+	if _, ok := ByRoot("", plugins); ok {
+		t.Error("an empty grid id must resolve to nothing")
+	}
+}

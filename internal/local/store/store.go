@@ -263,6 +263,18 @@ func (s *Store) RootFraming(ctx context.Context) (f rpc.Framing, ok bool, err er
 	return s.Namespace("").RootFraming(rootID)
 }
 
+// GridFraming is the same fact for any grid of home, by its decimal id: what
+// a doorway onto that grid remembers. Home declares its trashcan as a menu
+// entry, and an entry carries the framing of the grid behind it exactly as a
+// root does, so the two read one column set.
+func (s *Store) GridFraming(gridID string) (f rpc.Framing, ok bool, err error) {
+	id, err := parseID(gridID)
+	if err != nil {
+		return rpc.Framing{}, false, err
+	}
+	return s.Namespace("").RootFraming(id)
+}
+
 // SetFraming is the one framing writer: "how this grid looked when I left it
 // through this doorway" — a float center in the grid's own coordinates plus
 // the pane-size-independent zoom — onto the row that owns it. Exactly one

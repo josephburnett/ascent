@@ -16,6 +16,7 @@ package main
 
 import (
 	"github.com/josephburnett/gridwell/api/rpc"
+	"github.com/josephburnett/gridwell/client/door"
 	"github.com/josephburnett/gridwell/client/errsurface"
 	"github.com/josephburnett/gridwell/client/nav"
 	"github.com/josephburnett/gridwell/client/pane"
@@ -148,17 +149,16 @@ func (a *App) navWorldForRestore() nav.World {
 	for id := range a.fetch.gridLoadFailed {
 		rw.Failed[id] = true
 	}
-	// The framing each plugin root was left at, from the row that owns it.
-	// Which root the address names is the machine's to decode, so every one
-	// is resolved; ByRoot's answer set is exactly the set persistedGridView
-	// can resolve, and a restore is always the focused pane's.
+	// The framing each doorway's grid was left at, from the row that owns it
+	// — a menu row's own grid, or one of its declared entries'. Which one the
+	// address names is the machine's to decode, so every one is resolved;
+	// door.Places is ByRoot's answer set, which is exactly what
+	// persistedGridView can resolve, and a restore is always the focused
+	// pane's.
 	if p := a.tree.FocusedPane(); p != nil {
-		for _, pl := range a.allPlugins() {
-			if pl.RootGridID == "" {
-				continue
-			}
-			if cx, cy, zoom, ok := a.persistedGridView(p, pl.RootGridID, nil); ok {
-				rw.RootViews[pl.RootGridID] = nav.Viewport{Cx: cx, Cy: cy, Zoom: zoom}
+		for _, pd := range door.Places(a.allPlugins()) {
+			if cx, cy, zoom, ok := a.persistedGridView(p, pd.Plugin.RootGridID, nil); ok {
+				rw.RootViews[pd.Plugin.RootGridID] = nav.Viewport{Cx: cx, Cy: cy, Zoom: zoom}
 			}
 		}
 	}

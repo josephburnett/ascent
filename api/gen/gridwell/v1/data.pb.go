@@ -237,22 +237,30 @@ func (x *Grid) GetGlyph() string {
 	return ""
 }
 
-// MenuEntry is one plugin-declared (+) menu entry: an extra plugin root,
-// such as the trashcan. Declared in Info, stamped per grid by the serving
-// node exactly like writable, and passed verbatim through transit hops,
-// where grid_id gains the hop prefix like every id. The swatch behaves like
-// a plugin swatch over grid_id: click descends, drag drops an exit-well
-// link.
+// MenuEntry is one declared (+) menu entry: a doorway onto one collection —
+// the home's trashcan, a mail plugin's Feed. Declared in Info, stamped per
+// grid by the serving node exactly like writable, and passed verbatim
+// through transit hops, where grid_id gains the hop prefix like every id.
+// The swatch behaves like a menu row's over grid_id: click descends, drag
+// drops an exit-well link.
 //
 // 5 and 6 were kind and param_schema, the creation-entry half. No client
 // could ever receive one.
 type MenuEntry struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                       // entry identity within the plugin
-	Label         string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`                 // swatch label, verbatim
-	Glyph         string                 `protobuf:"bytes,3,opt,name=glyph,proto3" json:"glyph,omitempty"`                 // the declared glyph vocabulary ("" = the kind's default face)
-	Color         string                 `protobuf:"bytes,4,opt,name=color,proto3" json:"color,omitempty"`                 // optional CSS accent for the swatch border/glyph ("" = default)
-	GridId        string                 `protobuf:"bytes,7,opt,name=grid_id,json=gridId,proto3" json:"grid_id,omitempty"` // the target grid, qualified per hop
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Id     string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`                       // entry identity within the plugin
+	Label  string                 `protobuf:"bytes,2,opt,name=label,proto3" json:"label,omitempty"`                 // swatch label, verbatim
+	Glyph  string                 `protobuf:"bytes,3,opt,name=glyph,proto3" json:"glyph,omitempty"`                 // the declared glyph vocabulary ("" = the kind's default face)
+	Color  string                 `protobuf:"bytes,4,opt,name=color,proto3" json:"color,omitempty"`                 // optional CSS accent for the swatch border/glyph ("" = default)
+	GridId string                 `protobuf:"bytes,7,opt,name=grid_id,json=gridId,proto3" json:"grid_id,omitempty"` // the target grid, qualified per hop
+	// view_cx/cy/zoom is grid_id's last-saved viewport, the same shape and the
+	// same meaning as PluginInfo.root_view_*. An entry is a doorway, and a
+	// doorway carries the framing of the grid behind it, so re-entering a
+	// collection lands where it was left. Zero zoom means never visited and the
+	// client substitutes its calibrated default.
+	ViewCx        float64 `protobuf:"fixed64,8,opt,name=view_cx,json=viewCx,proto3" json:"view_cx,omitempty"`
+	ViewCy        float64 `protobuf:"fixed64,9,opt,name=view_cy,json=viewCy,proto3" json:"view_cy,omitempty"`
+	ViewZoom      float64 `protobuf:"fixed64,10,opt,name=view_zoom,json=viewZoom,proto3" json:"view_zoom,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -320,6 +328,27 @@ func (x *MenuEntry) GetGridId() string {
 		return x.GridId
 	}
 	return ""
+}
+
+func (x *MenuEntry) GetViewCx() float64 {
+	if x != nil {
+		return x.ViewCx
+	}
+	return 0
+}
+
+func (x *MenuEntry) GetViewCy() float64 {
+	if x != nil {
+		return x.ViewCy
+	}
+	return 0
+}
+
+func (x *MenuEntry) GetViewZoom() float64 {
+	if x != nil {
+		return x.ViewZoom
+	}
+	return 0
 }
 
 // Tile is the persistent unit of content in a grid. kind selects which
@@ -3340,13 +3369,17 @@ const file_gridwell_v1_data_proto_rawDesc = "" +
 	"\fmenu_entries\x18\v \x03(\v2\x16.gridwell.v1.MenuEntryR\vmenuEntries\x12!\n" +
 	"\fhost_content\x18\r \x01(\bR\vhostContent\x12\x14\n" +
 	"\x05glyph\x18\x0e \x01(\tR\x05glyphJ\x04\b\x02\x10\x03J\x04\b\x04\x10\x05J\x04\b\x05\x10\x06J\x04\b\b\x10\tJ\x04\b\t\x10\n" +
-	"\"\x82\x01\n" +
+	"\"\xd1\x01\n" +
 	"\tMenuEntry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05label\x18\x02 \x01(\tR\x05label\x12\x14\n" +
 	"\x05glyph\x18\x03 \x01(\tR\x05glyph\x12\x14\n" +
 	"\x05color\x18\x04 \x01(\tR\x05color\x12\x17\n" +
-	"\agrid_id\x18\a \x01(\tR\x06gridIdJ\x04\b\x05\x10\x06J\x04\b\x06\x10\a\"\xb4\x06\n" +
+	"\agrid_id\x18\a \x01(\tR\x06gridId\x12\x17\n" +
+	"\aview_cx\x18\b \x01(\x01R\x06viewCx\x12\x17\n" +
+	"\aview_cy\x18\t \x01(\x01R\x06viewCy\x12\x1b\n" +
+	"\tview_zoom\x18\n" +
+	" \x01(\x01R\bviewZoomJ\x04\b\x05\x10\x06J\x04\b\x06\x10\a\"\xb4\x06\n" +
 	"\x04Tile\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\x03R\aversion\x12\x17\n" +

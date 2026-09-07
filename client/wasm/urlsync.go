@@ -186,18 +186,7 @@ func (a *App) persistFraming(p *pane.Pane, door *rpc.Tile, doorAnchor string, do
 		cur = rpc.Framing{Cx: pl.RootViewCx, Cy: pl.RootViewCy, Zoom: pl.RootViewZoom}
 		gridID = p.Anchor()
 		req = rpc.SetFramingRequest{RootGridID: p.Anchor()}
-		commit = func(f rpc.Framing) {
-			// The local PluginInfo copy of the root framing, a cache of the
-			// Info handshake, reconciles immediately, so the next + menu
-			// descent frames to what was just saved.
-			for i := range a.plugins {
-				if a.plugins[i].UUID == pl.UUID {
-					a.plugins[i].RootViewCx = f.Cx
-					a.plugins[i].RootViewCy = f.Cy
-					a.plugins[i].RootViewZoom = f.Zoom
-				}
-			}
-		}
+		commit = func(f rpc.Framing) { a.cacheDoorwayFraming(p.Anchor(), f) }
 	}
 	r := paneRectFor(a, p)
 	next := rpc.Framing{Cx: p.Cx, Cy: p.Cy,

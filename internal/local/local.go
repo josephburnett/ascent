@@ -117,10 +117,16 @@ func (p *Plugin) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwell
 	if err != nil {
 		return nil, errToStatus(err)
 	}
-	// Root framing seeds the client's doorway framing so re-entry restores
-	// the left-off view. A fresh DB was never visited and has zero zoom,
-	// which the client reads as the calibrated default.
+	// Framing seeds the client's doorway framing so re-entry restores the
+	// left-off view. Every doorway this handshake declares carries the
+	// framing of the grid behind it — the root and the trashcan alike — so
+	// neither can end up with a rule of its own. A fresh DB was never visited
+	// and has zero zoom, which the client reads as the calibrated default.
 	view, _, err := p.st.RootFraming(ctx)
+	if err != nil {
+		return nil, errToStatus(err)
+	}
+	trashView, _, err := p.st.GridFraming(trash)
 	if err != nil {
 		return nil, errToStatus(err)
 	}
@@ -131,14 +137,15 @@ func (p *Plugin) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwell
 		SchemaVersion: int64(p.st.SchemaVersion()),
 		RootGridId:    id,
 		ScratchGridId: scratch,
-		// The trashcan is a second root the (+) menu offers beside the main
-		// one. It is a declared root menu entry, so the host and client
-		// learn only "another grid with a glyph".
+		// The trashcan is a second doorway the (+) menu offers beside home
+		// itself. It is a declared menu entry, so the host and client learn
+		// only "another grid with a glyph".
 		MenuEntries: []*gridwellv1.MenuEntry{{
 			Id:     "trash",
 			Label:  "trash",
 			Glyph:  "trash",
 			GridId: trash,
+			ViewCx: trashView.Cx, ViewCy: trashView.Cy, ViewZoom: trashView.Zoom,
 		}},
 		// Capabilities the server reads from this handshake, never from the
 		// kind string: home emits change events and accepts creates.

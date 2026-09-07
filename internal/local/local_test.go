@@ -536,3 +536,39 @@ func scratchGrid(t *testing.T, p *local.Plugin) string {
 	}
 	return info.ScratchGridId
 }
+
+// Home's trashcan is a declared menu entry, and an entry is a doorway, so it
+// remembers the view it was left at exactly as home's own root does. Both
+// read one column set, and the handshake is where they meet: frame the trash
+// grid, ask again, and the entry carries it while the root stays put.
+func TestTheTrashcanEntryRemembersItsFraming(t *testing.T) {
+	p := openPlugin(t)
+	ctx := context.Background()
+	before, err := p.Info(ctx, &gridwellv1.InfoRequest{})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if len(before.MenuEntries) != 1 || before.MenuEntries[0].GridId == "" {
+		t.Fatalf("entries = %+v, want the trashcan", before.MenuEntries)
+	}
+	trash := before.MenuEntries[0].GridId
+	if before.MenuEntries[0].ViewZoom != 0 {
+		t.Fatalf("a fresh trash grid was never visited: %+v", before.MenuEntries[0])
+	}
+	if _, err := p.SetFraming(ctx, &gridwellv1.SetFramingRequest{
+		RootGridId: trash, Cx: 4, Cy: -1.5, Zoom: 2,
+	}); err != nil {
+		t.Fatalf("SetFraming: %v", err)
+	}
+	after, err := p.Info(ctx, &gridwellv1.InfoRequest{})
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	e := after.MenuEntries[0]
+	if e.ViewCx != 4 || e.ViewCy != -1.5 || e.ViewZoom != 2 {
+		t.Errorf("trash entry = %+v, want the framing it was left at", e)
+	}
+	if after.RootViewZoom != 0 {
+		t.Errorf("framing the trashcan moved home's own root: zoom %v", after.RootViewZoom)
+	}
+}

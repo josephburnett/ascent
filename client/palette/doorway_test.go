@@ -4,10 +4,11 @@ import (
 	"testing"
 
 	"github.com/josephburnett/gridwell/api/rpc"
+	"github.com/josephburnett/gridwell/client/door"
 )
 
 // names is the section as the user reads it: one label per swatch, in order.
-func names(sw []Doorway) []string {
+func names(sw []door.Place) []string {
 	out := make([]string, 0, len(sw))
 	for _, s := range sw {
 		out = append(out, s.Plugin.Label)

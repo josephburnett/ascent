@@ -8,7 +8,10 @@
       "glyph": "Glyph-357",
       "gridId": "GridID-305",
       "id": "ID-171",
-      "label": "Label-133"
+      "label": "Label-133",
+      "viewCx": 970.5,
+      "viewCy": 768.5,
+      "viewZoom": 63.5
     }
   ],
   "nodeNs": "NodeNS-154",

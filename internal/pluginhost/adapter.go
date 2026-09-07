@@ -119,8 +119,10 @@ func (a *Adapter) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwel
 		Writable: false,
 	}
 	for _, m := range ci.MenuEntries {
-		// A menu entry names an extra plugin root: the context it targets
-		// becomes a grid id the node can serve.
+		// A menu entry names one of the plugin's collections: the context it
+		// targets becomes a grid id the node can serve, and the framing the
+		// node remembers for that grid rides along, so re-entering the
+		// collection lands where the user left it.
 		out := &gridwellv1.MenuEntry{
 			Id: m.Id, Label: m.Label, Glyph: m.Glyph, Color: m.Color,
 		}
@@ -130,6 +132,7 @@ func (a *Adapter) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwel
 				return nil, err
 			}
 			out.GridId = id
+			out.ViewCx, out.ViewCy, out.ViewZoom = a.contextFraming(m.Context)
 		}
 		resp.MenuEntries = append(resp.MenuEntries, out)
 	}
@@ -139,13 +142,25 @@ func (a *Adapter) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwel
 			return nil, err
 		}
 		resp.RootGridId = id
-		if gid, ok, err := a.mem.LookupContext(ci.RootContext); err == nil && ok {
-			if f, ok, err := a.mem.RootFraming(gid); err == nil && ok {
-				resp.RootViewCx, resp.RootViewCy, resp.RootViewZoom = f.Cx, f.Cy, f.Zoom
-			}
-		}
+		resp.RootViewCx, resp.RootViewCy, resp.RootViewZoom = a.contextFraming(ci.RootContext)
 	}
 	return resp, nil
+}
+
+// contextFraming is the framing the node remembers for one context's grid,
+// zero when the grid has no row yet or was never framed. It is the one read
+// behind every doorway this handshake declares — the row's root and each menu
+// entry alike — so a collection cannot end up with a rule of its own.
+func (a *Adapter) contextFraming(ckey string) (cx, cy, zoom float64) {
+	gid, ok, err := a.mem.LookupContext(ckey)
+	if err != nil || !ok {
+		return 0, 0, 0
+	}
+	f, ok, err := a.mem.RootFraming(gid)
+	if err != nil || !ok {
+		return 0, 0, 0
+	}
+	return f.Cx, f.Cy, f.Zoom
 }
 
 // Subscribe serves this namespace's event stream. It carries what the adapter

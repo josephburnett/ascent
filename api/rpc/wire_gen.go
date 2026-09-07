@@ -170,12 +170,12 @@ type Grid struct {
 	Glyph string `json:"glyph,omitempty"`
 }
 
-// MenuEntry is one plugin-declared (+) menu entry: an extra plugin root,
-// such as the trashcan. Declared in Info, stamped per grid by the serving
-// node exactly like writable, and passed verbatim through transit hops,
-// where grid_id gains the hop prefix like every id. The swatch behaves like
-// a plugin swatch over grid_id: click descends, drag drops an exit-well
-// link.
+// MenuEntry is one declared (+) menu entry: a doorway onto one collection —
+// the home's trashcan, a mail plugin's Feed. Declared in Info, stamped per
+// grid by the serving node exactly like writable, and passed verbatim
+// through transit hops, where grid_id gains the hop prefix like every id.
+// The swatch behaves like a menu row's over grid_id: click descends, drag
+// drops an exit-well link.
 //
 // 5 and 6 were kind and param_schema, the creation-entry half. No client
 // could ever receive one.
@@ -185,6 +185,14 @@ type MenuEntry struct {
 	Glyph  string `json:"glyph,omitempty"`
 	Color  string `json:"color,omitempty"`
 	GridID string `json:"grid_id,omitempty"`
+	// view_cx/cy/zoom is grid_id's last-saved viewport, the same shape and the
+	// same meaning as PluginInfo.root_view_*. An entry is a doorway, and a
+	// doorway carries the framing of the grid behind it, so re-entering a
+	// collection lands where it was left. Zero zoom means never visited and the
+	// client substitutes its calibrated default.
+	ViewCx   float64 `json:"view_cx,omitempty"`
+	ViewCy   float64 `json:"view_cy,omitempty"`
+	ViewZoom float64 `json:"view_zoom,omitempty"`
 }
 
 // PluginInfo mirrors gridwell/v1/data.proto's PluginInfo.
@@ -469,11 +477,14 @@ func MenuEntryToProto(v *MenuEntry) *pb.MenuEntry {
 		return nil
 	}
 	return &pb.MenuEntry{
-		Id:     v.ID,
-		Label:  v.Label,
-		Glyph:  v.Glyph,
-		Color:  v.Color,
-		GridId: v.GridID,
+		Id:       v.ID,
+		Label:    v.Label,
+		Glyph:    v.Glyph,
+		Color:    v.Color,
+		GridId:   v.GridID,
+		ViewCx:   v.ViewCx,
+		ViewCy:   v.ViewCy,
+		ViewZoom: v.ViewZoom,
 	}
 }
 
@@ -495,11 +506,14 @@ func MenuEntryFromProto(p *pb.MenuEntry) *MenuEntry {
 		return nil
 	}
 	out := &MenuEntry{
-		ID:     p.Id,
-		Label:  p.Label,
-		Glyph:  p.Glyph,
-		Color:  p.Color,
-		GridID: p.GridId,
+		ID:       p.Id,
+		Label:    p.Label,
+		Glyph:    p.Glyph,
+		Color:    p.Color,
+		GridID:   p.GridId,
+		ViewCx:   p.ViewCx,
+		ViewCy:   p.ViewCy,
+		ViewZoom: p.ViewZoom,
 	}
 	return out
 }

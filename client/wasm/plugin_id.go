@@ -63,12 +63,34 @@ func (a *App) gridWritable(gridID string) (writable, known bool) {
 	return g.Meta.Writable, true
 }
 
-// pluginByRoot returns the menu row rooted at gridID — the row whose root
-// view a root-grid reframe persists to and restores from, and whose face that
-// grid wears. The rule is door.ByRoot's, js-free and unit-tested; this is the
-// impure half, resolving the declaration list it reads.
+// pluginByRoot returns the doorway rooted at gridID — a menu row's own grid
+// or one of its declared entries', whose view a root-grid reframe persists to
+// and restores from, and whose face that grid wears. The rule is
+// door.ByRoot's, js-free and unit-tested; this is the impure half, resolving
+// the declaration list it reads.
 func (a *App) pluginByRoot(gridID string) (rpc.PluginInfo, bool) {
 	return door.ByRoot(gridID, a.allPlugins())
+}
+
+// cacheDoorwayFraming reconciles the local copy of a doorway's framing — the
+// Info handshake's, which the next + menu descent frames from — immediately
+// after a root-grid reframe is committed. It is keyed by the grid, the same
+// key pluginByRoot resolved it under, so a row's own grid and a declared
+// entry's each land on the field that carries them and never on each other's.
+func (a *App) cacheDoorwayFraming(gridID string, f rpc.Framing) {
+	if gridID == "" {
+		return
+	}
+	for i := range a.plugins {
+		if a.plugins[i].RootGridID == gridID {
+			a.plugins[i].RootViewCx, a.plugins[i].RootViewCy, a.plugins[i].RootViewZoom = f.Cx, f.Cy, f.Zoom
+		}
+		for j := range a.plugins[i].MenuEntries {
+			if e := &a.plugins[i].MenuEntries[j]; e.GridID == gridID {
+				e.ViewCx, e.ViewCy, e.ViewZoom = f.Cx, f.Cy, f.Zoom
+			}
+		}
+	}
 }
 
 // pluginByUUID returns the plugin with the given, possibly chain-qualified,

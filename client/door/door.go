@@ -38,12 +38,13 @@ func EntryName(row, entry string) string {
 // declarer, so it carries none of the row's entries — they belong to the row,
 // and composing them again would show every collection twice.
 //
-// The handshake root view belongs to the row's own grid, so it is zeroed and
-// an entry grid opens at the default framing.
+// The framing follows the grid, not the row: the row's root view belongs to
+// the row's own grid, and the entry carries its own, so a collection reopens
+// where it was left.
 func EntryPlugin(pl rpc.PluginInfo, e rpc.MenuEntry) rpc.PluginInfo {
 	pseudo := pl
 	pseudo.RootGridID = e.GridID
-	pseudo.RootViewCx, pseudo.RootViewCy, pseudo.RootViewZoom = 0, 0, 0
+	pseudo.RootViewCx, pseudo.RootViewCy, pseudo.RootViewZoom = e.ViewCx, e.ViewCy, e.ViewZoom
 	pseudo.MenuEntries = nil
 	pseudo.Label = EntryName(pl.Label, e.Label)
 	if e.Glyph != "" {
@@ -194,17 +195,59 @@ func GlyphFor(gridID string, grid *rpc.Grid, plugins []rpc.PluginInfo) string {
 	return rpc.GlyphWell
 }
 
-// ByRoot finds the menu row rooted exactly at gridID — the row whose swatch
-// this grid IS. Rooted, not by namespace: a connection row's uuid
-// ("<id>/<conn>") is not a prefix of its root
+// Place is one grid a menu row is a doorway onto: the row that names it —
+// a pseudo-row for an entry — and the entry it was declared by, nil for the
+// row's own grid.
+type Place struct {
+	Plugin rpc.PluginInfo
+	Entry  *rpc.MenuEntry
+}
+
+// PlacesOf enumerates the doorways one menu row declares, in declaration
+// order: the row's own grid where it names one, then one per menu entry that
+// names a grid. A plugin names no grid of its own, so its places are exactly
+// its collections; a node's home and a connection's far home name one, since
+// a node is a place.
+//
+// This is the one enumeration. The menu composes its swatches from it
+// (client/palette), ByRoot looks a grid up in it, and the framing restore
+// iterates it, so what a doorway is cannot be answered three ways.
+func PlacesOf(pl rpc.PluginInfo) []Place {
+	out := make([]Place, 0, 1+len(pl.MenuEntries))
+	if pl.RootGridID != "" {
+		out = append(out, Place{Plugin: pl})
+	}
+	for i := range pl.MenuEntries {
+		e := &pl.MenuEntries[i]
+		if e.GridID == "" {
+			continue
+		}
+		out = append(out, Place{Plugin: EntryPlugin(pl, *e), Entry: e})
+	}
+	return out
+}
+
+// Places is PlacesOf over a whole menu, rows in order and each row's places
+// directly after it.
+func Places(plugins []rpc.PluginInfo) []Place {
+	out := make([]Place, 0, len(plugins))
+	for i := range plugins {
+		out = append(out, PlacesOf(plugins[i])...)
+	}
+	return out
+}
+
+// ByRoot finds the doorway rooted exactly at gridID — the swatch this grid
+// IS, a row's own or one of its declared entries'. Rooted, not by namespace:
+// a connection row's uuid ("<id>/<conn>") is not a prefix of its root
 // ("<id>/<conn>/<remote-home>/<n>").
 func ByRoot(gridID string, plugins []rpc.PluginInfo) (rpc.PluginInfo, bool) {
 	if gridID == "" {
 		return rpc.PluginInfo{}, false
 	}
-	for i := range plugins {
-		if plugins[i].RootGridID == gridID {
-			return plugins[i], true
+	for _, p := range Places(plugins) {
+		if p.Plugin.RootGridID == gridID {
+			return p.Plugin, true
 		}
 	}
 	return rpc.PluginInfo{}, false

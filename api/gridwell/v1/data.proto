@@ -91,12 +91,12 @@ message Grid {
   string glyph = 14;
 }
 
-// MenuEntry is one plugin-declared (+) menu entry: an extra plugin root,
-// such as the trashcan. Declared in Info, stamped per grid by the serving
-// node exactly like writable, and passed verbatim through transit hops,
-// where grid_id gains the hop prefix like every id. The swatch behaves like
-// a plugin swatch over grid_id: click descends, drag drops an exit-well
-// link.
+// MenuEntry is one declared (+) menu entry: a doorway onto one collection —
+// the home's trashcan, a mail plugin's Feed. Declared in Info, stamped per
+// grid by the serving node exactly like writable, and passed verbatim
+// through transit hops, where grid_id gains the hop prefix like every id.
+// The swatch behaves like a menu row's over grid_id: click descends, drag
+// drops an exit-well link.
 //
 // 5 and 6 were kind and param_schema, the creation-entry half. No client
 // could ever receive one.
@@ -107,6 +107,14 @@ message MenuEntry {
   string color        = 4; // optional CSS accent for the swatch border/glyph ("" = default)
   reserved 5, 6;
   string grid_id      = 7; // the target grid, qualified per hop
+  // view_cx/cy/zoom is grid_id's last-saved viewport, the same shape and the
+  // same meaning as PluginInfo.root_view_*. An entry is a doorway, and a
+  // doorway carries the framing of the grid behind it, so re-entering a
+  // collection lands where it was left. Zero zoom means never visited and the
+  // client substitutes its calibrated default.
+  double view_cx      = 8;
+  double view_cy      = 9;
+  double view_zoom    = 10;
 }
 
 // Tile is the persistent unit of content in a grid. kind selects which
