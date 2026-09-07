@@ -9,9 +9,7 @@ import { tileAt } from '../e2e/oracle';
 
 // A dangling doorway — a link into a plugin no longer in server.yaml — is
 // DEAD: the node does not declare that namespace, so the tile greys, nothing
-// is asked for it, and nothing is said about it (client/deadref). The shape
-// is a real one: a pre-one-node home whose conversion dropped a plugin leaves
-// exactly these wells behind.
+// is asked for it, and nothing is said about it (client/deadref).
 //
 // dead-link.spec pins the state against a reference seeded straight onto the
 // server. This crosses the other half of the seam, in browser mode: a link

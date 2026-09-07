@@ -87,10 +87,7 @@ These were decided deliberately. Do not reverse one without a new decision.
 
 - The node is its home. One id, one `server.yaml` (`id`, `web`,
   `federation`, `connections`, `plugins`), one `gridwell.db`. `cache.db` is
-  disposable. Serve mints what is absent, and a pre-one-node home converts
-  itself at the first load — the config shape and the `db/<id>/` layout
-  both, originals set aside, never deleted. Those are the only config
-  writes.
+  disposable. Serve mints what is absent, and that is the only config write.
 - `gridwell.db` holds node facts only: minted ids, layout, framing, the
   user's bytes, connections, tombstones. What a connection last answered is
   cache.

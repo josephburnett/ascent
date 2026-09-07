@@ -159,3 +159,29 @@ func TestStartServesWhenTheRemoteIsMerelyUnreachable(t *testing.T) {
 		t.Fatalf("a dark connection must be pending with its reason on the row, got %+v", rows[0])
 	}
 }
+
+// A home in the layout Gridwell used before one database per node still has
+// all of the user's content in db/<id>/. Serve refuses it and names the
+// release that folds it in: minting a fresh gridwell.db beside those files
+// would come up as a home that had lost everything.
+func TestStartRefusesTheOldPerNamespaceLayout(t *testing.T) {
+	home := t.TempDir()
+	cfgPath := filepath.Join(home, "server.yaml")
+	writeFile(t, cfgPath, "id: nkw3zq7\n")
+	old := filepath.Join(home, "db", "nkw3zq7")
+	if err := os.MkdirAll(old, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(old, "store.db"), "the user's content")
+
+	_, err := BuildConfig(home, cfgPath)
+	if err == nil {
+		t.Fatal("serve accepted a home in the old layout")
+	}
+	if !strings.Contains(err.Error(), "v0.1.0") || !strings.Contains(err.Error(), "db/") {
+		t.Fatalf("the refusal must name the old layout and the release that converts it, got: %v", err)
+	}
+	if _, err := os.Stat(config.DBFile(home)); !os.IsNotExist(err) {
+		t.Fatalf("%s was minted beside the old layout", config.DBFile(home))
+	}
+}

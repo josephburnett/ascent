@@ -109,18 +109,18 @@ func TestLoad_empty_and_defaults(t *testing.T) {
 
 // The retired shapes fail loudly with the fix, never load silently: the flat
 // bind, a password in the file, a plugin row with no kind, an unknown key.
-//
-// The PRE-ONE-NODE vocabulary — node_id, a plugin row's name, the retired
-// per-row flag, a `kind: home` or `kind: remote` row — is deliberately
-// absent: those files CONVERT now (legacy.go,
-// TestLoadConvertsAPreOneNodeConfig), which is what "a pre-one-node home
-// converts itself at first serve" promised. Refusing them was the bug.
+// A file in the shape from before one database per node — `node_id:`, the
+// node's own store as a plugin row — is refused too, and the refusal names
+// the release that converts it, since nothing here does any more.
 func TestLoad_refusesRetiredKeys(t *testing.T) {
 	cases := map[string]string{
-		"bind: 127.0.0.1:1\n":    "web",
-		"password: hunter2\n":    "web-password",
-		"plugins:\n  - id: p1\n": "kind is required",
-		"nonsense: 1\n":          "not found",
+		"bind: 127.0.0.1:1\n":                    "web",
+		"password: hunter2\n":                    "web-password",
+		"plugins:\n  - id: p1\n":                 "kind is required",
+		"nonsense: 1\n":                          "not found",
+		"node_id: n1\n":                          "v0.1.0",
+		"plugins:\n  - id: h1\n    kind: home\n": "v0.1.0",
+		"plugins:\n  - id: r1\n    kind: ssh\n":  "v0.1.0",
 	}
 	for yml, want := range cases {
 		_, err := Load(write(t, t.TempDir(), yml))

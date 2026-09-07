@@ -492,36 +492,3 @@ func occupyRect(occupied map[[2]int64]bool, x, y, w, h int64) {
 		}
 	}
 }
-
-// InsertExternalRow is the converter's door (internal/node.Convert): one
-// external row with its full remembered state, minted fresh. Tombstoned
-// rows are inserted tombstoned — a retired key stays retired.
-func (s *Store) InsertExternalRow(ctx context.Context, ns string, gridID int64, key, kind, label string, childGridID int64, url string, tombstoned bool,
-	place [4]int64, view rpc.Framing, text [4]int64, textMode string, contentZoom float64) (int64, error) {
-	now := s.now().UnixNano()
-	var child, u, mode any
-	if childGridID != 0 {
-		child = childGridID
-	}
-	if kind == "url" {
-		u = url
-	}
-	if textMode != "" {
-		mode = textMode
-	}
-	tomb := 0
-	if tombstoned {
-		tomb = 1
-	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO tiles (version, grid_id, kind, x, y, w, h,
-		view_cx, view_cy, view_zoom, child_grid_id, text_x, text_y, text_w, text_h, text_mode, content_zoom,
-		url_string, alt_text, created_at, updated_at, ns, key, tombstoned)
-		VALUES (0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		gridID, kind, place[0], place[1], place[2], place[3],
-		view.Cx, view.Cy, view.Zoom, child, text[0], text[1], text[2], text[3], mode, contentZoom,
-		u, label, now, now, ns, key, tomb)
-	if err != nil {
-		return 0, err
-	}
-	return res.LastInsertId()
-}

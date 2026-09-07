@@ -76,15 +76,10 @@ func BuildConfig(home, cfgPath string) (*config.ServerConfig, error) {
 }
 
 // ensureStore makes <home>/gridwell.db exist. A fresh home gets one, with its
-// identity stamped through pluginmeta; a home laid out as db/<id>/… is
-// converted into one by Convert; an existing home is left alone.
-//
-// gridwell.db existing beside a db/ directory is the one window a conversion
-// can be killed in and leave work behind: Convert publishes the finished
-// store with a rename and retires db/ with a second one. The store is
-// complete — Convert builds into a temp and renames only on success — so the
-// answer is to finish the set-aside, never to convert a second time over the
-// data the first one already folded.
+// identity stamped through pluginmeta; an existing home is left alone. A home
+// still in the retired db/<id>/ layout is refused: its content is in those
+// files, and minting an empty store beside them would look like a home that
+// lost everything.
 func ensureStore(home string, cfg *config.ServerConfig) error {
 	path := config.DBFile(home)
 	if _, err := os.Stat(path); err == nil {
@@ -93,19 +88,12 @@ func ensureStore(home string, cfg *config.ServerConfig) error {
 		if _, err := pluginmeta.Verify(path, cfg.ID, "home"); err != nil {
 			return fmt.Errorf("%s is not the store of id %q — did `id` change? (an id is immutable; restore the old one): %w", path, cfg.ID, err)
 		}
-		if _, err := os.Stat(filepath.Join(home, "db")); err == nil {
-			log.Printf("gridwell: %s is converted but the old db/ was never set aside — finishing an interrupted conversion", path)
-			if err := setAsideOldLayout(home); err != nil {
-				return err
-			}
-			log.Printf("gridwell: converted; the old files are in %s (delete when satisfied)", filepath.Join(home, "db.pre-one-node"))
-		}
 		return nil
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	if _, err := os.Stat(filepath.Join(home, "db")); err == nil {
-		return Convert(home, cfg)
+		return fmt.Errorf("%s has a db/ directory and no %s: this home is in the layout Gridwell used before one database per node. v0.1.0 is the last release that converts it — serve this home with v0.1.0 once, then with this version", home, path)
 	}
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		return err

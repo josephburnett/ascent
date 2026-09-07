@@ -78,16 +78,14 @@ test('gives up on SILENCE and kills the child when nothing is announced', async 
 });
 
 test('a slow but TALKING boot is never killed: every line re-arms the window', async () => {
-  // The upgrade path: a one-database conversion announces each step it
-  // finishes and takes longer than the whole window between them. A fixed
-  // deadline SIGTERMed exactly this, tearing a conversion of real data in
-  // half; only silence may end a boot.
+  // A long boot: each step announces itself and then takes longer than the
+  // whole window before the next one. Only silence may end a boot.
   const child = new FakeChild();
   const p = boot(child, 40);
   for (const line of [
-    'gridwell: converting ~/.gridwell to the one-database layout',
-    'gridwell: convert: plugin fs: 812 grids, 40311 tiles',
-    'gridwell: converted; the old files are in ~/.gridwell/db.pre-one-node',
+    'gridwell: home: scratch cleanup removed 41 ephemeral tile(s)',
+    'gridwell: home: orphan cleanup killed 3 stale shell session(s)',
+    'gridwell: plugin fs (fs) respawned',
   ]) {
     await new Promise((r) => setTimeout(r, 30)); // under the window, every time
     child.stdout.write(`${line}\n`);
@@ -104,7 +102,7 @@ test('silence AFTER progress still ends the boot: the window re-arms, it does no
   const child = new FakeChild();
   const p = boot(child, 40);
   await new Promise((r) => setTimeout(r, 20));
-  child.stdout.write('gridwell: converting ~/.gridwell to the one-database layout\n');
+  child.stdout.write('gridwell: home: scratch cleanup removed 41 ephemeral tile(s)\n');
   await assert.rejects(p, /went silent for 40ms/);
   assert.ok(child.killed, 'a hung process is still terminated, however far it got');
 });
