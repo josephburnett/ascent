@@ -13,8 +13,7 @@ func TestRenderedCSSScopes(t *testing.T) {
 	if !strings.Contains(css, "#gw-rendered-view h1") {
 		t.Fatal("rules not scoped under the selector")
 	}
-	// The preview raster and the overlay are the same stylesheet under
-	// different scopes: byte-identical after normalizing the selector.
+	// The preview raster and the overlay are one stylesheet under two scopes.
 	prev := RenderedCSS(".gw-md-root")
 	if strings.ReplaceAll(css, "#gw-rendered-view", "X") != strings.ReplaceAll(prev, ".gw-md-root", "X") {
 		t.Fatal("overlay and preview stylesheets diverge")
