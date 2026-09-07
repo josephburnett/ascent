@@ -8,12 +8,11 @@ import (
 	"github.com/josephburnett/gridwell/client/pane"
 )
 
-// TestPreviewIsScaledDescentTarget is the continuity property — the pane-tile
-// face of "preview = descent target": for any workspace tree, the preview
-// laid into the tile rect is EXACTLY the live layout under one uniform
-// scale-and-translate. Every leaf's preview rect maps affinely onto its live
-// rect, and its content cell size is the live cell size times the same
-// factor — so descent (the tile rect growing into the root rect) crosses no
+// TestPreviewIsScaledDescentTarget pins the continuity property. For any
+// workspace tree the preview laid into the tile rect is the live layout under
+// one scale and translate: every leaf's preview rect maps affinely onto its
+// live rect, and its content cell size is the live cell size times the same
+// factor. Descent grows the tile rect into the root rect and crosses no
 // discontinuity.
 func TestPreviewIsScaledDescentTarget(t *testing.T) {
 	r := rand.New(rand.NewSource(2))
@@ -42,9 +41,9 @@ func TestPreviewIsScaledDescentTarget(t *testing.T) {
 		liveRects := pane.Layout(tr, liveRoot)
 		for _, leaf := range Leaves(tr, tile, s) {
 			live := liveRects[leaf.Pane.ID]
-			// The live rect scaled by (tile/liveRoot) per axis gives the
-			// preview rect: Layout distributes ratios linearly, so each axis
-			// scales independently by tileW/liveW (and tileH/liveH).
+			// pane.Layout distributes ratios linearly, so each axis scales
+			// independently and the live rect scaled per axis is the preview
+			// rect.
 			wantX := tile.X + (live.X-liveRoot.X)*(tile.W/liveRoot.W)
 			wantY := tile.Y + (live.Y-liveRoot.Y)*(tile.H/liveRoot.H)
 			wantW := live.W * (tile.W / liveRoot.W)
@@ -54,7 +53,7 @@ func TestPreviewIsScaledDescentTarget(t *testing.T) {
 				t.Fatalf("case %d leaf %s: preview rect %+v, want affine image %v,%v %vx%v",
 					i, leaf.Pane.ID, leaf.Rect, wantX, wantY, wantW, wantH)
 			}
-			// Content continuity: previewCell = liveCell × s.
+			// Content continuity: previewCell is liveCell times s.
 			if !close(leaf.PreviewCell, leaf.Pane.Zoom*pane.CellPx*s) {
 				t.Fatalf("case %d leaf %s: previewCell %v, want liveCell×s", i, leaf.Pane.ID, leaf.PreviewCell)
 			}
@@ -62,9 +61,8 @@ func TestPreviewIsScaledDescentTarget(t *testing.T) {
 	}
 }
 
-// TestZoomedLeafOwnsThePreview: tmux-style pane zoom persists in the layout;
-// the mini-render must show the zoomed pane filling the tile, exactly as
-// descent would restore it.
+// TestZoomedLeafOwnsThePreview pins that a zoomed pane persists in the layout
+// and fills the tile in the mini-render, as descent would restore it.
 func TestZoomedLeafOwnsThePreview(t *testing.T) {
 	tr := pane.NewTree()
 	if _, err := tr.Split(pane.Vertical); err != nil {
