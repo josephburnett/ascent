@@ -218,13 +218,13 @@ func (a *App) persistFraming(p *pane.Pane, door *rpc.Tile, doorAnchor string, do
 // persistTextScroll is the settle persister's text arm: a text descent's
 // scroll position persists like grid framing does — framing-class, no version
 // bump, one SetTextView when it actually moved. Content stays with the
-// keystroke save queue. Read-only host tiles keep session-only scroll,
-// because their plugins refuse text framing, and url, shell, and page
-// descents carry no text framing at all.
+// keystroke save queue. A read-only host tile scrolls like any other text
+// tile: its body is the plugin's, but where the user left the window is the
+// node's, and the plugin's namespace of the store holds it. Url, shell, and
+// page descents carry no text framing at all.
 func (a *App) persistTextScroll(p *pane.Pane) {
 	file, ok := a.descendedTile(p)
-	if !ok || !file.TextDocument() ||
-		a.tileReadOnly(&file) || a.possiblyEphemeral(p, &file) {
+	if !ok || !file.TextDocument() || a.possiblyEphemeral(p, &file) {
 		return
 	}
 	scrollX := int64(p.TextScrollX + 0.5)

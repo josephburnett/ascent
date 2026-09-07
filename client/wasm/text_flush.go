@@ -183,15 +183,16 @@ func (a *App) saveTextBeforeAscent(p *pane.Pane, file rpc.Tile) {
 	// Posting unconditionally would also make a merely-opened tile rewrite
 	// its blob and bump its version on every visit; dirty-gating keeps a
 	// pure read write-free.
-	// Read-only host tiles have no write-back at all: no content, since the
-	// body is derived, and no framing store either — the fs plugin's SetTile
-	// refuses text framing, so posting SetTextView from here would only
-	// manufacture an error strip. Their mode and scroll stay session
-	// facts.
-	if a.tileReadOnly(&file) {
-		return
-	}
+	// A read-only host tile posts no CONTENT: its body is derived, so its
+	// entry cannot normally be dirty and this is belt and braces, the same
+	// guard postTileContent carries. Its FRAMING still posts — the framed
+	// window is a node fact for every text tile, and a plugin's namespace of
+	// the store holds it (pluginhost.Adapter.SetTile), so a host file's
+	// scroll survives an ascent like any other tile's.
 	buf, hasBuf := a.c.DirtyContent(file.ContentID())
+	if a.tileReadOnly(&file) {
+		hasBuf = false
+	}
 
 	// The framed window in doc px: scroll position + the inner box size
 	// (= screen px, since scale is fixed at 1.0). The parent-grid preview

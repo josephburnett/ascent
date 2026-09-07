@@ -8,10 +8,12 @@ import * as path from 'node:path';
 // persists its viewport.
 
 const FS_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'gridwell-framing-'));
-// A second fs root, with a subdirectory in it: the mid-descent reframe needs a
-// doorway to descend through, and FS_ROOT must stay empty for the root-grid pan
-// above, whose press would otherwise land on a tile instead of the grid.
+// A second fs root, with a document and a subdirectory in it: the read-only
+// scroll test needs a file to descend into and the mid-descent reframe needs a
+// doorway, and FS_ROOT must stay empty for the root-grid pan above, whose press
+// would otherwise land on a tile instead of the grid.
 const DOC_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'gridwell-framing-doc-'));
+fs.writeFileSync(path.join(DOC_ROOT, 'long.md'), '# long\n\n' + 'line\n\n'.repeat(200));
 fs.mkdirSync(path.join(DOC_ROOT, 'papers'));
 fs.writeFileSync(path.join(DOC_ROOT, 'papers', 'one.md'), '# one\n');
 // Two plugins go through the FIXTURE form, not a plain array: Playwright reads
@@ -122,6 +124,76 @@ test('text scroll persists without an ascent', async ({ gw, window }) => {
         ),
       { message: 'the scroll reached server truth with NO ascent', timeout: 10_000 },
     )
+    .toBeGreaterThan(0);
+});
+
+// A read-only host file scrolls like any other text tile: the body is the
+// plugin's, but where the user left the window is the node's, and the plugin's
+// namespace of the store holds it. The client used to skip the SetTextView for
+// these tiles (#236), so the reader was dropped back at the top every time
+// (#270).
+//
+// The scroll is also this entry's FIRST durable fact, so it mints the entry's
+// row while the reader is standing on the entry's id. The pane's content id
+// must not move under them (#297): when the mint renamed the entry, the
+// rendered overlay hid and the document vanished mid-read, and the URL was left
+// naming a tile the next listing did not contain, so the reload landed at the
+// plugin root.
+test('a read-only file keeps its scroll, and its id, across a reload', async ({ gw, window }) => {
+  await gw.enterPlugin('docs');
+  const root = (await gw.focused()).gridID;
+  const at = async () => (await gw.getGrid(root)).tiles!.find((t) => t.altText === 'long.md')!;
+  const doc = await at();
+  expect(doc, 'long.md listed').toBeTruthy();
+  await gw.descendCell(Number(doc.x ?? 0), Number(doc.y ?? 0));
+  await expect.poll(async () => (await gw.focused()).textFocus).not.toBe('');
+  const standingOn = (await gw.focused()).textFocus;
+  // A read-only tile always shows the rendered face, which is a scrolling DOM
+  // overlay: scroll it the way the browser does, and the app's own listener
+  // writes the position onto the pane.
+  await expect
+    .poll(() => window.evaluate(() => document.getElementById('gw-rendered-view')?.textContent ?? ''))
+    .toContain('line');
+  await expect
+    .poll(() =>
+      window.evaluate(() => {
+        const el = document.getElementById('gw-rendered-view')!;
+        el.scrollTop = 400;
+        el.dispatchEvent(new Event('scroll'));
+        return el.scrollTop;
+      }),
+    )
+    .toBeGreaterThan(0);
+  // The write that mints. The document must still be on screen after it, under
+  // the same id, with the pane still standing on that id.
+  await expect
+    .poll(async () => Number(((await at()) as { textY?: number | string })?.textY ?? 0), {
+      message: 'a read-only file persists its scroll',
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(0);
+  expect((await at()).id, 'the listing renamed the entry the pane is showing').toBe(standingOn);
+  expect((await gw.focused()).textFocus, 'the mint moved the id under the reader').toBe(standingOn);
+  expect(
+    await window.evaluate(() => document.getElementById('gw-rendered-view')?.scrollTop ?? -1),
+    'the document left the screen when its row was minted',
+  ).toBeGreaterThan(0);
+
+  // And the URL still names it: a reload restores the reader inside the file,
+  // at the scroll they left, with no second descent.
+  await window.reload();
+  await window.waitForFunction(() => !!(window as any).__gridwellTest, null, { timeout: 30_000 });
+  await expect
+    .poll(async () => (await gw.focused()).textFocus, {
+      message: 'the reload did not restore the descent into the file',
+      timeout: 30_000,
+    })
+    .toBe(standingOn);
+  await expect
+    .poll(() => window.evaluate(() => document.getElementById('gw-rendered-view')?.scrollTop ?? 0), {
+      message: 'the restore lands on the scroll the user left',
+      timeout: 15_000,
+    })
     .toBeGreaterThan(0);
 });
 
