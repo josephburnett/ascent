@@ -10,11 +10,10 @@ import (
 	"runtime"
 )
 
-// Session exists here only so the two halves present the same type to
-// shellsvc.Session. Start never returns one — it always fails — so these
-// methods are the shape, not a code path: every channel is already closed
-// and every write is refused, so a caller that ignored Start's error still
-// terminates instead of hanging on a nil channel.
+// Session exists here only so both halves present the same type to
+// shellsvc.Session. Start never returns one, so these methods are unreachable
+// in practice. Their channels are already closed and their writes refused, so
+// a caller that ignored Start's error terminates instead of hanging.
 type Session struct{}
 
 var (
@@ -30,11 +29,8 @@ var (
 	}()
 )
 
-// Start refuses on a platform with no PTY. The error is the whole behavior:
-// it travels the ordinary shell-open path — shellsvc.Manager.Acquire, the
-// home namespace's OpenShell, the shell door's exit frame — and lands on the
-// client as the reason a shell would not attach, the same route a dead tmux
-// session takes. Shells unavailable is a state, not a crash.
+// Start refuses on a platform with no PTY. The error travels the ordinary
+// shell-open path to the client; see ErrShellsUnavailable.
 func Start(_ Config) (*Session, error) {
 	return nil, fmt.Errorf("shelldriver: %w (%s)", ErrShellsUnavailable, runtime.GOOS)
 }
