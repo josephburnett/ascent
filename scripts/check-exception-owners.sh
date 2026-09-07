@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 # check-exception-owners: an exception the user can see is asked once, by
-# name. serves_page, text_presentation, host_content, stale, the link target,
-# the reference bit — each is a fact a plugin or a source declares, and each
-# has one predicate that turns it into a question the rest of the client asks
-# ("is this the document", "is this a link", "does this grid project host
-# state"). A bare field read outside that owner is a second derivation, and
-# two derivations drift: the url-vs-page question was spelled three ways
-# before this gate existed.
+# name. Each of serves_page, text_presentation, host_content, stale, the link
+# target and the reference bit is a fact a plugin or a source declares, and
+# each has one predicate that turns it into the question the rest of the
+# client asks. A bare field read outside that owner is a second derivation,
+# and two derivations drift.
 #
 # Each line of scripts/exception-owners.txt is "<field regex> <owner path
-# regex>": the field may be read only in paths matching the regex. Scope is
-# the client and the wire types it reads (client/, api/rpc/). Exempt by path:
-# _test.go (a test may build any shape it likes) and client/wasm/testhook.go,
-# which reports fields to the e2e harness and decides nothing. Comment lines
-# are not reads — prose naming a field is how the owners explain themselves.
+# regex>", and the field may be read only in paths matching the regex. The
+# scope is the client and the wire types it reads. A _test.go file is exempt,
+# because a test may build any shape it likes, and so is
+# client/wasm/testhook.go, which reports fields to the e2e harness and decides
+# nothing. A comment is not a read.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

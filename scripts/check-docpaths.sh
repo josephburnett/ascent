@@ -1,22 +1,18 @@
 #!/usr/bin/env bash
-# check-docpaths: every repo path a doc or a comment names must exist. Both
-# cite code by path — `internal/local/store`, `plugins/fs`,
-# `apps/desktop/...` — and those paths rot silently when code moves. A stale
-# path is a false fact about where something lives; this gate is what checks
-# it.
+# check-docpaths: every repo path a doc or a comment names must exist. A path
+# rots silently when code moves, and a stale one is a false fact about where
+# something lives.
 #
-# Scope: every tracked *.md, *.go and *.ts, the go.mod/go.work files, and
-# .github/workflows/*.yml. A token is path-like when it starts with one of the
-# top-level dirs (internal/ plugins/ api/ client/ apps/ scripts/ test/ web/
-# docs/) and continues with path characters; a trailing `/` or `/...` is fine,
-# trailing punctuation and a `.GoSymbol` suffix (`internal/dbformat.
-# EnsureVersion`) are stripped. Each must satisfy `test -e` from the repo
-# root. A lowercase symbol suffix is NOT stripped, because `columns.go` is a
-# file and `internal/cli.resolveBinary` is not — write those the other way
-# round ("resolveBinary in internal/cli").
+# The scope is every tracked *.md, *.go and *.ts, the go.mod and go.work
+# files, and .github/workflows/*.yml. A token is path-like when it starts with
+# a top-level directory and continues with path characters. A trailing `/` or
+# `/...` is allowed, and trailing punctuation and a `.GoSymbol` suffix are
+# stripped. A lowercase symbol suffix is not stripped, because `columns.go` is
+# a file and `internal/cli.resolveBinary` is not; write that one as
+# "resolveBinary in internal/cli".
 #
-# Exemptions go in scripts/docpaths-allow.txt as "<file> <path>" lines
-# with a comment saying why the path is gone.
+# Exemptions go in scripts/docpaths-allow.txt as "<file> <path>" lines with a
+# comment saying why the path is gone.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

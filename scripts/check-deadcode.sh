@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
 # check-deadcode: every first-party function must be reachable from a shipped
-# binary — the native binaries or the wasm client. Reachable only from a test
-# does not count: production code kept alive by its own test is still dead.
-# Running deadcode by hand lets the findings grow back; this gate is the fix
-# for that class.
+# binary, either the native binaries or the wasm client. Reachable only from a
+# test does not count, because production code kept alive by its own test is
+# still dead.
 #
-# Two worlds, one verdict: a symbol is dead when the native world cannot
-# reach it AND either its package is not part of the wasm build or the wasm
-# world cannot reach it either. Packages named *test (shellsvctest,
-# plugintest) exist for tests and are exempt, as is anything nested under
-# one (plugintest/gitlabfake). Deliberate exceptions go in
-# scripts/deadcode-allow.txt as "<file> <func>" lines with a comment.
+# A symbol is dead when the native world cannot reach it and either its
+# package is not part of the wasm build or the wasm world cannot reach it
+# either. A package named *test exists for tests and is exempt, as is anything
+# nested under one. Deliberate exceptions go in scripts/deadcode-allow.txt as
+# "<file> <func>" lines with a comment.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
