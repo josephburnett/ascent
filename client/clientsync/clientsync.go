@@ -1,14 +1,11 @@
-// Package clientsync holds the pure post-RPC policy the wasm client applies
-// after a mutation returns: what the outcome was (Of — the one error
-// classifier) and what to do about it (React* — one table per mutation
-// family). The decisions are data so they can be table-tested without a
-// browser, a transport, or App state.
+// Package clientsync holds the post-RPC policy the wasm client applies after
+// a mutation returns: what the outcome was (Of) and what to do about it (one
+// React table per mutation family). The decisions are data, so they are
+// table-tested without a browser, a transport, or App state.
 //
-// The rule this package enforces: local state may be dropped only on a
-// server verdict. A dirty text buffer, a pending framing value, a typed name
-// — none of it may be reconciled away because the network blinked. Transport
-// failure keeps the state and retries; only Ok, Conflict, or Rejected (the
-// server actually spoke) may reconcile.
+// The rule they enforce is that local state may be dropped only on a server
+// verdict. A transport failure keeps the state and retries; only OutcomeOK,
+// OutcomeConflict and OutcomeRejected may reconcile.
 package clientsync
 
 import (
@@ -18,40 +15,35 @@ import (
 	"connectrpc.com/connect"
 )
 
-// Outcome is what an RPC's result actually meant. The distinction that
-// carries the weight is Transport vs everything else: Transport means the
-// server never spoke — nothing was accepted, nothing was refused, and no
-// local state may be reconciled away on the strength of it.
+// Outcome is what an RPC's result meant. OutcomeTransport means the server
+// never spoke, so no local state may be reconciled away on its strength.
 type Outcome int
 
 const (
-	// OutcomeOK — the mutation landed.
+	// OutcomeOK means the mutation landed.
 	OutcomeOK Outcome = iota
-	// OutcomeConflict — FailedPrecondition: a version/overlap race. An
-	// expected control-flow signal; the local claim lost, refetch truth.
+	// OutcomeConflict is a version or overlap race. The local claim lost,
+	// so the caller refetches.
 	OutcomeConflict
-	// OutcomeRejected — the server spoke and said no (invalid argument,
-	// not found, refused). The local attempt is wrong and must reconcile.
+	// OutcomeRejected means the server said no. The local attempt is wrong
+	// and reconciles.
 	OutcomeRejected
-	// OutcomeTransport — the server never spoke: connection refused or
-	// dropped, deadline, cancellation. The local state is still the only
-	// truth the user has; keep it and retry when the link returns.
+	// OutcomeTransport means the server never spoke. The local state is
+	// still the only truth the user has, so the caller keeps it and
+	// retries when the link returns.
 	OutcomeTransport
 )
 
-// Of is the one error classifier. The transport set is pinned to the wire
-// by TestOfPinsWireCodes: connect-go surfaces a refused/dropped connection
-// as CodeUnavailable, a timeout as CodeDeadlineExceeded, a cancellation as
-// CodeCanceled. A non-connect error can only come from below the protocol
-// (the transport itself), so it classifies Transport too. Every other
-// coded error is a server that answered.
+// Of classifies an RPC error. TestOfPinsWireCodes pins the transport set to
+// the three connect codes. A non-connect error comes from below the protocol,
+// so it is Transport too, and every other coded error is a server that
+// answered.
 //
-// A context deadline or cancellation is checked first, and by identity rather
-// than by wire code. The bound on a client RPC is the client's own
-// (client/inflight's Deadline), so its expiry means the server never spoke —
-// whatever code, or no code at all, the transport dressed it in on the way
-// back. Reading that as a verdict would drop the user's bytes on the client's
-// own timer.
+// A context deadline or cancellation is checked first and by identity, not by
+// wire code. The bound on a client RPC is inflight.Deadline, the client's
+// own, so its expiry means the server never spoke whatever code the transport
+// dressed it in. Reading that as a verdict would drop the user's bytes on the
+// client's own timer.
 func Of(err error) Outcome {
 	if err == nil {
 		return OutcomeOK
@@ -75,29 +67,25 @@ func Of(err error) Outcome {
 // Reaction is what a mutation's outcome calls for. Success is the zero
 // value.
 type Reaction struct {
-	// Refetch asks the caller to re-fetch the affected grid so the cache
-	// catches up to the server's authoritative state. Never set on
-	// Transport: the refetch would fail against the same dead link, and
-	// against a flapping one it could succeed and revert an optimistic
-	// patch whose write never landed, silently losing the value.
+	// Refetch asks the caller to re-fetch the affected grid. It is never
+	// set on Transport, where against a flapping link it could succeed and
+	// revert an optimistic patch whose write never landed.
 	Refetch bool
-	// Log asks the caller to surface the failure (the errsurface strip).
+	// Log asks the caller to surface the failure through errsurface.
 	Log bool
-	// DropLocal permits reconciling away the caller's local copy (a dirty
-	// content entry, an optimistic patch's claim to eventual persistence).
-	// True only when the server gave a verdict. When false on a failure,
-	// the caller keeps the state parked so a retry can land it.
+	// DropLocal permits reconciling away the caller's local copy. It is
+	// true only on a server verdict; false on a failure means the caller
+	// keeps the state parked so a retry can land it.
 	DropLocal bool
-	// Retry asks the caller to leave the value queued for the retry kick
-	// (the reconnect drain). Set exactly on Transport.
+	// Retry asks the caller to leave the value queued for the reconnect
+	// drain. It is set exactly on Transport.
 	Retry bool
 }
 
-// React is the policy for a plain mutation — no local state was written
-// ahead of the RPC (create, move, delete: the ghost is presentation only,
-// and snapping it back is the honest reconcile). Transport surfaces but sets
-// no Retry: there is no ledger behind these ops, so claiming a retry that
-// will never happen would be a lie.
+// React is the policy for a mutation that wrote no local state ahead of the
+// RPC, such as a create, move or delete, where snapping the ghost back is the
+// reconcile. Transport surfaces but sets no Retry, because there is no ledger
+// behind these ops to retry from.
 func React(o Outcome) Reaction {
 	switch o {
 	case OutcomeConflict:
@@ -108,11 +96,11 @@ func React(o Outcome) Reaction {
 	return Reaction{}
 }
 
-// ReactOptimistic is the policy for a mutation whose caller already patched
-// the local cache before the RPC (framing writes). A server verdict rolls the
-// cache back to truth, Rejected included: otherwise the cache stays ahead of
-// the server. Transport keeps the patch — it is the value the retry will land
-// — and refetches nothing (see Reaction.Refetch).
+// ReactOptimistic is the policy for a mutation whose caller patched the local
+// cache before the RPC, such as a framing write. Any server verdict rolls the
+// cache back, Rejected included, or the cache stays ahead of the server.
+// Transport keeps the patch, which is the value the retry will land, and
+// refetches nothing (see Reaction.Refetch).
 func ReactOptimistic(o Outcome) Reaction {
 	switch o {
 	case OutcomeConflict:
@@ -125,16 +113,14 @@ func ReactOptimistic(o Outcome) Reaction {
 	return Reaction{}
 }
 
-// ReactSave is the policy for a content save (the bytes in the cache's
-// content entry — the one write that claims a version). On a verdict the
-// unsaved bytes reconcile away: the screen shows what the server holds, not
-// what it refused. On Transport the entry stays dirty — it is the only copy
-// of the user's unsaved words, and the retry lands it.
+// ReactSave is the policy for a content save, the one write that claims a
+// version. On a verdict the unsaved bytes reconcile away, so the screen shows
+// what the server holds. On Transport the entry stays dirty, because it is
+// the only copy of the user's unsaved words.
 //
-// A conflict is surfaced (Log), unlike in the other two tables. A save
-// conflict can mean only one thing: someone else changed these bytes, and the
-// words on screen are about to be replaced by theirs. That is exactly the
-// event the user must be told about.
+// A conflict is surfaced here where the other tables leave it silent, because
+// a save conflict means someone else changed these bytes and the words on
+// screen are about to be replaced by theirs.
 func ReactSave(o Outcome) Reaction {
 	switch o {
 	case OutcomeConflict:
@@ -147,10 +133,9 @@ func ReactSave(o Outcome) Reaction {
 	return Reaction{}
 }
 
-// IsUnimplemented reports a plugin's "I don't serve this" answer — a
-// normal capability property (no previews, no pages), never a failure
-// to surface. Lives here so every wire-code judgment is in the one
-// tested classifier.
+// IsUnimplemented reports a plugin's answer that it does not serve this
+// call. It is a capability property and never a failure to surface. It lives
+// here so every wire-code judgment sits in one tested place.
 func IsUnimplemented(err error) bool {
 	var ce *connect.Error
 	return errors.As(err, &ce) && ce.Code() == connect.CodeUnimplemented

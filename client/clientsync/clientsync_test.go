@@ -13,9 +13,8 @@ import (
 	"github.com/josephburnett/gridwell/api/gen/gridwell/v1/gridwellv1connect"
 )
 
-// TestOf pins the classifier over constructed errors: nil, each coded
-// class, and a bare non-connect error (which can only come from below the
-// protocol, so it is Transport).
+// TestOf pins the classifier over nil, each coded class, and a bare
+// non-connect error, which comes from below the protocol.
 func TestOf(t *testing.T) {
 	cases := []struct {
 		name string
@@ -44,12 +43,11 @@ func TestOf(t *testing.T) {
 }
 
 // TestOfPinsWireCodes crosses the seam Of's transport set depends on: a real
-// connect-go client (the same generated stub the wasm client uses) against a
-// dead port, and with a canceled context, classifies Transport. If a
-// connect-go upgrade changes how it codes transport failures, this fails
-// loudly instead of silently reopening the drop-user-data-on-a-blip class.
+// connect-go client against a dead port, and with a canceled context, is
+// Transport. A connect-go upgrade that recodes transport failures fails here
+// instead of dropping user data on a blip.
 func TestOfPinsWireCodes(t *testing.T) {
-	// Connection refused: nothing listens on port 1.
+	// Nothing listens on port 1.
 	cl := gridwellv1connect.NewGridwellClient(http.DefaultClient, "http://127.0.0.1:1", connect.WithProtoJSON())
 	_, err := cl.GetGrid(context.Background(), connect.NewRequest(&pb.GetGridRequest{GridId: "x"}))
 	if got := Of(err); got != OutcomeTransport {
@@ -65,12 +63,10 @@ func TestOfPinsWireCodes(t *testing.T) {
 	}
 }
 
-// TestReactTables pins all three policy tables side by side. The
-// load-bearing row is Transport: no table sets DropLocal there — local state
-// (a dirty buffer, a pending framing value) reconciles away only on a server
-// verdict — and no table Refetches there, because against a flapping link a
-// refetch can succeed and revert an optimistic patch whose write never
-// landed.
+// TestReactTables pins all three policy tables side by side. On Transport no
+// table sets DropLocal, since local state reconciles away only on a server
+// verdict, and none refetches, since against a flapping link a refetch can
+// succeed and revert an optimistic patch whose write never landed.
 func TestReactTables(t *testing.T) {
 	tables := []struct {
 		name  string
@@ -89,10 +85,9 @@ func TestReactTables(t *testing.T) {
 			OutcomeRejected:  {Refetch: true, Log: true, DropLocal: true},
 			OutcomeTransport: {Log: true, Retry: true},
 		}},
-		// ReactSave differs from the other two on Conflict alone, and
-		// deliberately: a save conflict means a real concurrent edit is
-		// about to replace the user's words, so it is surfaced instead of
-		// reconciled in silence.
+		// ReactSave differs from the other two on Conflict alone: a
+		// concurrent edit is about to replace the user's words, so it
+		// is surfaced.
 		{"ReactSave", ReactSave, map[Outcome]Reaction{
 			OutcomeOK:        {},
 			OutcomeConflict:  {Refetch: true, Log: true, DropLocal: true},
@@ -109,9 +104,8 @@ func TestReactTables(t *testing.T) {
 	}
 }
 
-// TestNoDropWithoutVerdict is the class invariant stated as a sweep: for
-// every policy table and every outcome, DropLocal ⇒ the server spoke
-// (never Transport), and Transport ⇒ no Refetch.
+// TestNoDropWithoutVerdict sweeps every table and outcome: DropLocal implies
+// the server spoke, and Transport implies no Refetch.
 func TestNoDropWithoutVerdict(t *testing.T) {
 	for _, react := range []func(Outcome) Reaction{React, ReactOptimistic, ReactSave} {
 		r := react(OutcomeTransport)
@@ -133,12 +127,9 @@ func TestIsUnimplemented(t *testing.T) {
 	}
 }
 
-// TestOfReadsOurOwnDeadlineAsTransport: the bound on a client RPC is the
-// client's own (inflight.Deadline), so its expiry is never a server verdict.
-// It is classified by identity rather than by wire code, because what a
-// transport dresses a cancelled request in on the way back is not something
-// this client gets to assume — and reading it as a verdict would drop the
-// user's bytes on our own timer.
+// TestOfReadsOurOwnDeadlineAsTransport pins that inflight.Deadline expiring
+// is never a verdict. It classifies by identity, because a transport may
+// dress a cancelled request in any code on the way back.
 func TestOfReadsOurOwnDeadlineAsTransport(t *testing.T) {
 	cases := []struct {
 		name string
@@ -147,8 +138,8 @@ func TestOfReadsOurOwnDeadlineAsTransport(t *testing.T) {
 		{"bare deadline", context.DeadlineExceeded},
 		{"bare cancel", context.Canceled},
 		{"wrapped by the transport", fmt.Errorf("Post \"/x\": %w", context.DeadlineExceeded)},
-		// The shape that hurts: a transport that hands the expiry back
-		// wearing a coded error which is not one of the transport codes.
+		// A transport that hands the expiry back wearing a coded error
+		// outside the transport set.
 		{"dressed as a verdict", connect.NewError(connect.CodeUnknown, context.DeadlineExceeded)},
 	}
 	for _, c := range cases {
