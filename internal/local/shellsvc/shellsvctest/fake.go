@@ -1,8 +1,7 @@
-// Package shellsvctest provides an in-memory shellsvc.Streamer for tests, so
-// the shell manager, the home's OpenShell, and the server's WebSocket bridge
-// can all be exercised without a real tmux session or PTY. Sessions echo
-// their input to their output, so a byte written in comes back out, which is
-// enough to verify a round trip through every hop.
+// Package shellsvctest provides an in-memory shellsvc.Streamer, so the shell
+// manager, the home's OpenShell, and the server's WebSocket bridge can be
+// exercised without a real tmux session or PTY. Sessions echo their input to
+// their output, which is enough to verify a round trip through every hop.
 package shellsvctest
 
 import (
@@ -23,9 +22,8 @@ type FakeStreamer struct {
 	killed   []string
 	PaneCmd  string // canned PaneCommand answer
 	// OpenErr, when set, makes every OpenSession fail with it and open no
-	// session — how the real streamer behaves when the PTY layer refuses:
-	// no tmux server, a failed exec, or a platform with no PTY at all
-	// (shelldriver.ErrShellsUnavailable).
+	// session, which is how the real streamer behaves when the PTY layer
+	// refuses: no tmux server, a failed exec, or a platform with no PTY.
 	OpenErr error
 }
 
@@ -109,9 +107,8 @@ func (f *FakeStreamer) Killed() []string {
 	return append([]string(nil), f.killed...)
 }
 
-// FakeSession is an echoing PTY: bytes written are pushed to Output, so a
-// round trip through the manager, the namespace, and the bridge returns
-// them.
+// FakeSession is an echoing PTY. Bytes written are pushed to Output, so a
+// round trip through the manager, the namespace, and the bridge returns them.
 type FakeSession struct {
 	TileID      string
 	OpenMode    tmux.Mode
