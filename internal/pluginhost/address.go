@@ -1,7 +1,6 @@
 package pluginhost
 
-// The derived address: how the node names a plugin entry it has never had to
-// mint a row for.
+// The derived address: how the node names a plugin entry, minted row or not.
 //
 // An id is a chain of segments (docs/ids.md). Digits name a row. A key-form
 // segment — "~" plus base64url, rpc.KeyTileID — names a thing by what it IS,
@@ -38,7 +37,19 @@ const addrSep = "\x00"
 func gridAddr(context string) string { return rpc.KeyTileID(context) }
 
 // tileAddr renders an entry as a tile segment: the context that lists it and
-// its key.
+// its key. It is the entry's ONE PUBLIC ID, and it is what the listing answers
+// forever — the row the first durable fact mints is bookkeeping, resolved on
+// the way in (Adapter.resolveTile) and never handed out as a name.
+//
+// A mint that renamed the entry took the id out from under whoever was standing
+// on it. A URL segment naming a directory doorway stopped resolving the moment
+// the descent's own reframe minted the doorway's row: urlwalk.Walk skips an id
+// the refetched listing does not contain, so the restore landed at the plugin
+// root. A pane descended into a read-only file lost its content id the moment a
+// scroll or a ctrl+wheel zoom minted the row, and the document vanished with
+// nothing said. The address cannot do that: it names the entry by what it IS,
+// so it is derivable from the row's own stored key even after the source stops
+// listing the entry at all.
 func tileAddr(context, key string) string { return rpc.KeyTileID(context + addrSep + key) }
 
 // splitAddr decodes a key-form segment. isTile distinguishes the two

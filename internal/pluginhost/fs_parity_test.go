@@ -154,8 +154,8 @@ func TestPluginServesTouchedRowsWhenSourceDark(t *testing.T) {
 func TestDeleteRetiresOnTheWire(t *testing.T) {
 	// The delete gesture through the full stack: the source is trashed and the
 	// row retires, so Probe answers GONE, reads answer NotFound, a second
-	// delete is a no-op, and a recreated file is a new thing with a fresh
-	// id.
+	// delete is a no-op, and a recreated file comes back with a fresh ROW,
+	// holding none of the arrangement the retired one held.
 	root := seedTree(t)
 	v2 := pluginNode(t, root)
 	ctx := context.Background()
@@ -174,13 +174,16 @@ func TestDeleteRetiresOnTheWire(t *testing.T) {
 			bin = tile
 		}
 	}
-	// Arrange it first: identity is a property of a ROW, so the "recreation
-	// mints fresh" half of the contract needs one. An entry nobody ever
-	// touched has no id to burn — deleting it is the plugin's verdict and
+	// Arrange it first: a row is what a retirement can burn, so the
+	// "recreation mints fresh" half of the contract needs one. An entry nobody
+	// ever touched has no row — deleting it is the plugin's verdict and
 	// nothing else, which the last stanza pins.
 	minted, err := v2.PlaceTile(ctx, &rpc.PlaceTileRequest{TileID: bin.ID, GridID: rootGrid, X: 4, Y: 4, W: 1, H: 1})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if minted.ID != bin.ID {
+		t.Fatalf("the placement renamed the entry: %q, was %q", minted.ID, bin.ID)
 	}
 	bin = *minted
 	if err := v2.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: bin.ID}); err != nil {
@@ -195,7 +198,12 @@ func TestDeleteRetiresOnTheWire(t *testing.T) {
 	if err := v2.DeleteTile(ctx, &rpc.DeleteTileRequest{TileID: bin.ID}); err != nil {
 		t.Fatalf("delete must be idempotent: %v", err)
 	}
-	// Recreation mints fresh identity.
+	// Recreation mints a fresh ROW. The entry's public id is its key's address
+	// and comes back with the key — the plugin contract says a key names one
+	// thing for good — but nothing the retired row held comes back with it: the
+	// file is listed at its hint again, not at the 4,4 the user had chosen, and
+	// the retired row stays retired (TestRetiredKeyStaysRetiredWithoutIdBurn),
+	// so a reference stored against it is dead for good.
 	if err := os.WriteFile(filepath.Join(root, "data.bin"), []byte{9}, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -203,10 +211,12 @@ func TestDeleteRetiresOnTheWire(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, tile := range g.Tiles {
-		if tile.AltText == "data.bin" && tile.ID == bin.ID {
-			t.Fatal("a recreated file reused the retired id")
-		}
+	remade := tileNamed(g.Tiles, "data.bin")
+	if remade.ID != bin.ID {
+		t.Fatalf("a recreated file was renamed: %q, want the key's address %q", remade.ID, bin.ID)
+	}
+	if remade.X == 4 && remade.Y == 4 {
+		t.Fatal("a recreated file inherited the retired row's placement")
 	}
 	// Deleting an UNTOUCHED entry involves no row at all: the plugin trashes
 	// the file and the next listing simply does not name it.

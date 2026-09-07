@@ -663,5 +663,37 @@ func TestKeyFormIdsCrossTheTunnel(t *testing.T) {
 	if err != nil || string(body) != "hello from the far side" {
 		t.Fatalf("ReadContent on a key-form id through the chain = %q (%v)", body, err)
 	}
-	fmt.Println("connections spawn gate: key-form ids cross the tunnel and route back OK")
+
+	// And the id survives a TOUCH made from this side. A durable fact mints a
+	// row on the far node, in the far plugin's namespace of the far store, and
+	// the entry keeps the id its listing answers under (#297). A rename there
+	// would be invisible on either node alone: the local client holds a fully
+	// qualified chain, so a remote row id comes back wearing the same prefix,
+	// and only a re-list through the tunnel tells the two apart.
+	placed := rpc(t, localOrigin, "PlaceTile", map[string]any{
+		"tileId": farID, "gridId": fsRoot, "x": 6, "y": 3, "w": 1, "h": 1,
+	})["tile"].(map[string]any)
+	if placed["id"] != farID {
+		t.Fatalf("the touch renamed the far entry: %v, was %q", placed["id"], farID)
+	}
+	g = rpc(t, localOrigin, "GetGrid", map[string]any{"gridId": fsRoot})
+	var again map[string]any
+	for _, ti := range g["tiles"].([]any) {
+		tm := ti.(map[string]any)
+		if tm["altText"] == "far.txt" {
+			again = tm
+		}
+	}
+	if again == nil || again["id"] != farID {
+		t.Fatalf("the far listing renamed far.txt after the touch: %v, was %q", again, farID)
+	}
+	// proto-JSON renders int64 as a string, so compare by rendering.
+	if fmt.Sprint(again["x"]) != "6" || fmt.Sprint(again["y"]) != "3" {
+		t.Fatalf("the placement did not cross the tunnel: %v", again)
+	}
+	body, _, _, err = clientFor(localOrigin).ReadContent(context.Background(), farID)
+	if err != nil || string(body) != "hello from the far side" {
+		t.Fatalf("ReadContent after the touch = %q (%v)", body, err)
+	}
+	fmt.Println("connections spawn gate: key-form ids cross the tunnel, survive a touch, and route back OK")
 }

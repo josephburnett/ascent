@@ -13,10 +13,11 @@
 //
 // Listing writes nothing. A grid's answer is a JOIN: the plugin's List
 // supplies the entries, store.Namespace.Overlay lays the minted rows over
-// them, and an entry with no row is answered at a derived placement under a
-// derived address (see address.go) rather than a row id. A row appears only
-// when the user makes a durable fact — a move, a resize, a framing, a
-// reference — and that is the one mint, Adapter.mint.
+// them, and every entry is answered under its derived address (see
+// address.go), row or no row — an entry with no row is answered at a derived
+// placement too. A row appears only when the user makes a durable fact about
+// an entry — a move, a resize, a framing — and that is the one mint,
+// Adapter.mint. A reference does not mint: it stores the address.
 //
 // Outages split by whose fact is missing. A dark source — the plugin answers,
 // but its directory, its API, or its process table does not — costs only what
@@ -304,11 +305,11 @@ func engineEntries(entries []*pluginv1.Entry) []store.Entry {
 }
 
 // buildTiles joins the overlay's rows with the listing's content facts and
-// names each one: a minted TILE by its row id, an untouched one by its derived
-// address. A well's CHILD GRID is always named by the address, row or no row —
-// a grid keeps its name (see canonicalGridID), so the id a well hands the
-// client must be the id GetGrid answers under, and the row the mint stored
-// stays what it is: storage, resolved on the way in, never a name handed out.
+// names each one by its derived address, row or no row (see tileAddr). A
+// well's CHILD GRID is named the same way, by canonicalGridID: the id a well
+// hands the client must be the id GetGrid answers under, and the row the mint
+// stored stays what it is — storage, resolved on the way in, never a name
+// handed out.
 func buildTiles(gridID, context string, tiles []store.ExtTile, entries []*pluginv1.Entry, childGrid func(string) (string, error), rowContext func(int64) (string, error)) ([]*gridwellv1.Tile, error) {
 	byKey := map[string]*pluginv1.Entry{}
 	for _, e := range entries {
@@ -316,12 +317,8 @@ func buildTiles(gridID, context string, tiles []store.ExtTile, entries []*plugin
 	}
 	out := make([]*gridwellv1.Tile, 0, len(tiles))
 	for _, t := range tiles {
-		id := tileAddr(context, t.Key)
-		if t.ID != 0 {
-			id = strconv.FormatInt(t.ID, 10)
-		}
 		pt := &gridwellv1.Tile{
-			Id:          id,
+			Id:          tileAddr(context, t.Key),
 			GridId:      gridID,
 			Kind:        t.Kind,
 			X:           t.X,
@@ -412,16 +409,9 @@ func (a *Adapter) resolveGrid(gridID string) (gid int64, context string, err err
 
 // canonicalGridID is the one name a context answers to, and it is the derived
 // address FOR GOOD — a grid keeps its name even after the store mints a row
-// for it.
-//
-// A tile can be renamed by its mint because a grid answer replaces the whole
-// tile set at once; a GRID cannot, because the client is standing in it. A
-// pane holds its anchor grid id, and the moment the first tile in that grid is
-// dragged — which is what mints the grid's row — a numeric answer would make
-// the pane's anchor name a grid nothing answers to, and the room would go
-// blank under the user's hand. The row is storage; the address is the name.
-// Both still resolve on the way in (resolveGrid), so a reference stored before
-// this rule keeps working.
+// for it. It is the grid half of the rule tileAddr states for entries: the
+// address is the name, the row is storage. Both still resolve on the way in
+// (resolveGrid), so a reference stored before this rule keeps working.
 func (a *Adapter) canonicalGridID(context string) (string, error) {
 	return gridAddr(context), nil
 }
@@ -665,28 +655,32 @@ func (a *Adapter) mint(ctx context.Context, tileID string) (int64, error) {
 	return a.mem.Mint(gid, engineEntries([]*pluginv1.Entry{entry})[0], child, row.X, row.Y, row.W, row.H)
 }
 
-// MintRef is the node's door onto that mint: the router calls it before
-// STORING a reference to a plugin tile or grid, because a reference at rest
-// must name a row. It answers the canonical local id, which is what the
-// reference then holds.
-func (a *Adapter) MintRef(ctx context.Context, localID string) (string, error) {
+// MintRef is the router's canonicalizer, called before a reference to a plugin
+// tile or grid is STORED. A plugin's canonical id is its derived address —
+// tile and grid alike (tileAddr, canonicalGridID) — so this mints nothing: the
+// address is what the listing answers, what a write answers, and therefore what
+// a reference must hold, or the same document reached through a link would wear
+// a second name and open a second live surface.
+//
+// A row id arriving here is a reference made under the older rule, being
+// re-stored: it answers the address so the copy moves forward, while the
+// original keeps resolving where it lies (resolveTile and resolveGrid read
+// both shapes). Digits alone do not say whether they name a tile row or a
+// grid row, so both are tried, in that order.
+func (a *Adapter) MintRef(_ context.Context, localID string) (string, error) {
 	switch rpc.ShapeOf(localID) {
 	case rpc.ShapeRow:
+		if ref, err := a.resolveTile(localID); err == nil {
+			return tileAddr(ref.context, ref.key), nil
+		}
+		if _, ckey, err := a.resolveGrid(localID); err == nil {
+			return gridAddr(ckey), nil
+		}
+		// A row nothing here answers to — retired, or never this namespace's
+		// — answers itself: what it names is not this call's verdict to make.
 		return localID, nil
 	case rpc.ShapeKey:
-		_, _, isTile, _ := splitAddr(localID)
-		if !isTile {
-			// A grid keeps its address as its name (canonicalGridID), so a
-			// reference to one is already canonical and durable: the context
-			// key is as permanent as the plugin's keys, and a row would only
-			// give it a second name the client could not follow.
-			return localID, nil
-		}
-		id, err := a.mint(ctx, localID)
-		if err != nil {
-			return "", err
-		}
-		return strconv.FormatInt(id, 10), nil
+		return localID, nil
 	default:
 		return "", status.Errorf(codes.InvalidArgument, "plugin: invalid id %q", localID)
 	}

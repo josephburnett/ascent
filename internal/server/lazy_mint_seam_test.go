@@ -145,10 +145,19 @@ func TestListingAHundredEntriesMintsNothing(t *testing.T) {
 }
 
 // The derived answer IS the arrangement: touching every tile in a fresh grid
-// changes the ids and nothing else — same keys, kinds, labels, placements, in
-// the same order. That is what makes lazy minting invisible: the grid a user
-// sees before they touch anything is the grid mint-on-list used to write.
-func TestTouchingEveryTileChangesOnlyTheIds(t *testing.T) {
+// changes NOTHING the client can see — same ids, keys, kinds, labels,
+// placements, in the same order. That is what makes lazy minting invisible: the
+// grid a user sees before they touch anything is the grid mint-on-list used to
+// write, and the row the touch stores is bookkeeping underneath it.
+//
+// The id half is the whole of #297. This test used to require the opposite —
+// that a touch RENAME every tile — which is how the drift stayed invisible: the
+// lazy-minting decision said a plugin thing keeps its key-form address for
+// good, and nothing pinned what the LISTING answers across a mint. A rename
+// takes the id out from under whoever is standing on it: a URL segment naming a
+// directory doorway stopped resolving once the descent's own reframe minted it,
+// and a pane inside a read-only file lost its content id to a scroll.
+func TestTouchingEveryTileChangesNothingTheClientCanSee(t *testing.T) {
 	cl, _, _, fsRoot := lazyStack(t)
 	ctx := context.Background()
 	root := fsGrid(t, cl, fsRoot, 12)
@@ -179,8 +188,8 @@ func TestTouchingEveryTileChangesOnlyTheIds(t *testing.T) {
 			d.X != m.X || d.Y != m.Y || d.W != m.W || d.H != m.H {
 			t.Fatalf("tile %d moved when it was minted: %+v != %+v", i, m, d)
 		}
-		if d.ID == m.ID {
-			t.Fatalf("tile %d kept its derived address after a touch: %q", i, m.ID)
+		if d.ID != m.ID {
+			t.Fatalf("tile %d was renamed by its mint: %q, was %q — everything standing on the old id is now naming a tile the listing does not contain", i, m.ID, d.ID)
 		}
 	}
 }
@@ -231,11 +240,14 @@ func TestOneMoveMintsExactlyOneRow(t *testing.T) {
 	}
 }
 
-// A link is a durable fact ABOUT the target, so dropping one on an untouched
-// entry mints it — and what lands in the home row is the row id, never the
-// derived address, because a reference at rest must name something that
-// cannot reflow.
-func TestALinkOntoAnUntouchedEntryMintsItAsARow(t *testing.T) {
+// A link stores the address the user dragged, tile and grid alike, and mints
+// nothing in the plugin's namespace: a plugin thing's public id is its
+// key-form address, so a reference at rest already names something that cannot
+// reflow, and the address is the same name the listing answers. Storing a row
+// id instead would give the same document two names — one reached in place and
+// one reached through the link — and the client keys a live surface, and a
+// text save queue, by that name (rpc.Tile.ContentID).
+func TestALinkOntoAnUntouchedEntryStoresItsAddress(t *testing.T) {
 	cl, st, _, fsRoot := lazyStack(t)
 	ctx := context.Background()
 	root := fsGrid(t, cl, fsRoot, 5)
@@ -280,15 +292,16 @@ func TestALinkOntoAnUntouchedEntryMintsItAsARow(t *testing.T) {
 		t.Fatalf("exit well onto an untouched directory: %v", err)
 	}
 
-	// What is at rest. A TILE reference names a row: the entry earned one when
-	// the link was stored, because a derived placement can reflow and a link
-	// must keep naming the same thing. A GRID reference keeps the address: a
-	// grid answers to its address for good (the pane the user is standing in
-	// holds that name), and the context key is as permanent as the plugin's
-	// keys, so there is nothing a row would make safer.
+	// What is at rest: the id the user dragged, unchanged. Tile and grid alike
+	// answer to their key-form address for good, and the context key and the
+	// entry key are as permanent as the plugin's keys, so there is nothing a
+	// row would make safer — and a second name is what a row would cost.
 	ns, local, ok := rpc.SplitID(link.LinkTargetID)
-	if !ok || ns != fsPluginUUID || rpc.ShapeOf(local) != rpc.ShapeRow {
-		t.Fatalf("link_target_id = %q: a leaf link at rest must name a row in the fs plugin", link.LinkTargetID)
+	if !ok || ns != fsPluginUUID || rpc.ShapeOf(local) != rpc.ShapeKey {
+		t.Fatalf("link_target_id = %q: a leaf link at rest must name the entry's address in the fs plugin", link.LinkTargetID)
+	}
+	if link.LinkTargetID != leaf.ID {
+		t.Fatalf("link_target_id = %q, want the id the user dragged, %q", link.LinkTargetID, leaf.ID)
 	}
 	if mount.ChildGridID != well.ChildGridID {
 		t.Fatalf("child_grid_id = %q, want the grid the user dragged, %q", mount.ChildGridID, well.ChildGridID)
@@ -305,8 +318,11 @@ func TestALinkOntoAnUntouchedEntryMintsItAsARow(t *testing.T) {
 	if string(body) != leaf.AltText {
 		t.Fatalf("the link reads %q, want the file %q", body, leaf.AltText)
 	}
-	if tiles, _ := pluginRows(t, st); tiles != 1 {
-		t.Fatalf("the two drops minted %d tile rows, want exactly the one the leaf link names", tiles)
+	// And neither drop wrote a row in the plugin's namespace: a link is a
+	// durable fact about the LINK, which is a home row; the entry it names
+	// needs nothing stored to keep answering.
+	if tiles, _ := pluginRows(t, st); tiles != 0 {
+		t.Fatalf("the two drops minted %d tile rows, want none: a reference names the address", tiles)
 	}
 }
 

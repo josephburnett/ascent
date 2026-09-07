@@ -74,9 +74,10 @@ type Entry struct {
 type Hint struct{ X, Y, W, H int64 }
 
 // ExtTile is one joined entry: the plugin's content facts over the user's
-// stored arrangement. ID is the minted row id, or 0 when the entry has no
-// row yet and X/Y/W/H are therefore DERIVED — the caller names such a tile by
-// its key rather than by a row id.
+// stored arrangement. ID is the minted row id, or 0 when the entry has no row
+// yet and X/Y/W/H are therefore DERIVED. The caller names every such tile by
+// its KEY either way — the row is where the arrangement lives, never a name
+// handed out (pluginhost.tileAddr).
 type ExtTile struct {
 	ID          int64
 	Key         string

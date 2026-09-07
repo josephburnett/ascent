@@ -8,7 +8,23 @@ import * as path from 'node:path';
 // persists its viewport.
 
 const FS_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'gridwell-framing-'));
-test.use({ extraPlugins: [{ kind: 'fs', name: 'pics', config: { root: FS_ROOT } }] });
+// A second fs root, with a subdirectory in it: the mid-descent reframe needs a
+// doorway to descend through, and FS_ROOT must stay empty for the root-grid pan
+// above, whose press would otherwise land on a tile instead of the grid.
+const DOC_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'gridwell-framing-doc-'));
+fs.mkdirSync(path.join(DOC_ROOT, 'papers'));
+fs.writeFileSync(path.join(DOC_ROOT, 'papers', 'one.md'), '# one\n');
+// Two plugins go through the FIXTURE form, not a plain array: Playwright reads
+// a two-element array option as its [value, options] tuple, so a literal pair
+// would seed only the first — silently, as a home with no plugins at all.
+test.use({
+  extraPlugins: async ({}, use) => {
+    await use([
+      { kind: 'fs', name: 'pics', config: { root: FS_ROOT } },
+      { kind: 'fs', name: 'docs', config: { root: DOC_ROOT } },
+    ]);
+  },
+});
 
 // A framing save that races a version-bumping write retries with a fresh claim
 // instead of dropping silently.
@@ -107,6 +123,45 @@ test('text scroll persists without an ascent', async ({ gw, window }) => {
       { message: 'the scroll reached server truth with NO ascent', timeout: 10_000 },
     )
     .toBeGreaterThan(0);
+});
+
+// A directory doorway reframed MID-DESCENT is that entry's first durable fact,
+// and the URL is carrying the doorway's id while it happens. When the mint
+// renamed the doorway, the refetched listing no longer held the id the URL
+// named, urlwalk.Walk skipped it, and the reload dropped the user at the plugin
+// root instead of inside the directory. #297
+test('a directory reframed mid-descent is still there after a reload', async ({ gw, window }) => {
+  await gw.enterPlugin('docs');
+  const root = (await gw.focused()).gridID;
+  const dir = (await gw.getGrid(root)).tiles!.find((t) => t.altText === 'papers');
+  expect(dir, 'papers listed').toBeTruthy();
+  const doorway = dir!.id;
+  await gw.descendCell(Number(dir!.x ?? 0), Number(dir!.y ?? 0));
+  await expect.poll(async () => (await gw.focused()).gridID).not.toBe(root);
+  const inside = (await gw.focused()).gridID;
+  // The reframe: the descent's own zoom, which is what mints the doorway's row.
+  await gw.wheelAtFocusedCenter(-240);
+  const papers = async () => (await gw.getGrid(root)).tiles!.find((t) => t.altText === 'papers')!;
+  await expect
+    .poll(async () => Number(((await papers()) as { viewZoom?: number | string }).viewZoom ?? 0), {
+      message: 'the framing reached the doorway row',
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(0);
+  expect((await papers()).id, 'the framing renamed the doorway the URL is carrying').toBe(doorway);
+
+  await window.reload();
+  await window.waitForFunction(() => !!(window as any).__gridwellTest, null, { timeout: 30_000 });
+  await expect
+    .poll(async () => (await gw.focused()).gridID, {
+      message: 'the restore landed outside the directory the user was inside',
+      timeout: 30_000,
+    })
+    .toBe(inside);
+  expect(
+    (await gw.focused()).placeDepth,
+    'the restore landed on a root, not through the doorway',
+  ).toBeGreaterThan(0);
 });
 
 // One active surface per grid: a passive sibling pane never overwrites the

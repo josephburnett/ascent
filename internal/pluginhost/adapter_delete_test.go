@@ -94,7 +94,8 @@ func TestDeleteRetiresOnlyWhatTheSourceSaysIsGone(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Cleanup(cpCloser)
-			client := pluginhost.New(cp, memStore.Namespace("p1"), nil)
+			ns := memStore.Namespace("p1")
+			client := pluginhost.New(cp, ns, nil)
 			ctx := context.Background()
 
 			info, err := client.Info(ctx, &gridwellv1.InfoRequest{})
@@ -110,43 +111,51 @@ func TestDeleteRetiresOnlyWhatTheSourceSaysIsGone(t *testing.T) {
 			}
 			// The durable touch: a move is what mints the row, and the row is
 			// what the delete must decide about.
-			moved, err := client.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
-				TileId: before.Tiles[0].Id, X: 5, Y: 5, W: 3, H: 2,
-			})
-			if err != nil {
+			addr := before.Tiles[0].Id
+			if _, err := client.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
+				TileId: addr, X: 5, Y: 5, W: 3, H: 2,
+			}); err != nil {
 				t.Fatal(err)
 			}
-			rowID := moved.GetTile().GetId()
+			// The row the placement minted, read where it lives: the entry's
+			// public id never changes, so the row is the only thing a
+			// retirement can burn, and it is what this test watches — through
+			// the id a reference stored under the older rule still holds.
+			rowID := rowIDOf(t, ns, "r", "todo:1")
 
-			if _, err := client.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: rowID}); err != nil {
+			if _, err := client.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: addr}); err != nil {
 				t.Fatalf("DeleteTile: %v", err)
 			}
 			if got := impl.deleteCount(); got != 1 {
 				t.Fatalf("the plugin saw %d deletes, want exactly the one gesture", got)
 			}
 
-			tile, err := client.GetTile(ctx, &gridwellv1.GetTileRequest{TileId: rowID})
+			// The listing keeps naming the entry either way: this plugin never
+			// stops listing the key, and the address is the key's. What the
+			// delete decided is whether the ROW — the placement, and every
+			// stored reference — went with it.
+			after, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(after.Tiles) != 1 || after.Tiles[0].GetId() != addr {
+				t.Fatalf("listing after the delete = %v, want the one entry at %s", after.Tiles, addr)
+			}
+			stored, err := client.GetTile(ctx, &gridwellv1.GetTileRequest{TileId: rowID})
 			if !tc.wantRow {
 				if status.Code(err) != codes.NotFound {
-					t.Fatalf("GetTile on the retired row = (%v, %v), want NotFound", tile.GetTile(), err)
+					t.Fatalf("GetTile on the retired row = (%v, %v), want NotFound", stored.GetTile(), err)
+				}
+				if got := after.Tiles[0]; got.GetX() == 5 && got.GetY() == 5 {
+					t.Errorf("the row retired but its placement survived: %+v", got)
 				}
 				return
 			}
 			if err != nil {
 				t.Fatalf("the row went with the delete: GetTile %s: %v", rowID, err)
 			}
-			if got := tile.GetTile(); got.GetX() != 5 || got.GetY() != 5 || got.GetW() != 3 || got.GetH() != 2 {
+			if got := stored.GetTile(); got.GetX() != 5 || got.GetY() != 5 || got.GetW() != 3 || got.GetH() != 2 {
 				t.Errorf("placement after the delete = %+v, want the 5,5 3x2 the user left", got)
-			}
-			// And the next listing still names the entry BY THAT ROW: an entry
-			// answered at a derived address again is a fresh identity, which is
-			// what breaks every stored reference to it.
-			after, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(after.Tiles) != 1 || after.Tiles[0].GetId() != rowID {
-				t.Fatalf("listing after the delete = %v, want the one entry on row %s", after.Tiles, rowID)
 			}
 			if after.Tiles[0].GetX() != 5 || after.Tiles[0].GetY() != 5 {
 				t.Errorf("the listing put the entry back at its hint: %+v", after.Tiles[0])

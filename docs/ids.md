@@ -7,14 +7,14 @@ peels one segment; the segment's shape says what it is:
 |---|---|---|
 | letter-leading | `ngkwanw`, `fa21d5d1…` | a namespace: node, plugin, or connection (7-char base36 or legacy 32-hex) |
 | digits | `14` | a minted row (tile or grid) in the owner's store — permanent, never reused |
-| `~` + base64url(address) | `~L2hvbWUvam9l` | a plugin thing named by its own address — no row; mints to digits on first durable touch |
+| `~` + base64url(address) | `~L2hvbWUvam9l` | a plugin thing named by its own address — its one public id, tile or grid |
 
 ## Examples
 
 ```
 52f8374f…/14                    home tile 14 (node id = home's id)
-ngkwanw/7                       minted tile 7 in gitlab's namespace
-fa21d5d1…/~L2hvbWUvam9l         the untouched fs grid of /home/joe
+ngkwanw/7                       a gitlab tile stored under row 7 before this rule
+fa21d5d1…/~L2hvbWUvam9l         the fs grid of /home/joe
 8aed…/eoifgyl/rp1nodeX/3        via connection eoifgyl → remote node → its tile 3
 ```
 
@@ -51,7 +51,7 @@ only reader, and it writes two forms (`address.go`):
 A tile carries its context because a tile must be answerable on its own. The
 node keeps no key→context index, because such an index would be exactly the
 row lazy minting exists to avoid, and `plugin.v1` has no verb that describes
-one entry — so `GetTile` on an untouched entry is one `List` of the context
+one entry — so `GetTile` on an entry with no row is one `List` of the context
 that names it.
 
 ## Stability
@@ -59,17 +59,28 @@ that names it.
 Digits are never reused. A `~` id is as stable as the plugin's key (keys
 are forever, per the plugin contract).
 
-A stored TILE reference never holds a `~` id: the router mints
-(`namespace.Minter`) before a link or a clone stores a target, so
-`link_target_id` holds digits. A `~` id already in a client's hands keeps
-resolving after that mint — the answer just comes back named by the row.
+A plugin thing — tile or grid — keeps its `~` name FOR GOOD. The first
+durable fact the user makes about it mints a row in the plugin's namespace
+of the store, and that row is where the placement, the framing and the
+tombstone live, but it never becomes a name: the listing answers the
+address, a write answers the address, and `child_grid_id` and
+`link_target_id` hold the address verbatim.
 
-A GRID keeps its `~` name for good, minted row or not, and a
-`child_grid_id` into a plugin holds it verbatim. A grid is the one thing a
-client is STANDING IN: a pane holds its anchor grid id, and renaming a grid
-under a pane — which minting would do the moment the first tile in it was
-dragged — would leave the pane naming a grid nothing answers to. Both forms
-still resolve on the way in, so an older stored row id keeps working. A
-connection name in `retired_names:` never returns; a name the config merely
+That is because a client STANDS on these ids. A pane holds its anchor grid
+id and its content tile id, and the URL projects both; renaming either
+under the user's hand — which minting did, the moment a descent's own
+reframe wrote — left the pane naming something the listing does not
+contain, and the room went blank with nothing said (#297). The address
+cannot do that: it names the thing by what it is.
+
+Row ids stay resolvable as addresses forever, in both directions
+(`Adapter.resolveTile`, `Adapter.resolveGrid`), so a reference stored under
+the older rule keeps naming the thing it named; re-storing one canonicalizes
+it forward (`namespace.Minter`). What a retirement burns is the ROW: a
+recreated key comes back at the same address with a fresh row, holding none
+of the arrangement the retired one held, and every reference stored against
+that row stays dead.
+
+A connection name in `retired_names:` never returns; a name the config merely
 stopped declaring is not retired, and resolves again the moment it is
 declared again. Home is only ever letter + digits — it is not a plugin.

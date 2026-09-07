@@ -411,11 +411,12 @@ func (rt *router) CreateTile(ctx context.Context, req *pb.CreateTileRequest) (*p
 
 // mintReferences canonicalizes the ids a tile is about to STORE — an exit
 // well's child grid, a leaf link's target — before the create that stores
-// them. A namespace may answer an untouched thing by what it is rather than
-// by a row (pluginhost's derived addresses); a reference at rest must name a
-// row, so this is where a link or a mount pays for the row its target has
-// been getting for free. It is the one call, made by every create that can
-// carry a reference: the client's link drop and the cross-plugin clone.
+// them. A namespace may accept more than one shape for the same thing
+// (pluginhost reads a derived address and a stored row alike); a reference at
+// rest must hold the shape that namespace ANSWERS under, or the document
+// reached through the link would wear a second name from the one reached in
+// place. It is the one call, made by every create that can carry a reference:
+// the client's link drop and the cross-plugin clone.
 func (rt *router) mintReferences(ctx context.Context, t *pb.Tile) error {
 	if t == nil {
 		return nil

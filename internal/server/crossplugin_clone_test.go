@@ -508,9 +508,9 @@ func TestLinkDirWellFromFsPlugin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cross-plugin link from fs: %v", err)
 	}
-	// A reference at rest names a ROW, so storing this link is what mints the
-	// fs dir's grid: the stored child is not the derived address the client
-	// dragged, and it must open exactly the same grid — shared, not copied.
+	// A reference at rest holds the address the client dragged, which is the
+	// one name that grid answers to, and it must open exactly the same grid —
+	// shared, not copied.
 	if link.ChildGridID == "" || !strings.HasPrefix(link.ChildGridID, fsUUID+"/") {
 		t.Fatalf("link child = %q, want a grid in %q", link.ChildGridID, fsUUID)
 	}
