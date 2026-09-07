@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// There is deliberately no sqlite driver import here: the production package
-// must register the driver it uses itself. A blank import in this test file
-// would mask a missing registration, leaving every spawn failing with `unknown
-// driver "sqlite"` while this suite stayed green.
+// There is deliberately no sqlite driver import here, because the production
+// package must register the driver it uses. A blank import in this test file
+// would mask a missing registration and leave this suite green while every open
+// failed with "unknown driver".
 
 func dbpath(t *testing.T) string {
 	t.Helper()
@@ -29,7 +29,7 @@ func TestCreateRecordsIdentity(t *testing.T) {
 	if err := db.QueryRow(`SELECT v FROM _gridwell_meta WHERE k = 'gridwell'`).Scan(&marker); err != nil {
 		t.Fatalf("marker missing: %v", err)
 	}
-	// And Verify reads the identity back.
+	// Verify reads the identity back.
 	m, err := Verify(p, "", "")
 	if err != nil {
 		t.Fatalf("probe: %v", err)
@@ -64,7 +64,8 @@ func TestVerifyKindMismatch(t *testing.T) {
 	if err := Create(p, "id-1", "home"); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	// Same id, different kind: the schema would be wrong, so refuse.
+	// The kind selects the schema, so the same id under a different kind is
+	// refused.
 	if _, err := Verify(p, "id-1", "fs"); !errors.Is(err, ErrKindMismatch) {
 		t.Fatalf("kind change must be rejected, got: %v", err)
 	}
@@ -84,10 +85,9 @@ func TestVerifyReadOnlyProbe(t *testing.T) {
 	}
 }
 
-// TestVerifyUninitialized pins that Verify never creates identity. A missing
-// file and a DB with no stored identity both fail with ErrNotInitialized, so a
-// config entry whose DB was never created cannot silently open a fresh
-// store.
+// Verify never creates identity. A missing file and a DB with no stored
+// identity both fail with ErrNotInitialized, so a config entry whose DB was
+// never created cannot silently open a fresh store.
 func TestVerifyUninitialized(t *testing.T) {
 	// Missing file.
 	if _, err := Verify(dbpath(t), "id-1", "home"); !errors.Is(err, ErrNotInitialized) {
@@ -105,9 +105,8 @@ func TestVerifyUninitialized(t *testing.T) {
 	}
 }
 
-// TestVerifyLegacyUUIDPreserved proves a DB whose identity is under the older
-// "uuid" key keeps that identity: the same id is accepted rather than
-// re-minted, and a different id is rejected.
+// A DB whose identity is under the older "uuid" key keeps that identity: the
+// same id is accepted rather than re-minted, and a different id is rejected.
 func TestVerifyLegacyUUIDPreserved(t *testing.T) {
 	p := dbpath(t)
 	db, _ := sql.Open("sqlite", p)
