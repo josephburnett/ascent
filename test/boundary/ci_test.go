@@ -9,11 +9,9 @@ import (
 	"testing"
 )
 
-// TestEveryGateTargetRunsInCI pins that the Makefile is the one recipe for
-// every gate: each `check-*` target must be invoked as `make <target>` from
-// some workflow under .github/workflows. A workflow that re-spells a gate by
-// hand drifts from the Makefile, and then the recipe a developer runs is not
-// the recipe CI runs.
+// TestEveryGateTargetRunsInCI pins that every `check-*` target is invoked as
+// `make <target>` from a workflow under .github/workflows, so the recipe a
+// developer runs is the recipe CI runs.
 func TestEveryGateTargetRunsInCI(t *testing.T) {
 	root := repoRoot(t)
 	mk, err := os.ReadFile(filepath.Join(root, "Makefile"))

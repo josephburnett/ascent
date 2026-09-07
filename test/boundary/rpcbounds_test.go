@@ -7,26 +7,20 @@ import (
 	"testing"
 )
 
-// unboundedOK names the client RPCs that are allowed to run on an unbounded
-// context, by the source line that opens them. Both are long-lived streams:
-// waiting is what they are for, and each has its own re-dial loop behind it.
-// Everything else the wasm client calls is a unary RPC with an answer coming
-// or not coming, and "not coming" is the case a bound exists for.
+// unboundedOK names the client RPCs allowed to run on an unbounded context,
+// by the source line that opens them. Both are long-lived streams with their
+// own re-dial loop, so waiting is what they are for.
 var unboundedOK = map[string]string{
 	"client/wasm/main.go": "a.cl.Subscribe(context.Background())",
 }
 
-// TestClientRPCsAreBounded is the gate behind "a client RPC is bounded", the
-// rule client/inflight owns. It reads the shim rather than the packages
-// underneath because the shim is where the contexts are spelled, and the shim
-// is the one place in the client with no unit tests of its own: `make check`
-// compiles client/wasm and executes none of it.
+// TestClientRPCsAreBounded is the gate behind the bounded-RPC rule
+// client/inflight owns. It reads the shim, because that is where the contexts
+// are spelled and `make check` compiles client/wasm without executing it.
 //
-// A bare context.Background() on a unary call is how #272 and #298 were both
-// written — a read that held its dedupe claim forever, a write that could
-// never park — and neither was a decision anyone made; each was a default
-// nobody was asked about. Naming the two exceptions is what makes it a
-// decision.
+// A bare context.Background() on a unary call leaves a read holding its
+// dedupe claim forever and a write that can never park. Naming the two
+// exceptions here makes each one a decision.
 func TestClientRPCsAreBounded(t *testing.T) {
 	root := repoRoot(t)
 	dir := filepath.Join(root, "client", "wasm")
