@@ -15,8 +15,7 @@ func (w world) lookup() GridLookup {
 	}
 }
 
-// lookupFailingGrid wraps a world's lookup so fetches for badGid fail,
-// simulating a grid that can't be loaded.
+// lookupFailingGrid wraps a world's lookup so fetches for badGid fail.
 func (w world) lookupFailingGrid(badGid string) GridLookup {
 	return func(gid string) (map[string]Tile, bool) {
 		if gid == badGid {
@@ -66,8 +65,8 @@ func TestWalkContentLeaf(t *testing.T) {
 }
 
 func TestWalkSkipsMissingID(t *testing.T) {
-	// "9999" is not in grid "1": it's skipped, the walk stays in grid "1" and
-	// resolves the next id (the well "10").
+	// "9999" is not in grid "1", so the walk stays there and resolves the well
+	// "10" next.
 	w := world{
 		"1": {"10": {IsWell: true, ChildGridID: "2"}},
 		"2": {"15": {IsContent: true}},
@@ -82,7 +81,7 @@ func TestWalkSkipsMissingID(t *testing.T) {
 }
 
 func TestWalkContentMidPathIgnored(t *testing.T) {
-	// A content tile that isn't last is nonsense: skip it and keep walking.
+	// A content tile that is not last is skipped.
 	w := world{
 		"1": {"5": {IsContent: true}, "10": {IsWell: true, ChildGridID: "2"}},
 		"2": {},
@@ -97,8 +96,8 @@ func TestWalkContentMidPathIgnored(t *testing.T) {
 }
 
 func TestWalkStopsOnFailedFetch(t *testing.T) {
-	// Grid "2" fails to load: the walk ends with the path resolved so far
-	// (the well "10") and no file. A failed read never invents more path.
+	// Grid "2" fails to load, so the walk ends with the well "10" and no file.
+	// A failed read never invents more path.
 	w := world{
 		"1": {"10": {IsWell: true, ChildGridID: "2"}},
 		"2": {"20": {IsWell: true, ChildGridID: "3"}},
@@ -122,9 +121,8 @@ func TestWalkRootFetchFails(t *testing.T) {
 }
 
 func TestWalkWrongGridIDNotFollowed(t *testing.T) {
-	// id "10" exists in grid "1" but not in grid "2"; descending into a child
-	// grid must resolve subsequent ids against the child (grid "2"), not
-	// re-find "10" in the parent. Here grid "2" lacks "10", so it's skipped.
+	// id "10" exists in grid "1" but not in grid "2". After descending, later
+	// ids resolve against the child grid, so this "10" is skipped.
 	w := world{
 		"1": {"10": {IsWell: true, ChildGridID: "2"}},
 		"2": {"7": {IsContent: true}},
