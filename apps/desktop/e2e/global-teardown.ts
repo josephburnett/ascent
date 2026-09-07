@@ -1,18 +1,16 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-// Runs once after the suite: preserve failure artifacts before something
-// destroys them. Playwright wipes test-results/ at the start of the next run,
-// and the next run is usually the quick isolated rerun of the spec that just
-// failed, so the full-suite trace would be gone before anyone read past the log
-// tail. trace: retain-on-failure means test-results holds real entries exactly
-// when something failed, so they are archived next door, keeping the last few
-// runs' worth.
+// Runs once after the suite, archiving failure artifacts. Playwright wipes
+// test-results/ at the start of the next run, and the next run is usually the
+// isolated rerun of the spec that just failed, so the full-suite trace would be
+// gone before anyone read it. trace: retain-on-failure means test-results holds
+// entries only when something failed, so they are copied next door, keeping the
+// last few runs' worth.
 //
-// A hard-killed run skips globalTeardown, and its artifacts sit in test-results
-// until the next run's start-wipe. That gap is accepted: the common
-// evidence-destroyer is the vindication rerun after a red suite, and the red run
-// ended normally and archived its own artifacts before any rerun could start.
+// A hard-killed run skips globalTeardown and its artifacts sit in test-results
+// until the next run's start-wipe. A red run that ends normally archives its own
+// artifacts before any rerun can start.
 const KEEP = 5;
 
 export default function globalTeardown(): void {
