@@ -183,12 +183,6 @@ func PluginStateDir(home, id string) string {
 	return filepath.Join(home, "plugins", id)
 }
 
-// LegacyDBDir is the older per-namespace layout the converter reads:
-// <home>/db/<id>/. See node.Convert.
-func LegacyDBDir(home, id string) string {
-	return filepath.Join(home, "db", id)
-}
-
 // DefaultPath is the canonical location of the server config file:
 // <home>/server.yaml.
 func DefaultPath() (string, error) {
@@ -200,14 +194,11 @@ func DefaultPath() (string, error) {
 }
 
 // retiredKeys names the keys of retired file shapes so a stale file fails
-// with the fix, not a decoder message. The PRE-ONE-NODE vocabulary is not
-// here: `node_id`, a plugin row's `name`, the retired per-row flag and the
-// home/transport kinds are legacy.go's markers, and it owns them — a second
-// copy of that list would be a second thing to keep in step. These two are
-// what is left: keys of a file the converter does not recognize as legacy.
+// with the fix, not a decoder message.
 var retiredKeys = map[string]string{
 	"bind":     "is `web: {bind: …}`",
 	"password": "is the web-password file beside this config (delete it to rotate)",
+	"node_id":  "is the layout Gridwell used before one database per node; v0.1.0 is the last release that converts a home written that way",
 }
 
 // Load reads path and returns a ServerConfig with defaults filled in for
@@ -215,20 +206,10 @@ var retiredKeys = map[string]string{
 // serve creates the file, in BuildConfig. The decode is strict: an unknown
 // key is an error, so a retired key fails loudly instead of being silently
 // ignored. Tilde paths are expanded.
-//
-// A PRE-ONE-NODE file converts itself here first (legacy.go): the strict
-// decode below would refuse every retired key, and refusing is what kept
-// node.Convert — the database half of the same upgrade — from ever running.
-// The original is set aside; a file already in the new shape is untouched.
 func Load(path string) (*ServerConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("config: read %s: %w", path, err)
-	}
-	if looksLegacy(data) {
-		if data, err = convertFile(path, data); err != nil {
-			return nil, fmt.Errorf("config: convert %s: %w", path, err)
-		}
 	}
 	cfg, err := Parse(data)
 	if err != nil {
@@ -258,7 +239,7 @@ func Parse(data []byte) (*ServerConfig, error) {
 		}
 		switch cfg.Plugins[i].Kind {
 		case "home", "remote", "local", "localdb", "ssh":
-			return nil, fmt.Errorf("plugins[%d]: kind %q is the node itself, not a plugin — delete the entry (the node's id is `id:`, its connections are `connections:`)", i, cfg.Plugins[i].Kind)
+			return nil, fmt.Errorf("plugins[%d]: kind %q is the node itself, not a plugin: the node's id is `id:` and its connections are `connections:` — a home that still lists them here is the shape v0.1.0 was the last release to convert", i, cfg.Plugins[i].Kind)
 		}
 	}
 	if err := expandPaths(&cfg); err != nil {
@@ -309,13 +290,6 @@ func Save(path string, cfg *ServerConfig) error {
 	if err != nil {
 		return fmt.Errorf("config: marshal: %w", err)
 	}
-	return writeFileAtomic(path, out)
-}
-
-// writeFileAtomic is the one config write: 0600, through a temp file and a
-// rename, so a crash mid-write never loses the only copy of the node's ids.
-// Save and the legacy conversion both go through it.
-func writeFileAtomic(path string, out []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("config: mkdir: %w", err)
 	}

@@ -56,10 +56,10 @@ interface StartOptions {
 // stop() terminates the child.
 //
 // Silent, not slow: the wait is a silence window reset by every line the
-// sidecar prints, never a deadline on boot. A fixed deadline SIGTERMed a
-// live, working server — an upgrade converting a real home announces each
-// step it finishes and then takes minutes over the next one — and killing a
-// mid-conversion process is how an upgrade path gets torn in half.
+// sidecar prints, never a deadline on boot. A boot step that outlasts the
+// window has to keep talking — a fixed deadline SIGTERMs a live, working
+// server, and killing one mid-write to the store is how a home gets torn in
+// half.
 export async function startSidecar(opts: StartOptions = {}): Promise<Sidecar> {
   const bin = opts.binaryPath ?? sidecarBinary();
   if (!opts.spawnFn && !fs.existsSync(bin)) {

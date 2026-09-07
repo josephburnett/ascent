@@ -112,23 +112,11 @@ because an existing home already has them written down.
 `plugins`. A missing file is a fresh home. The node builds its own home and
 transport. `plugins:` lists content plugins only.
 
-A pre-one-node home converts itself at the first load, both halves: the old
-config shape — `node_id:`, every namespace under `plugins:`, `name:`, the
-retired per-row flag — becomes the one-node shape, and the `db/<id>/` layout
-beside it folds into `gridwell.db` (`internal/config/legacy.go` then
-`node.Convert`). The node's id is the old `kind: home` row's, never
-`node_id`; the originals are set aside as `server.yaml.pre-one-node` and
-`db.pre-one-node`, never deleted; a conversion that cannot be made without
-guessing refuses and leaves the file as it was. Serve mints what is absent.
-Those are the only two config writes.
-
-The fold has to be crash-safe: it runs once, on real data, under a kill it
-does not control (the desktop wrapper SIGTERMs a sidecar that has not
-announced itself). It is built into `gridwell.db.converting` and published
-with one rename, so a kill leaves either the untouched `db/` to retry from or
-a complete `gridwell.db`; the single window in between — a finished store
-beside a `db/` not yet set aside — is finished by `ensureStore`, never
-converted a second time.
+Serve mints what is absent, and that is the only config write. A home in the
+layout from before one database per node — a `db/<id>/` directory and no
+`gridwell.db` — is refused rather than served: v0.1.0 is the last release that
+folds one in, and minting an empty store beside that content would come up as
+a home that had lost everything.
 
 **Home** (`internal/local`) owns the user's content: text, urls, wells, pane
 tiles, shells, and the event stream. Shells are tmux sessions on a private
