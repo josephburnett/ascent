@@ -22,7 +22,7 @@ func TestParkAckDrain(t *testing.T) {
 		t.Fatalf("Len = %d, want 3", o.Len())
 	}
 
-	// A completed attempt (success or verdict) clears its key.
+	// A completed attempt clears its key.
 	o.Ack(k("SetTextView", "2"))
 	if o.Len() != 2 {
 		t.Fatalf("Len after Ack = %d, want 2", o.Len())
@@ -41,10 +41,8 @@ func TestParkAckDrain(t *testing.T) {
 	}
 }
 
-// TestParkReplacesLastWriterWins pins the last-writer-wins rule: a newer
-// parked value for the same key replaces the older thunk — the drain lands
-// the newest viewport rather than replaying history — and keeps the original
-// drain position.
+// TestParkReplacesLastWriterWins pins that a newer thunk for the same key
+// replaces the older one and keeps its drain position.
 func TestParkReplacesLastWriterWins(t *testing.T) {
 	o := New()
 	var fired []string
@@ -62,9 +60,8 @@ func TestParkReplacesLastWriterWins(t *testing.T) {
 	}
 }
 
-// TestReparkDuringDrain pins convergence on a still-dead link: a drained
-// thunk whose retry fails on transport parks itself again (through Record),
-// and the outbox must hold it for the next kick rather than lose it.
+// TestReparkDuringDrain pins convergence on a dead link: a drained thunk
+// whose retry fails on transport parks itself again for the next kick.
 func TestReparkDuringDrain(t *testing.T) {
 	o := New()
 	attempts := 0
@@ -82,8 +79,7 @@ func TestReparkDuringDrain(t *testing.T) {
 	if attempts != 1 || o.Len() != 1 {
 		t.Fatalf("after failed drain: attempts=%d len=%d, want 1 and 1", attempts, o.Len())
 	}
-	// The link heals: the next drain fires it once, and Record with an OK
-	// outcome acks instead of re-parking.
+	// Once the link heals, the next drain fires it once and Record acks.
 	for _, fn := range o.Drain() {
 		_ = fn
 		o.Record(clientsync.OutcomeOK, k("SetFraming", "1"), retry)
@@ -93,11 +89,9 @@ func TestReparkDuringDrain(t *testing.T) {
 	}
 }
 
-// TestRecordIsTheOneRule is the whole reconcile table: only a transport
-// failure parks. Every other outcome means the server spoke — the write
-// landed, lost a version race, or was refused — and the caller's own reaction
-// (refetch, surface, drop the local copy) resolves it from there. A parked
-// retry after a verdict would replay a write the server already answered.
+// TestRecordIsTheOneRule pins the reconcile table: only a transport failure
+// parks. A parked retry after a verdict would replay a write the server has
+// already answered.
 func TestRecordIsTheOneRule(t *testing.T) {
 	cases := []struct {
 		out       clientsync.Outcome
@@ -117,10 +111,9 @@ func TestRecordIsTheOneRule(t *testing.T) {
 	}
 }
 
-// TestRecordAcksAStaleParkOnSuccess: a write that lands clears an entry an
-// earlier attempt parked, or the next drain replays old state over the value
-// the server now holds. Acking on every completion, not just failures, is
-// what makes the last-writer-wins rule hold across a reconnect.
+// TestRecordAcksAStaleParkOnSuccess pins that a write which lands clears an
+// entry an earlier attempt parked, so no drain replays old state over the
+// value the server now holds.
 func TestRecordAcksAStaleParkOnSuccess(t *testing.T) {
 	o := New()
 	o.Park(k("SetFraming", "1"), func() { t.Error("stale parked write was replayed") })
@@ -133,9 +126,8 @@ func TestRecordAcksAStaleParkOnSuccess(t *testing.T) {
 	}
 }
 
-// TestRecordWithNoRetryStillAcks: a write with nothing to park (a create, a
-// drag whose ghost snaps back — the failure is visible on screen and is the
-// reconcile) leaves no stale entry behind when it completes.
+// TestRecordWithNoRetryStillAcks pins that a write with nothing to park
+// leaves no stale entry behind when it completes.
 func TestRecordWithNoRetryStillAcks(t *testing.T) {
 	o := New()
 	o.Park(k("CreateText", "1"), func() { t.Error("replayed") })
@@ -145,8 +137,8 @@ func TestRecordWithNoRetryStillAcks(t *testing.T) {
 	}
 }
 
-// TestKeysReportsDrainOrder: the observability read sees exactly what a drain
-// would run, in the order it would run it, and leaves the outbox alone.
+// TestKeysReportsDrainOrder pins that Keys sees what a drain would run, in
+// order, and leaves the outbox alone.
 func TestKeysReportsDrainOrder(t *testing.T) {
 	o := New()
 	o.Park(k(OpContent, "9"), func() {})
@@ -163,12 +155,9 @@ func TestKeysReportsDrainOrder(t *testing.T) {
 	}
 }
 
-// TestRecordContentIsTheDirtinessFork is the content op's whole rule as a
-// table: dirty × parked. It lived in client/wasm, where nothing executes it —
-// make check compiles the wasm shim and runs none of it (CLAUDE.md §5) — so
-// the one decision that says which tiles still owe the server their bytes had
-// no test at all. Absent+clean is the case that matters most: an ack there
-// must not resurrect a key.
+// TestRecordContentIsTheDirtinessFork tables the content op's rule over
+// dirty and parked. An ack for a key that is absent and clean must not
+// resurrect it.
 func TestRecordContentIsTheDirtinessFork(t *testing.T) {
 	for _, tc := range []struct {
 		name          string
@@ -197,8 +186,8 @@ func TestRecordContentIsTheDirtinessFork(t *testing.T) {
 			if keys := o.Keys(); len(keys) != 1 || keys[0] != k(OpContent, "t1") {
 				t.Fatalf("keys = %v, want one content key for t1", keys)
 			}
-			// The parked thunk is the one just handed over, not a stale
-			// closure over older bytes.
+			// The parked thunk is the one just handed over, so it
+			// closes over the newest bytes.
 			for _, fn := range o.Drain() {
 				fn()
 			}
@@ -209,11 +198,9 @@ func TestRecordContentIsTheDirtinessFork(t *testing.T) {
 	}
 }
 
-// TestSyncContentParksTheDirtySetInOrder: the pre-drain sweep re-derives the
-// content entries from the cache's dirty set, in the order it is given, and
-// touches nothing else. It parks what is dirty and judges nothing it cannot
-// see — a parked key for a tile absent from the set keeps its place, because
-// this sweep is belt and braces for a drain, never a garbage collector.
+// TestSyncContentParksTheDirtySetInOrder pins that the pre-drain sweep parks
+// the dirty ids in the order given and touches nothing else. A parked key for
+// a tile absent from the set keeps its place.
 func TestSyncContentParksTheDirtySetInOrder(t *testing.T) {
 	o := New()
 	o.Park(k("SetFraming", "w1"), func() {})
@@ -234,7 +221,7 @@ func TestSyncContentParksTheDirtySetInOrder(t *testing.T) {
 			t.Fatalf("keys = %v, want %v", got, want)
 		}
 	}
-	// A second sweep is idempotent: same keys, same order, one thunk each.
+	// A second sweep gives the same keys in the same order.
 	o.SyncContent([]string{"t1", "t2"}, func(id string) func() {
 		return func() { fired = append(fired, id) }
 	})
@@ -249,12 +236,9 @@ func TestSyncContentParksTheDirtySetInOrder(t *testing.T) {
 	}
 }
 
-// TestSendParksBeforeTheAnswer is the park-before-the-answer rule, and the
-// whole of #298: a write whose transport never answers must already be in the
-// outbox while it waits. Recording the write on its return can only ever see
-// the writes that return, so the one request the network swallows — the case
-// the outbox exists for — was the one it never heard about, and the closure
-// holding the user's bytes died with its goroutine.
+// TestSendParksBeforeTheAnswer pins that a write whose transport never
+// answers is already in the outbox while it waits. A write recorded on its
+// return would be recorded only if it returns.
 func TestSendParksBeforeTheAnswer(t *testing.T) {
 	o := New()
 	blackhole := make(chan struct{})
@@ -266,8 +250,8 @@ func TestSendParksBeforeTheAnswer(t *testing.T) {
 	})
 	<-sent
 
-	// The call is out and no answer is coming. The write is owed a verdict,
-	// so it is parked, drainable, and visible to the "unsaved work" read.
+	// The call is out and no answer is coming, so the write stays parked,
+	// drainable, and visible to Keys.
 	deadline := time.Now().Add(2 * time.Second)
 	for o.Len() == 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
@@ -278,10 +262,8 @@ func TestSendParksBeforeTheAnswer(t *testing.T) {
 	close(blackhole)
 }
 
-// TestSendAcksOnTheVerdict: the park is intent, not a second copy of the
-// write. The server's answer resolves it through Record's one fork — a
-// verdict acks the key it parked at send, a transport failure leaves it for
-// the drain — so an ordinary write leaves nothing behind.
+// TestSendAcksOnTheVerdict pins that a verdict acks the key Send parked, so
+// an ordinary write leaves nothing behind.
 func TestSendAcksOnTheVerdict(t *testing.T) {
 	dead := connect.NewError(connect.CodeUnavailable, errors.New("refused"))
 	cases := []struct {
@@ -313,9 +295,8 @@ func TestSendAcksOnTheVerdict(t *testing.T) {
 	}
 }
 
-// TestSendWithNoRetryParksNothing: a write that reconciles visibly — a create,
-// a drag whose ghost snaps back — has no parked value by design, and a nil
-// retry must not become an entry the drain cannot fire.
+// TestSendWithNoRetryParksNothing pins that a nil retry never becomes an
+// entry the drain cannot fire.
 func TestSendWithNoRetryParksNothing(t *testing.T) {
 	o := New()
 	dead := connect.NewError(connect.CodeUnavailable, errors.New("refused"))

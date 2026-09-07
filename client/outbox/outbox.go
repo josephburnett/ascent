@@ -1,35 +1,20 @@
-// Package outbox is the one ordered record of writes the server has not
-// acknowledged, and the one rule for what to do about them.
+// Package outbox is the ordered record of writes the server has not
+// acknowledged, and the rule for what to do about them: local state may be
+// dropped only on a server verdict. A write parks here as a retry thunk when
+// it is sent, every completed attempt for the same key acks it away, and a
+// transport failure leaves it parked. Send is that order and Record is that
+// fork, each in one place, so no dispatcher can implement half of it. The
+// retry kick and the unload flush drain what is parked.
 //
-// The rule: local state may be dropped only on a server verdict. A write
-// parks here as a retry thunk when it is SENT, and every completed attempt
-// for the same key (success, conflict, rejection) acks it away; a transport
-// failure — the server never spoke, clientsync.OutcomeTransport — leaves it
-// parked. Send is that order and Record is that fork, each in exactly one
-// place, so no dispatcher can implement half of it. The retry kick drains the
-// outbox when the link returns, and so does the unload flush.
+// A write parks at send rather than on its answer, because a request the
+// network eats never produces one, and the closure holding the user's bytes
+// would die with its goroutine.
 //
-// Parking at send, not on the answer, is the whole point of the order: an
-// answer is exactly what a swallowed request never produces. A write parked
-// only on its own return can be recorded only if it returns, so the request
-// the network eats — a laptop asleep, a route that went away, a socket nobody
-// answers and nobody resets — is the one write the outbox never hears about,
-// and the closure holding the user's bytes dies with its goroutine.
-//
-// # What it holds, and what it does not
-//
-// Entries are order and retry, never a copy of the user's value. One live
-// entry per key: writes here are last-writer-wins by design (a viewport, a
-// frozen face, a pane arrangement, a name), so a newer parked thunk replaces
-// an older one for the same key and keeps its drain position, and a newer
-// successful write clears a stale parked one — which is why Record acks on
-// every completion, not only on failures.
-//
-// A content write parks like everything else, but its thunk re-reads the
-// bytes from the cache's content entry, which is their one owner (the
-// textarea is a view of that entry, not a second copy). So the outbox knows
-// which tiles still owe the server a write and in what order, while the
-// bytes stay where the renderer reads them.
+// An entry is order and retry, never a copy of the user's value. Every write
+// that parks is a last-writer-wins overwrite of one key, so there is one live
+// entry per key. A content write's thunk re-reads the bytes from the cache's
+// content entry, which owns them, so the outbox knows which tiles owe the
+// server a write while the bytes stay where the renderer reads them.
 package outbox
 
 import (
@@ -38,18 +23,15 @@ import (
 	"github.com/josephburnett/gridwell/client/clientsync"
 )
 
-// Key names one unacknowledged write: the operation (the dispatcher's label
-// — "SetFraming", "SetURLState", "PaneLayout", "Content", …) and the id it
-// targets (a tile id, or a grid id for a root framing write). One live entry
-// per key.
+// Key names one unacknowledged write: the dispatcher's label for the
+// operation, such as "SetFraming", and the tile or grid id it targets.
 type Key struct {
 	Op string
 	ID string
 }
 
 // OpContent is the label every user-content write parks under, so a tile's
-// unsaved bytes have exactly one entry however many paths tried to save them
-// (the debounce sweep, an ascent flush, the retry kick).
+// unsaved bytes have one entry however many paths tried to save them.
 const OpContent = "Content"
 
 // Outbox is the set of parked writes, drained in first-parked order.
@@ -64,21 +46,19 @@ func New() *Outbox {
 	return &Outbox{m: map[Key]func(){}}
 }
 
-// Send is the order every non-content write runs in: park the retry thunk
-// BEFORE the call, run the call, then Record what the server said. It returns
-// the outcome the call reported so the dispatcher can react to it.
+// Send is the order every non-content write runs in: park the retry thunk,
+// run the call, then Record what the server said. It returns the outcome the
+// call reported.
 //
-// The park comes first because a request that is never answered is also never
-// recorded, and the value it carries — a settled viewport, a freeze's jpeg, a
-// typed name — has no other copy. While the call is out, the key is parked:
-// that is the truth (the server has not acknowledged this write), so a drain
-// racing the flight re-sends it, which is safe because every write that parks
-// is a last-writer-wins overwrite of one key. On the answer, Record's fork
-// runs: a verdict acks, a transport failure leaves it parked for the drain.
+// The park comes first because a request that is never answered is never
+// recorded either, and the value it carries has no other copy. The key stays
+// parked while the call is out, which is the truth, so a drain racing the
+// flight re-sends it, and that is safe because every parked write overwrites
+// one key.
 //
-// retry may be nil for a write with nothing to park (a create, a drag whose
-// ghost snaps back visibly): the call still runs and the outcome still acks
-// any stale entry.
+// retry may be nil for a write with nothing to park, such as a create or a
+// drag whose ghost snaps back visibly. The call still runs and the outcome
+// still acks any stale entry.
 func (o *Outbox) Send(k Key, retry func(), call func() clientsync.Outcome) clientsync.Outcome {
 	if retry != nil {
 		o.Park(k, retry)
@@ -88,13 +68,10 @@ func (o *Outbox) Send(k Key, retry func(), call func() clientsync.Outcome) clien
 	return out
 }
 
-// Record is the reconcile rule: a transport failure parks the write for the
-// retry kick; any other outcome — it landed, it conflicted, it was refused —
-// acknowledges the key, because the server spoke and the caller's own
-// reaction (refetch, surface, drop) is what resolves it from here.
-//
-// retry may be nil for a write with nothing to park (a create, a drag whose
-// ghost snaps back visibly): the outcome still acks any stale entry.
+// Record is the reconcile rule. A transport failure parks the write for the
+// retry kick. Any other outcome acks the key, because the server spoke and
+// the caller's own reaction resolves it from there. retry may be nil, and the
+// outcome still acks any stale entry.
 func (o *Outbox) Record(out clientsync.Outcome, k Key, retry func()) {
 	if out == clientsync.OutcomeTransport && retry != nil {
 		o.Park(k, retry)
@@ -103,13 +80,11 @@ func (o *Outbox) Record(out clientsync.Outcome, k Key, retry func()) {
 	o.Ack(k)
 }
 
-// RecordContent syncs one tile's content entry to the dirtiness of its bytes,
-// which lives with their one owner (the client cache's content entry): still
-// dirty means the server is still owed this write, clean means it is not. It
-// is Record's fork restated for the one op whose completion is not an RPC
-// outcome but a state — a content save can leave the entry dirty (transport),
-// clean (landed), or gone (a verdict dropped it), and the caller does not have
-// to know which happened to get the outbox right.
+// RecordContent syncs one tile's entry to the dirtiness of its bytes, which
+// the client cache's content entry owns. It is Record's fork for the one op
+// whose completion is a state rather than an RPC outcome, so a caller need
+// not know whether the save landed, failed on transport, or was dropped by a
+// verdict.
 func (o *Outbox) RecordContent(tileID string, dirty bool, retry func()) {
 	k := Key{Op: OpContent, ID: tileID}
 	if dirty {
@@ -119,24 +94,22 @@ func (o *Outbox) RecordContent(tileID string, dirty bool, retry func()) {
 	o.Ack(k)
 }
 
-// SyncContent re-derives the content entries from the dirty set — the cache's,
-// which is the one owner of the bytes. RecordContent already runs on every
-// path that changes dirtiness, so this is belt and braces before a drain. It
-// earns its place: a drift between the two would silently cost the words the
-// user typed last, at the one moment — a quit — with no next sweep behind it.
+// SyncContent re-derives the content entries from the cache's dirty set
+// before a drain. RecordContent already runs on every path that changes
+// dirtiness, and this covers the drift, which would otherwise cost the words
+// the user typed last at a quit, with no later sweep behind it.
 //
-// It parks what is dirty and nothing else. A parked key whose entry is now
-// clean is NOT acked here: this sees only the dirty ids, and a key it cannot
-// see is a key it must not judge.
+// It parks what is dirty and acks nothing. It sees only the dirty ids, so a
+// key it cannot see is a key it must not judge.
 func (o *Outbox) SyncContent(dirty []string, retry func(tileID string) func()) {
 	for _, id := range dirty {
 		o.RecordContent(id, true, retry(id))
 	}
 }
 
-// Park holds retry for k, replacing any earlier thunk for the same key (last
-// writer wins — the newer closure reaches the newer value). A replaced key
-// keeps its original drain position.
+// Park holds retry for k, replacing any earlier thunk for the same key,
+// since the newer closure reaches the newer value. A replaced key keeps its
+// original drain position.
 func (o *Outbox) Park(k Key, retry func()) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -146,7 +119,7 @@ func (o *Outbox) Park(k Key, retry func()) {
 	o.m[k] = retry
 }
 
-// Ack clears k: an attempt for this key completed.
+// Ack clears k, meaning an attempt for this key completed.
 func (o *Outbox) Ack(k Key) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -158,9 +131,9 @@ func (o *Outbox) Ack(k Key) {
 }
 
 // Drain removes every parked write and returns the retry thunks in
-// first-parked order. Thunks re-park themselves (through Record) when the
-// retry fails on transport again, so a drain during a still-dead link
-// converges back to the same outbox rather than losing entries.
+// first-parked order. A thunk re-parks itself through Record when the retry
+// fails on transport again, so a drain during a dead link converges back to
+// the same outbox instead of losing entries.
 func (o *Outbox) Drain() []func() {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -182,8 +155,7 @@ func (o *Outbox) Len() int {
 	return len(o.m)
 }
 
-// Keys returns the parked keys in drain order — the observability read (the
-// e2e testhook, the "unsaved work" question), never a way to mutate.
+// Keys returns the parked keys in drain order, for reading only.
 func (o *Outbox) Keys() []Key {
 	o.mu.Lock()
 	defer o.mu.Unlock()
