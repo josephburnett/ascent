@@ -2,11 +2,11 @@
 // gridwell-plugin-gitlab binary reads and the POST
 // /api/v4/todos/:id/mark_as_done it writes, over httptest.
 //
-// It fakes the SERVICE, never the plugin. A plugin is another repository's
+// It fakes the service, never the plugin. A plugin is another repository's
 // module and reaches this one only as a spawned binary, so a seam test that
 // wants todos behind the adapter stands a fake GitLab up and hands the plugin
-// its url and token_file in the config map — exactly the two keys a
-// server.yaml plugins: entry carries.
+// its url and token_file in the config map, the two keys a server.yaml plugins:
+// entry carries.
 package gitlabfake
 
 import (
@@ -65,14 +65,16 @@ func New(t *testing.T, todos ...Todo) *Server {
 	return s
 }
 
-// Set replaces what the fake lists from now on: a todo that leaves GitLab.
+// Set replaces what the fake lists from now on, staging a todo that leaves
+// GitLab.
 func (s *Server) Set(todos ...Todo) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.todos = todos
 }
 
-// Calls counts the API requests served — how many pages the plugin walked.
+// Calls counts the API requests served, which is how many pages the plugin
+// walked.
 func (s *Server) Calls() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -100,10 +102,9 @@ func markDoneID(r *http.Request) (int64, bool) {
 	return id, err == nil
 }
 
-// markDone flips one todo to the done state, which is what GitLab does: the
-// todo does not leave, it changes state, so the next listing finds it under
-// state=done. An id it does not hold is a 404, the same answer the real API
-// gives.
+// markDone flips one todo to the done state, as GitLab does. The todo does not
+// leave, so the next listing finds it under state=done. An id the fake does not
+// hold is a 404, the same answer the real API gives.
 func (s *Server) markDone(w http.ResponseWriter, id int64) {
 	s.mu.Lock()
 	s.calls++
@@ -162,9 +163,9 @@ func (s *Server) list(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(sel[start:end])
 }
 
-// Config is the plugin config map pointing gridwell-plugin-gitlab at this
-// fake: the url, and a token_file holding a token, since the plugin refuses to
-// launch without one. extra keys (such as refresh) are merged in.
+// Config is the plugin config map pointing gridwell-plugin-gitlab at this fake:
+// the url, and a token_file holding a token, since the plugin refuses to launch
+// without one. Keys in extra are merged in.
 func (s *Server) Config(t *testing.T, extra map[string]string) map[string]string {
 	t.Helper()
 	tokenFile := filepath.Join(t.TempDir(), "token")
