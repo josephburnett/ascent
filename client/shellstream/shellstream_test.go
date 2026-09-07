@@ -5,8 +5,6 @@ import (
 	"testing"
 )
 
-// The lifecycle rules, pinned.
-
 type fakeStream struct {
 	tileID  string
 	cols    int
@@ -158,9 +156,8 @@ func TestTwoPanesHoldIndependentStreams(t *testing.T) {
 	}
 }
 
-// A dial that fails instantly (a bad origin, a refused upgrade) still
-// reports, so the pane does not sit forever on a stream that never opened.
-// An always-asynchronous dialer hides this case.
+// A dial that fails instantly still reports, so the pane does not sit forever
+// on a stream that never opened. An always-asynchronous dialer hides this case.
 func TestASynchronousDialFailureIsReported(t *testing.T) {
 	var closed bool
 	reg := New(
@@ -175,11 +172,11 @@ func TestASynchronousDialFailureIsReported(t *testing.T) {
 	if !closed {
 		t.Fatal("an instant dial failure must surface as an exit")
 	}
-	// …and the pane holds nothing afterwards.
+	// The pane holds nothing afterwards.
 	reg.Write("p1", []byte{1})
 }
 
-// The initial size rides the dial — it is the bind — not a later resize.
+// The initial size rides the dial, which is what binds it.
 func TestOpenCarriesTheInitialSize(t *testing.T) {
 	h := newHarness()
 	h.reg.Open("p1", "u/1", 132, 43)
