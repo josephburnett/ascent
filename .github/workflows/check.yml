@@ -1,6 +1,5 @@
-# The per-commit gate: `make check` — fmt, proto drift, every module
-# standalone, the boundary lint, wasm, TS. Broken code must not be
-# mergeable, let alone releasable.
+# The per-commit gate, `make check`: fmt, proto drift, every module
+# standalone, the boundary lint, wasm and TS.
 name: check
 on:
   push:
@@ -11,26 +10,25 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The plugins are their own repository now: gridwell owns the door,
-      # gridwell-plugins owns the plugins. The Makefile's PLUGINS_DIR defaults
-      # to ../gridwell-plugins — beside this checkout — and `make build` /
-      # `make check` build the three plugin binaries from there.
+      # The plugins are their own repository. The Makefile's PLUGINS_DIR
+      # defaults to ../gridwell-plugins, beside this checkout, and `make
+      # build` and `make check` build the plugin binaries from there.
       - name: clone gridwell-plugins beside this checkout
         run: git clone --depth 1 https://github.com/josephburnett/gridwell-plugins.git ../gridwell-plugins
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-          # Every module's go.sum keys the cache, which test/boundary pins:
-          # a module missing from an enumerated list is a module whose
-          # dependency change never invalidates the cache.
+          # Every module's go.sum keys the cache, which test/boundary
+          # pins. A module missing here never invalidates the cache when
+          # its dependencies change.
           cache-dependency-path: '**/go.sum'
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: apps/desktop/package-lock.json
-      # proto-check REGENERATES and diffs, so the generator versions must
-      # match the committed output exactly — pinned to what generated it.
+      # proto-check regenerates and diffs, so the generator versions are
+      # pinned to what produced the committed output.
       - name: install proto toolchain (pinned)
         run: |
           go install github.com/bufbuild/buf/cmd/buf@v1.72.0

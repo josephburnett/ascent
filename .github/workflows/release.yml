@@ -1,26 +1,23 @@
 # The release build: a `v*` tag produces one installable artifact per OS.
 #
-# The TAG is the version's one owner. Nothing in the tree carries a version
-# between releases — no bump commit, no churn — so every job derives
-# VERSION=${GITHUB_REF_NAME#v} and hands it to make, which stamps it into
-# the desktop package.json (where electron-builder reads the artifact name
-# from) and into the gridwell binary (-ldflags -X, printed by
-# `gridwell version`).
+# The tag owns the version. Nothing in the tree carries one between releases,
+# so every job derives VERSION=${GITHUB_REF_NAME#v} and hands it to make,
+# which stamps it into the desktop package.json, where electron-builder reads
+# the artifact name, and into the gridwell binary through -ldflags -X.
 #
-# Nothing here creates a GitHub release. Until 1.0 the artifacts are
-# workflow artifacts: alpha builds are patch bumps, fetched from the run.
-# docs/release.md is the procedure.
+# Nothing here creates a GitHub release. Until 1.0 the artifacts are workflow
+# artifacts, fetched from the run. docs/release.md is the procedure.
 #
-# Three jobs, three NATIVE runners, no cross-building of distributions: a
-# dmg cannot be produced off macOS and the portable exe wants a Windows
-# host. Each invokes a Makefile target — the Makefile is the one recipe, and
-# `make dist` is what a person runs locally too.
+# Three jobs run on three native runners and nothing cross-builds a
+# distribution, because a dmg cannot be produced off macOS and the portable
+# exe wants a Windows host. Each invokes a Makefile target, which is what a
+# person runs locally too.
 name: release
 on:
   push:
     tags: ['v*']
   # A dry run of the whole pipeline without burning a tag. VERSION falls
-  # back to 0.0.0-dev, so the artifacts are named as such.
+  # back to 0.0.0-dev and the artifacts are named as such.
   workflow_dispatch:
 
 jobs:
@@ -28,9 +25,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # The plugins are their own repository: gridwell owns the door,
-      # gridwell-plugins owns the plugins. The Makefile's PLUGINS_DIR
-      # defaults to ../gridwell-plugins — beside this checkout.
+      # The plugins are their own repository. The Makefile's PLUGINS_DIR
+      # defaults to ../gridwell-plugins, beside this checkout.
       - name: clone gridwell-plugins beside this checkout
         run: git clone --depth 1 https://github.com/josephburnett/gridwell-plugins.git ../gridwell-plugins
       - uses: actions/setup-go@v5
@@ -75,16 +71,17 @@ jobs:
       - name: version from the tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
         if: startsWith(github.ref, 'refs/tags/v')
-      # Two dmgs, one per arch, over one universal set of Go binaries
-      # (mac-bins lipos them) — see the Makefile. package.json's
-      # mac.identity is "-": ad-hoc signing, because an unsigned bundle
-      # refuses to launch at all on Apple Silicon. Not notarized; a first
-      # launch needs "Open Anyway".
+      # Two dmgs, one per arch, over the one universal set of Go binaries
+      # mac-bins lipos together. package.json's mac.identity is "-", ad-hoc
+      # signing, because an unsigned bundle refuses to launch on Apple
+      # Silicon. It is not notarized, so a first launch needs "Open
+      # Anyway".
       - name: dmgs
         run: make dist-mac VERSION="${VERSION:-0.0.0-dev}"
         env:
-          # No certificate is available or wanted here: auto-discovery would
-          # find nothing and warn, or find something and sign with it.
+          # No certificate is available or wanted here. Auto-discovery
+          # would find nothing and warn, or find something and sign with
+          # it.
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
       - uses: actions/upload-artifact@v4
         with:
@@ -96,7 +93,7 @@ jobs:
     runs-on: windows-latest
     defaults:
       run:
-        # The Makefile is the one recipe, and it is a POSIX shell script.
+        # The Makefile is the one recipe and it is a POSIX shell script.
         shell: bash
     steps:
       - uses: actions/checkout@v4
@@ -118,9 +115,9 @@ jobs:
       - name: version from the tag
         run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
         if: startsWith(github.ref, 'refs/tags/v')
-      # The Windows artifact's accepted degradations are in docs/release.md:
-      # no live shells (shelldriver has no PTY there and says so), no serve
-      # lock, no proc plugin, no connection door.
+      # The Windows artifact's accepted degradations are in
+      # docs/release.md: no live shells, no serve lock, no proc plugin, no
+      # connection door.
       - name: portable exe
         run: make dist-win VERSION="${VERSION:-0.0.0-dev}"
       - uses: actions/upload-artifact@v4
