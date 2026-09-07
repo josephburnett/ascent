@@ -8,11 +8,9 @@ import (
 )
 
 // TestCodeTableIsTotal pins that every gRPC error code has a distinct
-// Connect partner and that every Connect code is reachable. It is the
-// drift lint for the one hop that translates (server.asConnectError): a
-// code absent here falls to Internal on the browser's wire and loses its
-// meaning, so a transport failure reads as a verdict and clientsync drops
-// a write it should have parked.
+// Connect partner and that every Connect code is reachable. A missing code
+// falls to Internal on the browser's wire, where a transport failure would
+// read as a verdict and clientsync would drop a write it should park.
 func TestCodeTableIsTotal(t *testing.T) {
 	seen := map[connect.Code]codes.Code{}
 	for c := codes.Canceled; c <= codes.Unauthenticated; c++ {

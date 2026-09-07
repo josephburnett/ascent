@@ -1,9 +1,9 @@
 // Package idshape owns the identity shapes of the Gridwell contract: the
-// short plugin/node id mint, the 128-bit random mint behind
-// system.plugin_uuid, and the validity rules a namespace segment must
-// satisfy. Id shape is contract, not storage — a third-party plugin
-// minting a connection namespace and the host validating a hand-edited
-// server.yaml must agree without either importing the other.
+// short plugin and node id mint, the 128-bit mint behind
+// system.plugin_uuid, and the rules a namespace segment must satisfy. It
+// sits in the api module because a third-party plugin minting a connection
+// namespace and the host validating a hand-edited server.yaml must agree
+// without either importing the other.
 package idshape
 
 import (
@@ -15,34 +15,29 @@ import (
 	"strings"
 )
 
-// NewUUID returns a fresh random 128-bit id as a 32-character hex string,
-// defined in exactly one place. Raw hex rather than 8-4-4-4-12 grouping
-// because no caller parses these.
+// NewUUID returns a fresh random 128-bit id as 32 hex characters. No caller
+// parses one, so it carries no 8-4-4-4-12 grouping.
 func NewUUID() string {
 	var b [16]byte
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
 }
 
-// shortIDLen is the length of a plugin/node id minted by NewShortID. Seven
-// characters of lowercase base36 with a leading letter is ~35.7 bits —
-// birthday collision odds reach 50% around 300k ids, far beyond a personal
-// node — while staying readable in a URL path.
+// shortIDLen gives about 35.7 bits, so a personal node reaches even odds of
+// a collision only around 300k ids, and the id stays readable in a URL.
 const shortIDLen = 7
 
-// NewShortID returns a fresh plugin/node/namespace identity: shortIDLen
-// characters of lowercase base36 whose first character is a letter. The
-// shape is load-bearing, not cosmetic:
-//   - lowercase-only because the id names a directory (~/.gridwell/db/<id>)
-//     on case-insensitive filesystems and a tmux socket;
-//   - no '/' so the qualified-id codec (rpc.SplitID) stays delimiter-clean;
-//   - the leading letter guarantees the id can never be purely numeric,
-//     which is how URL paths tell a namespace segment from a tile id
-//     (ValidateSegment enforces the same rules on hand-edited ids).
+// NewShortID returns a fresh plugin, node or namespace identity: shortIDLen
+// characters of lowercase base36 starting with a letter. Three properties
+// are required of it. Lowercase, because the id names a directory
+// (~/.gridwell/db/<id>) on case-insensitive filesystems and a tmux socket.
+// No '/', so the qualified-id codec (rpc.SplitID) keeps its delimiter. A
+// leading letter, so the id never parses as an integer, which is how a URL
+// path tells a namespace segment from a tile id.
 //
-// Ids of the 32-hex shape stay valid forever. An id is immutable once
-// minted — it lives in other plugins' stored references, session
-// partitions, and socket names — and every consumer accepts both shapes.
+// The 32-hex shape stays valid forever and every consumer accepts both. An
+// id is immutable once minted, because it lives in other plugins' stored
+// references, session partitions and socket names.
 func NewShortID() string {
 	const letters = "abcdefghijklmnopqrstuvwxyz"
 	const alnum = "0123456789abcdefghijklmnopqrstuvwxyz"
@@ -54,19 +49,20 @@ func NewShortID() string {
 	return string(b)
 }
 
-// ValidateSegment enforces the load-bearing properties on an id used as a
-// namespace segment (a plugin id, a node id, a connection namespace): not
-// empty; no '/', the qualified-id delimiter; and neither of the two TILE
-// shapes, which would be indistinguishable from a tile in a URL path — purely
-// numeric (a row) or leading with '~' (a plugin key). The shapes are decided
-// in api/rpc (ShapeOf); this package cannot import it, because rpc's own tests
-// import this one, so the two spellings are pinned to each other by a test
-// there. what names the id in the error.
+// ValidateSegment checks an id used as a namespace segment: a plugin id, a
+// node id, a connection namespace. It must not be empty, must not contain
+// the qualified-id delimiter '/', and must not take either tile shape, which
+// a URL path could not tell from a tile: purely numeric, or leading with
+// '~'. what names the id in the error.
 //
-// The empty segment is refused here, at the owner, rather than by each
-// caller: a nameless declaration would occupy it, and "<node>//12" peels to
-// nothing. An id that may legitimately be absent — one Mint fills in — is
-// checked for presence by its caller BEFORE it gets here.
+// The tile shapes are decided by rpc.ShapeOf. This package cannot import
+// api/rpc because rpc's tests import this one, so a test there pins the two
+// spellings to each other.
+//
+// The empty segment is refused here rather than by each caller: a nameless
+// declaration would occupy it and "<node>//12" would peel to nothing. An id
+// that may legitimately be absent, one Mint fills in, is checked for
+// presence by its caller before it gets here.
 func ValidateSegment(what, id string) error {
 	if id == "" {
 		return fmt.Errorf("%s is empty — a namespace segment must name something", what)
@@ -83,8 +79,8 @@ func ValidateSegment(what, id string) error {
 	return nil
 }
 
-// randBelow returns a uniform random int in [0, n) from crypto/rand — no
-// modulo bias, so the id space keeps its full entropy.
+// randBelow draws from crypto/rand without modulo bias, so the id space
+// keeps its full entropy.
 func randBelow(n int) int {
 	v, err := rand.Int(rand.Reader, big.NewInt(int64(n)))
 	if err != nil {
