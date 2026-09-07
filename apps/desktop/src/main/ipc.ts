@@ -1,11 +1,11 @@
-// The renderer↔main IPC contract for native URL tiles. Both the main
-// process (ipcMain handlers) and the preload bridge import this module for
-// the channel names and payload types, so the two sides can't drift.
+// The renderer-to-main IPC contract for native url tiles. The main process and
+// the preload bridge both import this module for the channel names and payload
+// types, so the two sides cannot drift.
 //
-// Geometry: `bounds` is the url tile's content box in CSS pixels relative to
-// the window's content area, exactly what the wasm canvas computes through
-// panebox.ContentBox. WebContentsView.setBounds takes DIP, which equals CSS px
-// in the renderer's coordinate space, so the mapping is 1:1. DPR scaling of
+// `bounds` is the url tile's content box in CSS pixels relative to the window's
+// content area, which is what the wasm canvas computes through
+// panebox.ContentBox. WebContentsView.setBounds takes DIP, equal to CSS px in
+// the renderer's coordinate space, so the mapping is 1:1 and DPR scaling of
 // page content happens inside the view.
 
 export interface Bounds {
@@ -23,15 +23,15 @@ export const CH = {
   setZoom: 'gw:setZoom', // SetZoomArgs → void (user content zoom)
   remove: 'gw:remove',     // RemoveArgs → FreezeResult
   goBack: 'gw:goBack',     // PaneRef → void
-  showMenu: 'gw:showMenu', // PaneRef → void — pop the live view's context
-                           // menu with no in-page context: the bar circle's
-                           // right-click, reachable even when the page
+  showMenu: 'gw:showMenu', // PaneRef → void. Pops the live view's context menu
+                           // with no in-page context, for the bar circle's
+                           // right-click, which works even when the page
                            // hijacks contextmenu.
 } as const;
 
 // Live url view's injected preload → main (send, fire-and-forget). The view
 // swallows the renderer's own mouse events, so its preload forwards button
-// presses here. The left button transfers pane focus and nothing more: the
+// presses here. The left button transfers pane focus and nothing more; the
 // click still reaches the page, with no preventDefault. Right and middle are
 // gesture paths.
 export const VIEW = {
@@ -48,9 +48,7 @@ export const EV = {
   rightForward: 'gw:right-forward',   // ForwardedRightdown — over a live url view
   middleForward: 'gw:middle-forward', // ForwardedRightdown — middle-click over a live url view (ascend)
   leftForward: 'gw:left-forward',     // ForwardedRightdown — left-down over a live url view (focus intent)
-  error: 'gw:error', // ErrorEvent — the one wire for every main-process failure
-                     // (electron:webview | electron:backend) that must reach
-                     // the user. There is no second, silent path.
+  error: 'gw:error', // ErrorEvent — see ErrorEvent below
   openBelow: 'gw:open-below', // OpenBelowEvent — a live view's new-window or ctrl-click link
   freezeUrl: 'gw:freeze-url', // FreezeURLEvent — the context menu's explicit freeze gesture
   menuPane: 'gw:menu-pane', // ContextMenuEvent — a live view's context menu is opening on this pane
@@ -67,11 +65,10 @@ export interface ViewRightdown {
 
 // ViewTouchScroll is one movement step of a single-finger drag over live web
 // content. Chromium does not turn raw touches into scroll gestures inside an
-// embedded WebContentsView, so the view's preload forwards the finger's
-// per-move delta here, and main injects an equivalent mouseWheel into the same
-// view at the finger's position, scrolling whatever scrollable element sits
-// under it. sx/sy are physical screen px, as in ViewRightdown; dx/dy are the
-// finger's movement since the previous step, in the same units.
+// embedded WebContentsView, so the preload forwards the finger's per-move delta
+// here and main injects an equivalent mouseWheel at the finger's position.
+// sx/sy are physical screen px, as in ViewRightdown; dx/dy are the finger's
+// movement since the previous step, in the same units.
 export interface ViewTouchScroll {
   sx: number;
   sy: number;
@@ -99,14 +96,13 @@ export interface PlaceArgs {
   // open palette starts parked. The renderer owns this fact; the registry must
   // not infer it from whichever setHidden happened to arrive last.
   hidden?: boolean;
-  // focused is whether the pane being placed on is the focused pane, exactly
-  // as setHidden carries it. The renderer owns the fact: a pane goes live on
-  // paths that have nothing to do with focus — a workspace restore walking
-  // every leaf, an ascent re-engaging every content pane, a promote landing on
-  // another pane's grid — and main cannot tell those from a user's descent.
-  // The registry's focus-steal guard reads it from the first frame, before
+  // focused is whether the pane being placed on is the focused pane, as
+  // setHidden carries it. The renderer owns the fact, because a pane goes live
+  // on paths that have nothing to do with focus, such as a workspace restore
+  // walking every leaf, and main cannot tell those from a user's descent. The
+  // registry's focus-steal guard reads it from the first frame, before
   // addChildView and loadURL hand the new widget OS keyboard focus. Absent
-  // means false: a placement that does not say it is focused is not.
+  // means false.
   focused?: boolean;
   url: string;
   bounds: Bounds;
@@ -186,8 +182,8 @@ export interface FreezeURLEvent {
 
 // ContextMenuEvent: a live url view's context menu is about to open on this
 // pane, from an in-page right-click or from the bar circle. A right-click is an
-// interaction with the pane, so the renderer moves focus there first, exactly
-// as a left-click does (EV.leftForward). The native view swallows the
+// interaction with the pane, so the renderer moves focus there first, as it
+// does for a left-click (EV.leftForward). The native view swallows the
 // right-press until it becomes a drag, so this is the only way the renderer
 // hears about a plain one.
 export interface ContextMenuEvent {
@@ -196,17 +192,17 @@ export interface ContextMenuEvent {
 
 // ZoomKeyEvent: Ctrl/Cmd with +, =, - or 0 pressed while a live url view owns
 // OS keyboard focus. Main intercepts it in before-input-event and relays it
-// here, so the renderer's applyContentZoom runs exactly as if the chord had
-// been typed on the canvas. applyContentZoom is the one owner of the cache
-// update and the SetContentZoom write.
+// here, so the renderer's applyContentZoom runs as if the chord had been typed
+// on the canvas. applyContentZoom is the one owner of the cache update and the
+// SetContentZoom write.
 export interface ZoomKeyEvent {
   paneId: string;
   key: string;
 }
 
-// ErrorEvent is the one payload shape for EV.error. Every main-process failure
-// site (webview lifecycle, sidecar boot and exit) reports through this wire,
-// never a bespoke one. `source` is a stable key the wasm errsurface groups
+// ErrorEvent is the payload for EV.error, the one wire every main-process
+// failure that must reach the user reports through: webview lifecycle and
+// sidecar boot and exit. `source` is the stable key the wasm errsurface groups
 // notices by, one row per source: 'electron:webview' or 'electron:backend'.
 // `message` is shown to the user verbatim.
 export interface ErrorEvent {

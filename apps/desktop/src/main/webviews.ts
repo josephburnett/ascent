@@ -23,9 +23,8 @@ import { captureAttempt, captureJpegBase64, describeAttempt } from './capture';
 import { decideStreak, FRESH, StreakState } from './capturestreak';
 import { decideFocus, isPressInput, GuardPhase } from './focusguard';
 
-// urlViewPreload is the script injected into every live url view; it forwards
-// a right-button press to main so the renderer can gesture over live content.
-// __dirname is dist/main at runtime, so the compiled preload sits one level up.
+// urlViewPreload is the script injected into every live url view. __dirname is
+// dist/main at runtime, so the compiled preload sits one level up.
 const urlViewPreload = path.join(__dirname, '..', 'preload', 'urlview-preload.js');
 
 interface Entry {
@@ -40,22 +39,20 @@ interface Entry {
   // layout zoom in applyMinWidthZoom. 0 means unset, i.e. 1.0.
   userZoom: number;
   // presses counts the press-shaped input events Chromium has routed into this
-  // view (focusguard.isPressInput). It is main's own fact, seen in the browser
-  // process before the renderer even receives the press, and the focus guard
-  // reads it to tell the user's click from a page's grab.
+  // view (focusguard.isPressInput). Main sees them in the browser process
+  // before the renderer receives the press, so no page can delay or suppress
+  // the count the focus guard reads.
   presses: number;
   // durable is whether the tile behind this view survives ascent. An ephemeral
   // visit is not durable and has nothing to re-descend into, so the context
   // menu offers no Freeze Page there.
   durable: boolean;
-  // focusSettle is the steal guard's pending settle timer. It is tracked so
-  // remove() can cancel it: the closure holds the view, and firing after
+  // focusSettle is the steal guard's pending settle timer, tracked so remove()
+  // can cancel it. The closure holds the view, and firing after
   // webContents.close() would throw uncaught in main.
   focusSettle: ReturnType<typeof setTimeout> | null;
-  // captureStreak is this pane's mirror-capture history: whether it has ever
-  // produced a frame, and how many captures have failed since the last one. It
-  // is the whole streak state — "failing" is failures > 0, derived, never
-  // stored beside it — and capturestreak.decideStreak is what moves it.
+  // captureStreak is this pane's mirror-capture state; capturestreak.ts owns
+  // its shape and decideStreak is the only thing that moves it.
   captureStreak: StreakState;
 }
 
@@ -63,11 +60,9 @@ interface RegistryCallbacks {
   // onNav fires when a hosted view finishes a navigation, changing url or
   // title, so the renderer can update the cached tile address.
   onNav?: (ev: NavEvent) => void;
-  // onError fires for every webview failure the registry detects:
-  // did-fail-load, render-process-gone, a crash during remove(). index.ts wires
-  // it to sendError(rootWC, ...), the one path onto EV.error. The registry
-  // knows nothing of IPC; it only reports, and index.ts decides how the report
-  // reaches the renderer.
+  // onError fires for every webview failure the registry detects: did-fail-load,
+  // render-process-gone, a crash during remove(). index.ts wires it to
+  // sendError, the one path onto EV.error. The registry knows nothing of IPC.
   onError?: (ev: ErrorEvent) => void;
   // onOpenBelow fires when a hosted view's page tries to open a new window
   // through target=_blank, window.open, or a ctrl/cmd-click. The renderer
@@ -76,38 +71,34 @@ interface RegistryCallbacks {
   // onFreezeURL fires when the user picks "Freeze Page" in a live view's
   // context menu; the renderer freezes and stores the intent.
   onFreezeURL?: (ev: FreezeURLEvent) => void;
-  // onContextMenu fires just before a live view's context menu opens, naming
-  // the pane it acts in. The renderer moves focus there: a right-click is an
-  // interaction with that pane, and the rule is the same one a left-click
-  // obeys. Announced once here, for both doors into the menu, because this is
-  // the only place that knows a menu is opening at all.
+  // onContextMenu fires just before a live view's context menu opens, naming the
+  // pane it acts in, so the renderer can move focus there first. Both doors into
+  // the menu announce through here, the only place that knows a menu is opening.
   onContextMenu?: (ev: ContextMenuEvent) => void;
   // onZoomKey fires when the content-zoom chord (Ctrl/Cmd with +, =, - or 0) is
   // pressed while this view owns OS keyboard focus. The renderer's
   // applyContentZoom, the one owner of the cache and the write, handles it.
   onZoomKey?: (ev: ZoomKeyEvent) => void;
-  // onFocusStolen fires when a live view acquired OS keyboard focus without the
-  // user acting on its pane: a page-initiated navigation makes Chromium focus
-  // the new document's widget. index.ts hands focus back to the root window's
-  // webContents, where the canvas and every shell overlay live.
+  // onFocusStolen fires when a live view acquired OS keyboard focus with no user
+  // action on its pane; focusguard.ts owns that verdict. index.ts hands focus
+  // back to the root window's webContents, where the canvas and every shell
+  // overlay live.
   onFocusStolen?: (ev: { paneId: string }) => void;
 }
 
 // WebviewRegistry owns the live url-tile WebContentsViews parented to the root
 // window. One view per paneId, and every view browses on the one host-local
 // persistent partition (SESSION_PARTITION). The registry knows nothing of IPC
-// or the store: ipc.ts wires Electron handlers to these methods, and the
-// renderer stays the only thing that talks to the Go backend.
+// or the store: register.ts wires the Electron handlers to these methods, and
+// the renderer stays the only thing that talks to the Go backend.
 export class WebviewRegistry {
   private readonly win: BaseWindow;
   private readonly cb: RegistryCallbacks;
   private readonly entries = new Map<string, Entry>();
-  // Count of zoom chords seen by before-input-event and relayed to the
-  // renderer. The e2e reads it through __gwRegistry as a delivery ack: a
-  // synthetic sendInputEvent that never bumps this was lost in the input
-  // pipeline, which is an xvfb artifact rather than a product path, while a bump
-  // with no zoom effect is a real relay bug. It only grows, and only the e2e
-  // reads it.
+  // Count of zoom chords seen by before-input-event and relayed to the renderer.
+  // The e2e reads it through __gwRegistry as a delivery ack: a synthetic
+  // sendInputEvent that never bumps it was lost in the input pipeline, an xvfb
+  // artifact, while a bump with no zoom effect is a real relay bug.
   zoomChordRelays = 0;
 
   constructor(win: BaseWindow, cb: RegistryCallbacks = {}) {
@@ -122,13 +113,10 @@ export class WebviewRegistry {
     this.win.setFullScreen(!this.win.isFullScreen());
   }
 
-  // showContextMenu builds and pops the live url view's right-click menu. Which
-  // items appear and what each does lives in the pure, unit-tested
-  // urlContextMenuTemplate; this only translates Electron's params, binds the
-  // actions to the real clipboard and webContents, and pops the menu over the
-  // window. params is the subset of ContextMenuParams the template reads, which
-  // ContextMenuParams satisfies structurally. showMenu supplies an empty one,
-  // since the bar-circle path has no in-page context.
+  // showContextMenu pops the live url view's right-click menu. contextmenu.ts
+  // owns which items appear and what each does; this binds the actions to the
+  // real clipboard and webContents. params is the subset of ContextMenuParams
+  // the template reads, which ContextMenuParams satisfies structurally.
   private showContextMenu(
     paneId: string,
     view: WebContentsView,
@@ -139,10 +127,9 @@ export class WebviewRegistry {
       editFlags: { canCut: boolean; canCopy: boolean; canPaste: boolean };
     },
   ): void {
-    // Focus first, then pop: the menu acts in this pane, so this pane is the
-    // focused one by the time any item runs. The renderer's focusToPane is the
-    // one owner; announcing before the pop means even a menu dismissed without
-    // a pick has moved focus, exactly like a bare left-click.
+    // Announced before the pop, so this pane is the focused one by the time any
+    // item runs, and a menu dismissed without a pick has still moved focus, as
+    // a bare left-click does.
     this.cb.onContextMenu?.({ paneId });
     const wc = view.webContents;
     const nav = wc.navigationHistory;
@@ -180,11 +167,10 @@ export class WebviewRegistry {
     menu.popup({ window: this.win });
   }
 
-  // showMenu pops the same context menu a right-click inside the view shows,
-  // with no in-page context: no link, no selection, not editable. This is the
-  // bar circle's right-click door. A page can hijack contextmenu and make the
-  // in-page path unreachable, but the circle sits on the canvas outside the
-  // view's rect, so this path always reaches Freeze Page.
+  // showMenu is the bar circle's right-click door onto the same context menu,
+  // with no in-page context. A page can hijack contextmenu and make the in-page
+  // path unreachable, while the circle sits on the canvas outside the view's
+  // rect, so this path always reaches Freeze Page.
   showMenu(paneId: string): void {
     const e = this.entries.get(paneId);
     if (!e) return;
@@ -209,26 +195,21 @@ export class WebviewRegistry {
     return this.entries.get(paneId)?.tileId;
   }
 
-  // focusedFor reports whether the registry believes paneId is the focused
-  // pane — the fact the focus-steal guard reads, owned by the renderer and
-  // carried on both place and setHidden. Undefined if the pane has no entry.
+  // focusedFor reports whether the registry believes paneId is the focused pane.
+  // The renderer owns the fact and carries it on both place and setHidden.
   focusedFor(paneId: string): boolean | undefined {
     return this.entries.get(paneId)?.focused;
   }
 
   // webContentsFor is a test-only accessor returning the webContents behind a
-  // pane, so a harness can drive real Chromium focus and input against it. The
-  // harnesses used to cast through `private entries`, a seam that rots silently
-  // the moment Entry changes shape.
+  // pane, so a harness can drive real Chromium focus and input against it.
   webContentsFor(paneId: string): WebContents | undefined {
     return this.entries.get(paneId)?.view.webContents;
   }
 
   // viewBoundsFor is a test-only accessor returning the view's physical bounds
-  // as Electron last set them, which tells whether the view is parked or at its
-  // visible position. The e2e uses it to assert that a bounds change while
-  // hidden does not lift the view out of its parked position. Returns undefined
-  // if the pane has no entry.
+  // as Electron last set them, which says whether the view is parked or at its
+  // visible position.
   viewBoundsFor(paneId: string): { x: number; y: number; width: number; height: number } | undefined {
     const e = this.entries.get(paneId);
     if (!e) return undefined;
@@ -240,22 +221,18 @@ export class WebviewRegistry {
   // contentView, so it paints above the root canvas renderer at the given
   // bounds. Later bounds changes arrive through setBounds, every frame from
   // syncURLViews. A place() for a pane that already holds a view is a renderer
-  // bug and is reported, never absorbed: url_stream_client.go returns early for
-  // the tile already live in the pane and closes any other view first, so
-  // nothing legitimate reaches that branch.
+  // bug and is reported: url_stream_client.go returns early for the tile
+  // already live in the pane and closes any other view first, so nothing
+  // legitimate reaches that branch.
   async place(paneId: string, tileId: string, url: string, bounds: Bounds, contentZoom = 0, history = '', durable = false, hidden = false, focused = false): Promise<void> {
     const rounded = roundBounds(bounds);
-    // One host-local session: every live url tile, local or through a mount,
-    // browses on the shared persistent partition, so a login holds everywhere.
     const partition = SESSION_PARTITION;
     const stale = this.entries.get(paneId);
     if (stale) {
-      // The renderer closes a pane's live view first (placeURLView calls
-      // closeURLStream, the one path that persists a freeze) and never
-      // re-places the tile already live there. Reaching here means a view was
-      // replaced without its close, so surface it and then tear the old view
-      // down so nothing leaks. The freeze remove() returns has no caller to
-      // land in, which is why this must be loud.
+      // The renderer closes a pane's live view first, through closeURLStream,
+      // the one path that persists a freeze. Reaching here means a view was
+      // replaced without its close, so the freeze this remove() returns has no
+      // caller to land in and a frame is lost.
       this.cb.onError?.({
         source: 'electron:webview',
         message: `pane ${paneId}: live view replaced (${stale.tileId} → ${tileId}) without a close; its final frame is lost`,
@@ -271,19 +248,14 @@ export class WebviewRegistry {
         // a hidden call keeps ringing. Chromium would otherwise throttle an
         // occluded page's timers.
         backgroundThrottling: false,
-        // Forwards a right-button press to main → renderer so pane gestures
-        // work over live content. Safe on arbitrary pages: it only listens
-        // for button 2 and uses ipcRenderer, nothing else.
         preload: urlViewPreload,
       },
     });
-    // target=_blank, window.open, ctrl-click: everything Chromium would open as
-    // a new window or tab arrives here. Never spawn a detached BrowserWindow.
-    // The url goes to the renderer, which splits the pane and opens it as an
-    // ephemeral visit in the lower half: real Chromium on the tile's persistent
-    // session, in a pane beside the page it came from, and gone on ascent.
-    // openBelowUrl filters to web urls only, so a non-web protocol opens
-    // nowhere, matching the session's openExternal deny.
+    // Everything Chromium would open as a new window or tab arrives here, and
+    // none of it spawns a detached BrowserWindow. The url goes to the renderer,
+    // which splits the pane and opens it as an ephemeral visit below.
+    // openBelowUrl filters to web urls only, matching the session's
+    // openExternal deny.
     view.webContents.setWindowOpenHandler(({ url: target }) => {
       const below = openBelowUrl(target);
       if (below) {
@@ -291,12 +263,11 @@ export class WebviewRegistry {
       }
       return { action: 'deny' };
     });
-    // F11 fullscreen: window.ts handles F11 on the canvas, but a focused live
-    // url view owns OS keyboard focus, so that handler never sees the key.
-    // Mirroring it here toggles fullscreen whichever view is focused.
-    // The content-zoom chord is intercepted the same way and relayed to the
-    // renderer, where applyContentZoom updates the cache and persists. Calling
-    // registry.setZoom from main would move the view and skip both.
+    // window.ts handles F11 on the canvas, but a focused live url view owns OS
+    // keyboard focus, so that handler never sees the key. The content-zoom chord
+    // is intercepted the same way and relayed to the renderer, where
+    // applyContentZoom updates the cache and persists. Calling registry.setZoom
+    // from main would move the view and skip both.
     view.webContents.on('before-input-event', (event, input) => {
       if (input.type !== 'keyDown') return;
       if (input.key === 'F11') {
@@ -311,22 +282,18 @@ export class WebviewRegistry {
         event.preventDefault();
       }
     });
-    // A plain right-click over live content must show a context menu: copy
-    // link, copy, back, and the rest. A WebContentsView has no default menu; it
-    // only emits this event. The injected preload suppresses the event for a
-    // right-drag, which is a pane gesture, so reaching here means a real click.
+    // A WebContentsView has no default context menu and only emits this event.
+    // The injected preload suppresses it for a right-drag, which is a pane
+    // gesture, so reaching here means a real click.
     view.webContents.on('context-menu', (_event, params) => this.showContextMenu(paneId, view, params));
     // hidden and focused both start from the renderer's verdict for this frame
     // (PlaceArgs), because the renderer owns both facts. hidden parks a view
     // placed while the palette is open or during a drag gesture instead of
     // landing it on top of the canvas overlay. focused feeds the steal guard
-    // below from the very first frame: addChildView and loadURL hand the new
-    // widget OS keyboard focus, and a placement on an unfocused pane — a
-    // workspace restore walking every leaf, an ascent re-engaging every
-    // content pane, a promote — must bounce it straight back. Guessing `true`
-    // here made the guard return early and leak the user's keystrokes into a
-    // page they never clicked on. syncURLViews calls setHidden for this pane on
-    // the next draw() and reaffirms both.
+    // from the first frame: addChildView and loadURL hand the new widget OS
+    // keyboard focus, and a placement on an unfocused pane, such as a workspace
+    // restore walking every leaf, must bounce it straight back. syncURLViews
+    // calls setHidden for this pane on the next draw() and reaffirms both.
     const startHidden = hidden;
     const e: Entry = { view, tileId, bounds: rounded, hidden: startHidden, focused, userZoom: contentZoom, presses: 0, durable, focusSettle: null, captureStreak: FRESH };
     this.entries.set(paneId, e);
@@ -334,10 +301,8 @@ export class WebviewRegistry {
     view.setBounds(startHidden ? parkedBounds(rounded.width, rounded.height) : rounded);
     this.wireNav(paneId, e);
     this.applyMinWidthZoom(e);
-    // A persisted back-stack revives with its history. Absent, invalid, or
-    // disagreeing with the tile's user-editable address, it falls back to a
-    // plain load of the address; reviveNavigation owns that tie-break and is
-    // unit-tested.
+    // reviveNavigation owns the tie-break between the persisted back-stack and
+    // the tile's user-editable address.
     const nav = reviveNavigation(url, history);
     if (nav.kind === 'restore') {
       void view.webContents.navigationHistory.restore({ entries: nav.history.entries, index: nav.history.index });
@@ -359,12 +324,12 @@ export class WebviewRegistry {
   }
 
   // touchScroll injects one step of a single-finger drag as a mouseWheel into
-  // the view whose preload forwarded it; Chromium does not gesture-scroll raw
-  // touches inside an embedded WebContentsView (see urlview-preload.ts). The
-  // finger's screen position converts to view-local coords so the wheel lands on
-  // the scrollable element under the finger. The content follows the finger, as
-  // on any touch surface, which under sendInputEvent's wheel convention is the
-  // finger's own delta; the capture harness's scroll assertion pins the sign.
+  // the view whose preload forwarded it, because Chromium does not
+  // gesture-scroll raw touches inside an embedded WebContentsView (see
+  // urlview-preload.ts). The finger's screen position converts to view-local
+  // coords so the wheel lands on the scrollable element under the finger. The
+  // content follows the finger, which under sendInputEvent's wheel convention
+  // is the finger's own delta; the capture harness pins the sign.
   touchScroll(sender: WebContents, p: { sx: number; sy: number; dx: number; dy: number }): void {
     for (const e of this.entries.values()) {
       if (e.view.webContents !== sender) continue;
@@ -375,7 +340,7 @@ export class WebviewRegistry {
         y: p.sy - cb.y - e.bounds.y,
         deltaX: p.dx,
         deltaY: p.dy,
-        // Precise, touchpad-style deltas: the page tracks the finger 1:1
+        // Precise, touchpad-style deltas, so the page tracks the finger 1:1
         // instead of running the wheel's animated smoothing.
         hasPreciseScrollingDeltas: true,
       });
@@ -384,12 +349,8 @@ export class WebviewRegistry {
   }
 
   // applyMinWidthZoom keeps a narrow url pane from reflowing the page to a
-  // cramped mobile layout: below URL_MIN_LAYOUT_WIDTH the page zooms out so it
-  // still lays out at the min width and scales to fit. A native WebContentsView
-  // cannot render wider than its bounds and be clipped to the pane, so this
-  // scale-to-fit is the closest thing to a min width with horizontal scroll,
-  // short of offscreen rendering. zoomFactor resets on cross-origin navigation,
-  // so wireNav re-applies it on load.
+  // cramped mobile layout; minWidthZoomFactor owns the arithmetic. zoomFactor
+  // resets on cross-origin navigation, so wireNav re-applies it on load.
   private applyMinWidthZoom(e: Entry): void {
     const z = composeZoom(minWidthZoomFactor(e.bounds.width, URL_MIN_LAYOUT_WIDTH), e.userZoom);
     try {
@@ -399,8 +360,8 @@ export class WebviewRegistry {
     }
   }
 
-  // setZoom updates the user content zoom for the pane's live view (the tile's
-  // content_zoom) and re-applies the composed factor.
+  // setZoom updates the user content zoom for the pane's live view, the tile's
+  // content_zoom, and re-applies the composed factor.
   setZoom(paneId: string, zoom: number): void {
     const e = this.entries.get(paneId);
     if (!e) return;
@@ -410,10 +371,9 @@ export class WebviewRegistry {
 
   // setHidden shows or hides the view without destroying it, and tracks whether
   // the pane is focused. `hidden` parks the whole view off-screen during drag
-  // gestures and modals, so canvas-drawn overlays such as the palette and drag
-  // ghosts can paint where the native view would otherwise sit on top.
-  // `focused` feeds the focus-steal guard: only the focused pane's view may keep
-  // OS keyboard focus. syncURLViews calls this every frame, so it no-ops when
+  // gestures and modals, so canvas-drawn overlays such as the palette can paint
+  // where the native view would otherwise sit on top. `focused` feeds the
+  // focus-steal guard. syncURLViews calls this every frame, so it no-ops when
   // nothing changed.
   setHidden(paneId: string, hidden: boolean, focused: boolean): void {
     const e = this.entries.get(paneId);
@@ -436,23 +396,21 @@ export class WebviewRegistry {
     const e = this.entries.get(paneId);
     if (!e) return { jpegBase64: '', url: '', title: '', history: '' };
     this.entries.delete(paneId);
-    // Cancel the steal guard's settle timer: its closure holds this view, and
-    // firing after close() would throw uncaught in main.
+    // The settle timer's closure holds this view, and firing after close() would
+    // throw uncaught in main.
     if (e.focusSettle) {
       clearTimeout(e.focusSettle);
       e.focusSettle = null;
     }
 
-    // Commit DOM storage to the persistent partition before the renderer is
-    // closed. Chromium writes cookies eagerly but flushes localStorage lazily,
-    // so an abrupt webContents.close() can drop recent localStorage writes,
-    // which is where a site keeps an unsubmitted comment draft. Flushing here
-    // is what makes such a draft survive ascend, descend, and go-live.
-    // Chromium's own disk persistence is the system of record for the session.
+    // Chromium writes cookies eagerly but flushes localStorage lazily, so an
+    // abrupt webContents.close() can drop recent localStorage writes, where a
+    // site keeps something like an unsubmitted comment draft. Flushing here is
+    // what makes such a draft survive ascend, descend and go-live.
     try {
       session.fromPartition(SESSION_PARTITION).flushStorageData();
     } catch {
-      // Best-effort: the durable partition flushes on quit regardless.
+      // The durable partition flushes on quit regardless.
     }
 
     let jpegBase64 = '';
@@ -463,35 +421,30 @@ export class WebviewRegistry {
       url = e.view.webContents.getURL();
       title = e.view.webContents.getTitle();
       // The navigation back-stack, persisted so a revived tile can still go
-      // back. pageState is stripped, leaving urls and titles.
+      // back.
       const nav = e.view.webContents.navigationHistory;
       history = serializeHistory(nav.getAllEntries(), nav.getActiveIndex());
       jpegBase64 = await captureJpegBase64(e.view);
     } catch {
-      // A crashed or destroyed view yields an empty freeze. That is safe: the
-      // wasm-side guard (bridgeRemove in client/wasm/url_stream_client.go,
-      // `if len(jpeg)>0 || url!="" || title!=""`) skips the writeback entirely
-      // when all three come back empty, so an empty freeze cannot overwrite a
-      // good preview with a blank one. What must surface is the crash itself,
-      // so the user knows why the tile fell back to its last good preview
-      // instead of the page simply disappearing.
+      // A crashed or destroyed view yields an empty freeze, which bridgeRemove
+      // in client/wasm/url_stream_client.go drops rather than writing back, so
+      // it cannot overwrite a good preview with a blank one. The crash itself
+      // must surface, so the user knows why the tile fell back to its last good
+      // preview.
       this.cb.onError?.({
         source: 'electron:webview',
         message: 'view crashed while closing — preview not updated',
       });
     } finally {
-      // Detach and free the view whatever the capture did. This must run even
-      // if the capture above threw or timed out: the renderer has already
-      // dropped this pane from its live set, so a view left attached would sit
-      // blank on top of the pane the user just ascended out of, while every
-      // other pane shows the frozen preview fine.
+      // Runs even when the capture above threw or timed out. The renderer has
+      // already dropped this pane from its live set, so a view left attached
+      // would sit blank on top of the pane the user just ascended out of.
       try {
         this.win.contentView.removeChildView(e.view);
         e.view.webContents.close();
       } catch (err) {
-        // This is the state the comment above forbids: a live view left sitting
-        // on top of the pane the user ascended out of. It must not fail
-        // silently, so a blank rectangle covering a pane comes with its cause.
+        // The detach failed, so a live view is left sitting on top of the pane
+        // the user ascended out of. The blank rectangle comes with its cause.
         this.cb.onError?.({
           source: 'electron:webview',
           message: 'failed to detach live view — ascend may leave a blank overlay: ' + String(err),
@@ -501,14 +454,11 @@ export class WebviewRegistry {
     return { jpegBase64, url, title, history };
   }
 
-  // capture grabs a current frame for mirroring to other panes, without
-  // tearing the view down. Returns '' if the pane has no live view, and ''
-  // for any failed attempt — the contract callers see is unchanged.
-  //
-  // Every outcome is labelled and fed to capturestreak, which owns whether this
-  // is a new streak, a continuing one, or a recovery. This shim runs the I/O and
-  // sends what it is told to send; it compares nothing. A hidden pane is not an
-  // attempt at all, so it neither opens nor closes a streak.
+  // capture grabs a current frame for mirroring to other panes, without tearing
+  // the view down. It returns '' for a pane with no live view and for any failed
+  // attempt. Every outcome goes to capturestreak, which owns whether this is a
+  // new streak, a continuing one or a recovery. A hidden pane is not an attempt,
+  // so it neither opens nor closes a streak.
   async capture(paneId: string): Promise<string> {
     const e = this.entries.get(paneId);
     if (!e || e.hidden) return '';
@@ -517,8 +467,7 @@ export class WebviewRegistry {
     e.captureStreak = decision.state;
     const report = decision.report;
     if (report) {
-      // A frozen mirror must not be evidence-free, and a mirror that came back
-      // must say so — otherwise the failing report reads as permanent.
+      // A recovery is reported too, or the failing report reads as permanent.
       const message =
         report.kind === 'failing'
           ? `pane ${paneId}: mirror capture failing: ${describeAttempt(attempt)}`
@@ -529,9 +478,8 @@ export class WebviewRegistry {
     return attempt.kind === 'ok' ? attempt.jpegBase64 : '';
   }
 
-  // goBack is the one back action for a live view: the bar's back button over
-  // IPC and the context menu's Back both land here. It no-ops at the start of
-  // the history.
+  // goBack is the one back action for a live view. The bar's back button and the
+  // context menu's Back both land here, and it no-ops at the start of history.
   goBack(paneId: string): void {
     const e = this.entries.get(paneId);
     if (!e) return;
@@ -556,32 +504,22 @@ export class WebviewRegistry {
     e.view.webContents.on('did-navigate', emit);
     e.view.webContents.on('did-navigate-in-page', emit);
     e.view.webContents.on('page-title-updated', emit);
-    // Every press Chromium routes into this view, counted in the browser
-    // process. This is the guard's intent fact: it arrives before the renderer
-    // has even seen the press, so no page can delay or suppress it, and the
-    // registry's own mouseWheel injection is excluded by isPressInput.
+    // Every press Chromium routes into this view. isPressInput excludes the
+    // registry's own mouseWheel injection.
     e.view.webContents.on('input-event', (_event, input) => {
       if (isPressInput(input.type)) e.presses++;
     });
-    // A page-initiated navigation (a self-refresh timer, meta-refresh, or JS
-    // reload) makes Chromium focus the new document's widget, taking OS
-    // keyboard focus from whatever the user was typing in. The grab can land,
-    // and re-land, asynchronously after any single navigation event, so the
-    // guard sits on the focus event itself.
+    // A page-initiated navigation makes Chromium focus the new document's
+    // widget, taking OS keyboard focus from whatever the user was typing in.
+    // The grab can land, and re-land, asynchronously after any one navigation
+    // event, so the guard sits on the focus event itself and asks focusguard,
+    // which owns the verdict and why it is deferred.
     //
-    // What it must not do is DECIDE there. Chromium focuses the widget while
-    // routing a press and forwards the press afterwards, so at the focus event
-    // a user's click and a page's grab look identical (measured 8/8 on a real
-    // OS click). The guard therefore snapshots the press
-    // count and asks focusguard, which defers; one settle later the press has
-    // arrived if there was one, and the same pure function decides.
-    //
-    // The timer is tracked on the entry so remove() can cancel it, but that
-    // only covers a teardown that went through the registry: a view can also
-    // die under it — a render-process crash, a host-side close — and every read
-    // of a destroyed WebContents throws, uncaught inside a timer, which hangs
-    // main behind an error dialog. The settle therefore reads isFocused()
-    // inside a catch; a view that is gone has no focus to hand back.
+    // remove() cancels the settle timer, but only for a teardown that went
+    // through the registry. A view can also die under it, from a render-process
+    // crash or a host-side close, and every read of a destroyed WebContents
+    // throws, uncaught inside a timer, which hangs main behind an error dialog.
+    // So the settle reads isFocused() inside a catch.
     const step = (phase: GuardPhase, pressesAtFocus: number, alreadyBounced: boolean): void => {
       let viewHoldsOSFocus = true; // at 'focus-event' the event is the evidence
       if (phase === 'settle') {
@@ -615,10 +553,7 @@ export class WebviewRegistry {
     // min-width zoom once the new document has loaded.
     e.view.webContents.on('did-finish-load', () => this.applyMinWidthZoom(e));
 
-    // Unhandled, did-fail-load leaves a live url view blank with no signal to
-    // the user. Chromium also fires it constantly for benign reasons, so
-    // shouldSurfaceFailLoad filters out a cancelled or superseded navigation
-    // and any subframe failure; only a genuine main-frame failure gets through.
+    // shouldSurfaceFailLoad owns which of these events reach the user.
     e.view.webContents.on(
       'did-fail-load',
       (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -630,9 +565,9 @@ export class WebviewRegistry {
       },
     );
 
-    // render-process-gone means the renderer process crashed, from an OOM or a
-    // GPU crash; unreported, the view just sits blank. getURL() after a crash
-    // may throw, and that must not stop the notice.
+    // render-process-gone means the renderer process crashed, and unreported the
+    // view just sits blank. getURL() after a crash may throw, which must not
+    // stop the notice.
     e.view.webContents.on('render-process-gone', (_event, details) => {
       let url = '';
       try {
