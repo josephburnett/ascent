@@ -36,13 +36,10 @@ func getTile(t *testing.T, p *local.Plugin, id string) *gridwellv1.Tile {
 	return r.Tile
 }
 
-// TestSetTileDispatchVersionSemantics proves the single SetTile writeback
-// routes each kind to the right store operation, and that the version rule
-// rides across the dispatch seam. Nothing SetTile can write is a user
-// content edit — well and text framing, a url freeze, a shell's frozen frame
-// are all framing or automatic captures — so no arm may bump.
-// store/version_rule_test.go is the whole table. The user's own edits reach
-// the store by other verbs: WriteContent and the rename arm.
+// The single SetTile writeback routes each kind to the right store operation
+// and the version rule rides across the dispatch seam. Nothing SetTile can
+// write is a user content edit, so no arm may bump;
+// store/version_rule_test.go is the whole table.
 func TestSetTileDispatchVersionSemantics(t *testing.T) {
 	p := openPlugin(t)
 	root := rootGrid(t, p)
@@ -113,10 +110,8 @@ func TestSetAndCreateRejectBadKinds(t *testing.T) {
 	}
 }
 
-// TestCloneTileThroughPlugin: cloning routes through the namespace and
-// yields an independent tile, with a new row id and a new interior child
-// grid, so the eager-copy rule holds across the RPC boundary and not just in
-// the store.
+// Cloning through the namespace yields an independent tile, with a new row id
+// and a new child grid, so the eager-copy rule holds across the RPC boundary.
 func TestCloneTileThroughPlugin(t *testing.T) {
 	p := openPlugin(t)
 	root := rootGrid(t, p)
@@ -165,10 +160,9 @@ func TestDeleteExitWellThroughPluginNoCascade(t *testing.T) {
 	}
 }
 
-// TestPaneDispatch: the pane kind's plugin-level contract. CreateTile makes
-// the metadata row; the layout blob follows through WriteContent (framing —
-// no version bump); SetTile REFUSES the kind (the layout rides the content
-// door — the mapping stays total, nothing falls to a silent no-op).
+// The pane kind's plugin-level contract: CreateTile makes the metadata row,
+// the layout follows through WriteContent with no bump, and SetTile refuses
+// the kind, so the mapping stays total.
 func TestPaneDispatch(t *testing.T) {
 	p := openPlugin(t)
 	root := rootGrid(t, p)

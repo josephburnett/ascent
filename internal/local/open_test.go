@@ -8,10 +8,9 @@ import (
 	"github.com/josephburnett/gridwell/internal/pluginmeta"
 )
 
-// The open seam: a store opened the way the binary opens it must report the
-// config id, not the bootstrap-minted system.plugin_uuid. Qualified
-// references, including a pane tile's layout blob refs, carry the config
-// id, so the mint would never match them.
+// The open seam: a store opened the way the binary opens it reports the config
+// id, not the bootstrap-minted system.plugin_uuid, which qualified references
+// would never match.
 func TestOpenVerifiedInjectsConfigIdentity(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "plugin.db")
 	// Stamp the config id into the DB, as registration does.

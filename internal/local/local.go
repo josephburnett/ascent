@@ -1,10 +1,6 @@
-// Package local is the node's home: the namespace over the local SQLite
-// store. It satisfies namespace.Namespace as an in-process Go value the
-// router calls directly, delegating every verb to store.Store.
-//
-// This is where the user's own space lives: wells, text, url, and shell
-// tiles. Plugins project external state; home owns everything the user
-// creates inside Gridwell.
+// Package local is the node's home: the namespace over the local SQLite store,
+// an in-process Go value the router calls directly. Plugins project external
+// state; home owns everything the user creates inside Gridwell.
 package local
 
 import (
@@ -23,9 +19,9 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Plugin wraps store.Store as a namespace.Namespace. It also owns the
-// shell PTY lifecycle (shellsvc.Manager) so OpenShell — the live shell
-// bytes — crosses the namespace interface like every other verb.
+// Plugin wraps store.Store as a namespace.Namespace. It also owns the shell
+// PTY lifecycle, so OpenShell crosses the namespace interface like every
+// other verb.
 type Plugin struct {
 	namespace.Unimplemented
 	st    *store.Store
@@ -35,16 +31,14 @@ type Plugin struct {
 // The router calls home as a Go value; the compiler is what says so.
 var _ namespace.Namespace = (*Plugin)(nil)
 
-// New wraps an open store. shell may be nil, for an instance that hosts no
-// live shells: ShellSessionAlive returns false, OpenShell is unimplemented,
-// and DeleteTile skips reaping.
+// New wraps an open store. A nil shell hosts no live shells: OpenShell is
+// unimplemented and DeleteTile skips reaping.
 func New(st *store.Store, shell *shellsvc.Manager) *Plugin {
 	return &Plugin{st: st, shell: shell}
 }
 
-// CleanupOrphanedShells kills tmux sessions whose tile rows no longer
-// exist: the bounded leak from a delete that raced a crash. Called once at
-// startup. A no-op if this instance hosts no shells.
+// CleanupOrphanedShells kills tmux sessions whose tile rows no longer exist:
+// the bounded leak from a delete that raced a crash. Called once at startup.
 func (p *Plugin) CleanupOrphanedShells(ctx context.Context) (int, error) {
 	if p.shell == nil {
 		return 0, nil
@@ -54,17 +48,13 @@ func (p *Plugin) CleanupOrphanedShells(ctx context.Context) (int, error) {
 	})
 }
 
-// CleanupScratch deletes every unowned tile in the scratch grid at startup.
-// Scratch tiles are ephemeral: the client deletes them when the user
-// ascends, and this sweep is the net for an ascent that never ran. The
-// exception is a scratch tile referenced by a pane tile's layout blob: it
-// belongs to a durable arrangement whose ephemerals live across restarts on
-// purpose, since their tmux sessions do, so it is spared. That reference
-// dies with the pane tile, and a later sweep reclaims it. If any pane blob
-// is unreadable — corrupt, or a newer format — the sweep reaps nothing: a
+// CleanupScratch deletes every unowned tile in the scratch grid at startup:
+// the net for an ascent that never deleted its ephemerals. A tile referenced
+// by a pane tile's layout blob is spared, because that arrangement keeps its
+// ephemerals across restarts on purpose; the reference dies with the pane
+// tile. If any pane blob is unreadable the sweep reaps nothing: a
 // wrongly-killed shell is unrecoverable and a delayed sweep is not. Runs
-// before CleanupOrphanedShells so a swept shell's row is gone by the time
-// the orphan sweep looks for session owners.
+// before CleanupOrphanedShells so a swept shell's row is already gone.
 func (p *Plugin) CleanupScratch(ctx context.Context) (int, error) {
 	scratch, err := p.st.ScratchGridID(ctx)
 	if err != nil {
@@ -100,9 +90,8 @@ func (p *Plugin) Close() error { return p.st.Close() }
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 
-// Info is the whole handshake: identity plus the default root grid, the
-// home's singleton root, and the root viewport. There is no Attach or
-// Detach; the connection is the lifecycle.
+// Info is the whole handshake: identity, the singleton root grid, and its
+// viewport. There is no Attach or Detach; the connection is the lifecycle.
 func (p *Plugin) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwellv1.InfoResponse, error) {
 	id, err := p.st.RootGridID(ctx)
 	if err != nil {
@@ -116,11 +105,10 @@ func (p *Plugin) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwell
 	if err != nil {
 		return nil, errToStatus(err)
 	}
-	// Framing seeds the client's doorway framing so re-entry restores the
-	// left-off view. Every doorway this handshake declares carries the
-	// framing of the grid behind it — the root and the trashcan alike — so
-	// neither can end up with a rule of its own. A fresh DB was never visited
-	// and has zero zoom, which the client reads as the calibrated default.
+	// Every doorway this handshake declares carries the framing of the grid
+	// behind it, the root and the trashcan alike, so neither ends up with a
+	// rule of its own. A fresh DB has zero zoom, which the client reads as
+	// the calibrated default.
 	view, _, err := p.st.RootFraming(ctx)
 	if err != nil {
 		return nil, errToStatus(err)
@@ -136,8 +124,7 @@ func (p *Plugin) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwell
 		SchemaVersion: int64(p.st.SchemaVersion()),
 		RootGridId:    id,
 		ScratchGridId: scratch,
-		// The trashcan is a second doorway the (+) menu offers beside home
-		// itself. It is a declared menu entry, so the host and client learn
+		// The trashcan is a declared menu entry, so the host and client learn
 		// only "another grid with a glyph".
 		MenuEntries: []*gridwellv1.MenuEntry{{
 			Id:     "trash",
@@ -146,8 +133,8 @@ func (p *Plugin) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwell
 			GridId: trash,
 			ViewCx: trashView.Cx, ViewCy: trashView.Cy, ViewZoom: trashView.Zoom,
 		}},
-		// Capabilities the server reads from this handshake, never from the
-		// kind string: home emits change events and accepts creates.
+		// The server reads capabilities from this handshake, never from the
+		// kind string.
 		Watch:        true,
 		Writable:     true,
 		RootViewCx:   view.Cx,
@@ -156,11 +143,9 @@ func (p *Plugin) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwell
 	}, nil
 }
 
-// SetFraming persists a grid's framing: the one framing write, for both
-// rows it can live on. A doorway tile's framing is an in-place write on that
-// tile; a root grid has no doorway, so the same three numbers land on the
-// grid row. Framing carries no version claim and never bumps a content
-// version. The server routes on whichever target the request names.
+// SetFraming persists a grid's framing, for both rows it can live on: a
+// doorway tile, or, for a root, the grid row. Framing carries no version
+// claim and never bumps a content version.
 func (p *Plugin) SetFraming(ctx context.Context, req *gridwellv1.SetFramingRequest) (*gridwellv1.SetFramingResponse, error) {
 	t, err := p.st.SetFraming(ctx, req)
 	if err != nil {
@@ -203,9 +188,7 @@ func (p *Plugin) GetTile(ctx context.Context, req *gridwellv1.GetTileRequest) (*
 	return tileResp(p.st.GetTile(ctx, req.TileId))
 }
 
-// Search is the one generic find verb: id: locates a tile by its immutable
-// id, path included, and free text matches names and text bodies. The store
-// owns the semantics.
+// Search is the one generic find verb; the store owns the semantics.
 func (p *Plugin) Search(ctx context.Context, req *gridwellv1.SearchRequest) (*gridwellv1.SearchResponse, error) {
 	res, err := p.st.Search(ctx, req.Query, int(req.Limit))
 	if err != nil {
@@ -214,15 +197,14 @@ func (p *Plugin) Search(ctx context.Context, req *gridwellv1.SearchRequest) (*gr
 	return &gridwellv1.SearchResponse{Results: res}, nil
 }
 
-// contentChunkBytes is the ReadContent chunk size. Small enough to stream a
-// large body without one giant message, large enough that a typical text tile
-// is one chunk.
+// contentChunkBytes is small enough to stream a large body without one giant
+// message, large enough that a typical text tile is one chunk.
 const contentChunkBytes = 256 * 1024
 
-// ReadContent streams a tile's content bytes. Chunk 1 carries media_type
-// and the row version the bytes belong to — the caller's save basis, paired
-// with the bytes at the owner — and later chunks carry data only. Empty
-// content still sends the one meta chunk so the version always arrives.
+// ReadContent streams a tile's content bytes. Chunk 1 carries media_type and
+// the row version the bytes belong to, the caller's save basis; later chunks
+// carry data only. Empty content still sends the meta chunk, so the version
+// always arrives.
 func (p *Plugin) ReadContent(ctx context.Context, req *gridwellv1.ReadContentRequest, send func(*gridwellv1.ContentChunk) error) error {
 	data, mediaType, version, err := p.st.ReadContent(ctx, req.TileId)
 	if err != nil {
@@ -246,13 +228,11 @@ func (p *Plugin) ReadContent(ctx context.Context, req *gridwellv1.ReadContentReq
 	return nil
 }
 
-// WriteContent assembles the client stream and commits once, at clean
-// close. Nothing is written until SendAndClose, so a broken stream leaves
-// the old value byte-for-byte intact; the store's WriteContent is the one
-// transactional door and owns the kind-dispatched version semantics. The
-// first message binds tile_id and claims the version. Accumulation is
-// capped at the store's blob limit so an oversized stream fails fast
-// instead of buffering without bound.
+// WriteContent assembles the client stream and commits once, at clean close,
+// so a broken stream leaves the old value byte-for-byte intact. The first
+// message binds tile_id and claims the version. Accumulation is capped at the
+// store's blob limit, so an oversized stream fails fast rather than buffering
+// without bound.
 func (p *Plugin) WriteContent(ctx context.Context, recv func() (*gridwellv1.WriteContentRequest, error)) (*gridwellv1.TileResponse, error) {
 	first, err := recv()
 	if err != nil {
@@ -285,29 +265,24 @@ func (p *Plugin) WriteContent(ctx context.Context, recv func() (*gridwellv1.Writ
 
 // ── Creates ──────────────────────────────────────────────────────────────────
 
-// CreateTile is the single create: tile.kind selects which typed store
-// create to run. The wire carries one create; home fans it back out here.
+// CreateTile is the single create: tile.kind selects the typed store create.
 func (p *Plugin) CreateTile(ctx context.Context, req *gridwellv1.CreateTileRequest) (*gridwellv1.TileResponse, error) {
 	t := req.Tile
 	if t == nil {
 		return nil, status.Error(codes.InvalidArgument, "create: nil tile")
 	}
 	if t.LinkTargetId != "" {
-		// A leaf link: any leaf kind whose content lives in another tile —
-		// what a ctrl + right-drag makes anywhere, and what a cross-plugin
-		// left-drag makes at a namespace boundary. One create for all four
-		// kinds; the store validates the kind set and the qualified-target
-		// shape.
+		// A leaf link: any leaf kind whose content lives in another tile. One
+		// create for all four kinds; the store validates the kind set and the
+		// qualified-target shape.
 		return tileResp(p.st.CreateLeafLink(ctx, req.GridId, t.X, t.Y, t.W, t.H,
 			t.Kind, t.LinkTargetId, t.AltText))
 	}
 	switch t.Kind {
 	case rpc.KindWell:
-		// child_grid_id set makes an exit well: a doorway onto an existing
-		// grid, in another namespace or this one. No interior child grid is
-		// allocated; the qualified reference is stored verbatim, and alt_text
-		// is the exit well's label. On an interior well, alt_text is the user-given grid
-		// name from the + palette; empty means unnamed.
+		// child_grid_id set makes an exit well: no interior child grid is
+		// allocated and the qualified reference is stored verbatim. alt_text
+		// is the label either way; empty means unnamed.
 		if t.ChildGridId != "" {
 			return tileResp(p.st.CreateExitWell(ctx, req.GridId, t.X, t.Y, t.W, t.H,
 				t.ChildGridId, t.AltText,
@@ -317,27 +292,23 @@ func (p *Plugin) CreateTile(ctx context.Context, req *gridwellv1.CreateTileReque
 	case rpc.KindText:
 		return tileResp(p.st.CreateText(ctx, req.GridId, t.X, t.Y, t.W, t.H, nil))
 	case rpc.KindURL:
-		// A url create targeting the scratch grid is an ephemeral visit —
-		// descending into a url without placing a tile — so it is routed
-		// path-free, because the off-grid scratch grid has no descent path.
-		// Any other grid is a normal placed url tile.
+		// A url create targeting the scratch grid is an ephemeral visit,
+		// routed path-free because the off-grid scratch grid has no descent
+		// path.
 		if scratch, err := p.st.ScratchGridID(ctx); err == nil && req.GridId == scratch {
 			return tileResp(p.st.CreateScratchURL(ctx, t.UrlString))
 		}
 		return tileResp(p.st.CreateURL(ctx, req.GridId, t.X, t.Y, t.W, t.H, t.UrlString))
 	case rpc.KindShell:
 		// A shell create targeting the scratch grid is an ephemeral shell,
-		// clicked rather than dragged from the + palette: off-grid,
-		// path-free, and deleted on ascent. It mirrors the url routing
-		// above.
+		// deleted on ascent. It mirrors the url routing above.
 		if scratch, err := p.st.ScratchGridID(ctx); err == nil && req.GridId == scratch {
 			return tileResp(p.st.CreateScratchShell(ctx))
 		}
 		return tileResp(p.st.CreateShell(ctx, req.GridId, t.X, t.Y, t.W, t.H))
 	case rpc.KindPane:
-		// A pane tile, created with no layout blob: a NULL blob_id means
-		// never arranged, and the first arrangement rides WriteContent.
-		// alt_text is the name the bar shows.
+		// A NULL blob_id means never arranged; the first arrangement rides
+		// WriteContent.
 		return tileResp(p.st.CreatePane(ctx, req.GridId, t.X, t.Y, t.W, t.H, t.AltText, nil))
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "create: unknown kind %q", t.Kind)
@@ -350,20 +321,17 @@ func (p *Plugin) CloneTile(ctx context.Context, req *gridwellv1.CloneTileRequest
 	return tileResp(p.st.CloneTile(ctx, req))
 }
 
-// PlaceTile is the single placement writeback: one verb owns
-// (grid, x, y, w, h), and the store derives the well-into-own-subtree
-// refusal itself.
+// PlaceTile is the single placement writeback; the store derives the
+// well-into-own-subtree refusal itself.
 func (p *Plugin) PlaceTile(ctx context.Context, req *gridwellv1.PlaceTileRequest) (*gridwellv1.TileResponse, error) {
 	return tileResp(p.st.PlaceTile(ctx, req))
 }
 
 // SetTile is the single capture and framing writeback: tile.kind selects the
-// one store operation that kind supports. Grid framing is not here;
-// SetFraming owns both rows that can carry it. SetTile also carries the
-// scalar operations — rename, the versioned user rename that latches
-// alt_user; content_zoom; and url_frozen — with exactly one operation per
-// call, refused otherwise, so the empty-fields-skip rule never turns
-// ambiguous.
+// one store operation that kind supports. Grid framing is not here; SetFraming
+// owns both rows that can carry it. The scalar operations — rename,
+// content_zoom, url_frozen — ride here too, exactly one per call and refused
+// otherwise, so the empty-fields-skip rule never turns ambiguous.
 func (p *Plugin) SetTile(ctx context.Context, req *gridwellv1.SetTileRequest) (*gridwellv1.TileResponse, error) {
 	ops := 0
 	if req.Rename != "" {
@@ -397,9 +365,8 @@ func (p *Plugin) SetTile(ctx context.Context, req *gridwellv1.SetTileRequest) (*
 	}
 	switch t.Kind {
 	case rpc.KindWell:
-		// Refused so the kind-to-operation mapping stays total: a well's
-		// framing rides SetFraming, the one verb for both rows that can own
-		// framing, a doorway tile and a root grid.
+		// Refused so the mapping stays total: a well's framing rides
+		// SetFraming.
 		return nil, status.Error(codes.InvalidArgument, "set: well framing rides SetFraming")
 	case rpc.KindText:
 		return tileResp(p.st.SetTextView(ctx, req.TileId, t.TextX, t.TextY, t.TextW, t.TextH, t.TextMode))
@@ -408,9 +375,8 @@ func (p *Plugin) SetTile(ctx context.Context, req *gridwellv1.SetTileRequest) (*
 	case rpc.KindURL:
 		return tileResp(p.st.SetURLState(ctx, req.TileId, req.Preview, t.UrlString, t.AltText, t.UrlHistory))
 	case rpc.KindPane:
-		// Refused so the kind-to-operation mapping stays total: the layout
-		// blob rides the content door, WriteContent, which is framing-class
-		// for layouts.
+		// Refused so the mapping stays total: the layout blob rides
+		// WriteContent, which is framing-class for layouts.
 		return nil, status.Error(codes.InvalidArgument, "set: pane layout rides WriteContent")
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "set: unknown kind %q", t.Kind)
@@ -426,10 +392,9 @@ func (p *Plugin) ShellSessionAlive(_ context.Context, req *gridwellv1.ShellSessi
 }
 
 // OpenShell streams a tile's live PTY both ways: the first request binds the
-// tile id, with data empty, then keystrokes and resizes flow up and terminal
-// output flows down. Home owns the tmux session and the PTY, so these bytes
-// cross the namespace interface like everything else; the server only
-// bridges a WebSocket to it.
+// tile id, then keystrokes and resizes flow up and output flows down. Home
+// owns the tmux session, so these bytes cross the namespace interface like
+// everything else and the server only bridges a WebSocket to it.
 func (p *Plugin) OpenShell(sctx context.Context, recv func() (*gridwellv1.OpenShellRequest, error), send func(*gridwellv1.OpenShellResponse) error) error {
 	if p.shell == nil {
 		return status.Error(codes.Unimplemented, "this namespace hosts no live shells")
@@ -467,8 +432,7 @@ func (p *Plugin) OpenShell(sctx context.Context, recv func() (*gridwellv1.OpenSh
 	ctx, cancel := context.WithCancel(sctx)
 	defer cancel()
 
-	// Reader: keystrokes and resizes up. Exits on stream EOF, a stream
-	// error, or a dead PTY, cancelling the writer.
+	// Reader: keystrokes and resizes up, cancelling the writer on exit.
 	go func() {
 		defer cancel()
 		for {
@@ -488,9 +452,7 @@ func (p *Plugin) OpenShell(sctx context.Context, recv func() (*gridwellv1.OpenSh
 		}
 	}()
 
-	// Writer: PTY output down. Exits on cancel, when the reader is done or
-	// the context ends, on session death, on a takeover (stopOld), or on a
-	// send error.
+	// Writer: PTY output down.
 	out := session.Output()
 	for {
 		select {
@@ -511,9 +473,8 @@ func (p *Plugin) OpenShell(sctx context.Context, recv func() (*gridwellv1.OpenSh
 	}
 }
 
-// captureShellTitle stamps the tile's label with its tmux session's
-// foreground command on detach, the way url tiles capture the page title.
-// Best-effort.
+// captureShellTitle stamps the tile's label with its tmux session's foreground
+// command on detach, the way a url tile captures the page title. Best-effort.
 func (p *Plugin) captureShellTitle(tileID string) {
 	cmd, err := p.shell.PaneCommand(tileID)
 	if err != nil || cmd == "" {
@@ -531,10 +492,9 @@ func (p *Plugin) DeleteTile(ctx context.Context, req *gridwellv1.DeleteTileReque
 	if err := p.st.DeleteTile(ctx, req); err != nil {
 		return nil, errToStatus(err)
 	}
-	// Reap the tile's shell session once its row is gone. A cloned shell is
-	// an independent copy with its own id, so deleting a copy never touches
-	// the original's PTY. Fire-and-forget; the startup orphan sweep is the
-	// net.
+	// Reap the tile's shell session once its row is gone. A cloned shell has
+	// its own id, so deleting a copy never touches the original's PTY.
+	// Fire-and-forget; the startup orphan sweep is the net.
 	if p.shell != nil {
 		if exists, err := p.st.ShellTileExists(ctx, tileID); err == nil && !exists {
 			_ = p.shell.Kill(tileID)
@@ -554,9 +514,9 @@ func (p *Plugin) Subscribe(ctx context.Context, _ *gridwellv1.SubscribeRequest, 
 			if !ok {
 				return nil
 			}
-			// The hub hands the same event value to every listener, and
-			// there is no wire between them. Nothing downstream writes into
-			// it: qualification clones (server.qualifyTiles).
+			// The hub hands the same event value to every listener with no
+			// wire between them, and nothing downstream writes into it:
+			// server.qualifyTiles clones.
 			if err := send(ev); err != nil {
 				return err
 			}
@@ -575,11 +535,10 @@ func tileResp(t *gridwellv1.Tile, err error) (*gridwellv1.TileResponse, error) {
 	return &gridwellv1.TileResponse{Tile: t}, nil
 }
 
-// errToStatus maps a store sentinel error to a gRPC status code so the
-// classification survives the routing hop to the server, which maps the code
-// to a Connect status. The sentinel-to-class table is store.ClassifyError,
-// the one owner, next to the sentinels, so this cannot drift from the
-// server's mapping. An unclassified error passes through as codes.Unknown.
+// errToStatus maps a store sentinel to a gRPC status code so the
+// classification survives the routing hop. store.ClassifyError owns the
+// table, so this cannot drift from the server's mapping; an unclassified
+// error passes through as codes.Unknown.
 func errToStatus(err error) error {
 	if err == nil {
 		return nil
