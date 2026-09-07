@@ -1,17 +1,12 @@
 // Package shellws dials the web door's /shell WebSocket and presents it as a
-// shellstream.Dialer. It is the one client implementation of
-// client/shellwire's grammar: the wasm client uses it in the browser, and the
-// server's seam test uses it off-browser, so the test exercises the code the
-// app runs rather than a second spelling of the protocol.
+// shellstream.Dialer. It is the one client implementation of client/shellwire's
+// grammar: the wasm client uses it in the browser and the server's seam test
+// uses it off-browser, so the test exercises the code the app runs. When a
+// stream opens, closes, or reports its end is client/shellstream's business.
 //
-// When a stream opens, closes, or reports its end is client/shellstream's
-// business; this package only turns those calls into frames.
-//
-// That is why this package carries no test file of its own: a unit test here
-// would assert against a second spelling of the protocol, which is the bug
-// class the door already has. internal/server/shell_door_seam_test.go and
-// transport_seam_test.go dial through this dialer into the real /shell
-// handler, so the coverage crosses the seam it is about.
+// A unit test here would assert against a second spelling of the protocol, so
+// the package has none. internal/server/shell_door_seam_test.go and
+// transport_seam_test.go dial this dialer into the real /shell handler.
 package shellws
 
 import (
@@ -33,12 +28,11 @@ const writeTimeout = 30 * time.Second
 // Options configure the dialer.
 type Options struct {
 	// Origin is the page's own http(s) origin. The door is same-origin by
-	// construction: it is the page's own server.
+	// construction, being the page's own server.
 	Origin string
-	// HTTPClient and Header are honored off-browser only (tests, a CLI): a
-	// browser attaches the page's own cookies to a same-origin upgrade and
-	// forbids setting handshake headers, so the wasm client leaves both nil
-	// and is authenticated by the cookie that served the page.
+	// HTTPClient and Header are honored off-browser only. A browser attaches
+	// the page's own cookies to a same-origin upgrade and forbids setting
+	// handshake headers, so the wasm client leaves both nil.
 	HTTPClient *http.Client
 	Header     http.Header
 }
@@ -63,10 +57,9 @@ type frame struct {
 	data []byte
 }
 
-// conn is one attachment. Frames are queued rather than written inline:
-// keystrokes arrive from the terminal's callback the instant the user types,
-// which can be before the socket has finished opening, and a dropped
-// keystroke is a lost character. One goroutine owns the write side.
+// conn is one attachment. Frames are queued rather than written inline,
+// because a keystroke can arrive before the socket has finished opening and a
+// dropped keystroke is a lost character. One goroutine owns the write side.
 type conn struct {
 	mu     sync.Mutex
 	ws     *websocket.Conn
@@ -129,8 +122,6 @@ func (c *conn) run(addr string, o Options, onData func([]byte)) {
 				return
 			}
 			if ctl.Kind == shellwire.KindExit {
-				// The door's last word: why it ended, and whether the
-				// session is gone for good.
 				c.end(ctl.Message, ctl.SessionGone)
 				return
 			}
@@ -201,8 +192,8 @@ func (c *conn) isClosed() bool {
 	return c.closed
 }
 
-// Write sends keystroke bytes as one binary frame. The slice is copied: it
-// comes from the terminal's callback and the caller may reuse it.
+// Write sends keystroke bytes as one binary frame. The slice is copied because
+// the caller may reuse it.
 func (c *conn) Write(data []byte) {
 	c.push(websocket.MessageBinary, append([]byte(nil), data...))
 }
@@ -212,8 +203,8 @@ func (c *conn) Resize(cols, rows int) {
 	c.push(websocket.MessageText, shellwire.EncodeResize(cols, rows))
 }
 
-// Close detaches from this side. The end is still delivered (exactly once);
-// the caller suppresses it, because the caller asked.
+// Close detaches from this side. The end is still delivered exactly once, and
+// the caller suppresses it because the caller asked.
 func (c *conn) Close() {
 	c.mu.Lock()
 	if c.closed {
@@ -225,11 +216,9 @@ func (c *conn) Close() {
 	c.mu.Unlock()
 	if ws != nil {
 		// The close handshake waits for the peer's close frame, which in a
-		// browser can only arrive through the JS event loop — and Close is
-		// called from that loop (a pane teardown inside a click handler).
-		// Waiting here would block the loop that must deliver the answer and
-		// freeze the page permanently. Hand the wait to a goroutine; the
-		// caller returns immediately.
+		// browser arrives only through the JS event loop, and Close is called
+		// from that loop. Waiting here would block the loop that must deliver
+		// the answer, so the wait goes to a goroutine.
 		go func() { _ = ws.Close(websocket.StatusNormalClosure, "") }()
 	}
 	c.end("", false)
