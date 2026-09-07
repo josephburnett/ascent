@@ -2,26 +2,15 @@ package textedit
 
 import "testing"
 
-// TestCanvasHiddenByOverlay pins three invariants:
-//   - A preview node (isDescended=false) is never hidden — the textarea
-//     covers only the focused descended pane, so suppressing a preview blanks
-//     it.
-//   - A descended non-focused pane is never hidden — the textarea is over a
-//     different pane.
-//   - The canvas paints until the textarea actually has content
-//     (textareaReady=false keeps it visible during the pane-switch loading
-//     race).
 func TestCanvasHiddenByOverlay(t *testing.T) {
 	cases := []struct {
 		name                                string
 		isDescended, isFocused, ready, want bool
 	}{
-		// The one hide case: the focused descended pane whose overlay
-		// (textarea or rendered div) holds content.
 		{"focused descended with ready overlay hides canvas", true, true, true, true},
 		{"preview node never hidden", false, true, true, false},
 		{"descended not focused → overlay not here", true, false, true, false},
-		// Loading race: overlay cleared on pane switch, blob not yet arrived.
+		// Overlay cleared on pane switch, blob not yet arrived.
 		{"overlay not ready → canvas paints", true, true, false, false},
 		{"all false", false, false, false, false},
 	}
@@ -41,11 +30,9 @@ func TestDecideTextareaSync(t *testing.T) {
 		want TextareaSyncDecision
 	}{
 		{
-			// Descend into new tile 7 while the textarea still holds "old
-			// content" from tile 4 and the new tile's blob hasn't arrived
-			// in the cache yet. The textarea clears so the user doesn't see
-			// 4's content as 7's default, and LastTileID advances so the
-			// blob fetch's follow-up call seeds rather than re-clears.
+			// The textarea clears so 4's content is not shown as 7's, and
+			// LastTileID advances so the blob fetch's follow-up seeds
+			// rather than re-clears.
 			name: "different tile, blob not cached → clear and advance",
 			in: TextareaSyncInput{
 				FocusedTileID: "7",
@@ -105,12 +92,9 @@ func TestDecideTextareaSync(t *testing.T) {
 			},
 		},
 		{
-			// The foreign-writer visibility rule: with no pending edit the
-			// buffer is a mere view of the cached body and follows it.
-			// Another device edited this tile; the event evicted the stale
-			// body, the refetch landed the foreign bytes, and the open
-			// editor repaints. Real typing always sets PendingEdit, so this
-			// input combination is exactly the stale-view case.
+			// Real typing always sets PendingEdit, so this combination is
+			// exactly a foreign writer's bytes landing under an open
+			// editor.
 			name: "same tile, clean buffer differs from cache → follow the cache",
 			in: TextareaSyncInput{
 				FocusedTileID: "5",
@@ -126,8 +110,7 @@ func TestDecideTextareaSync(t *testing.T) {
 			},
 		},
 		{
-			// Clean buffer already matches the cache: no write, no churn (a
-			// SetValue would move the caret/scroll for nothing).
+			// A SetValue here would move the caret and scroll for nothing.
 			name: "same tile, clean buffer equals cache → leave alone",
 			in: TextareaSyncInput{
 				FocusedTileID: "5",
@@ -142,9 +125,8 @@ func TestDecideTextareaSync(t *testing.T) {
 			},
 		},
 		{
-			// Deleting everything is an edit like any other: an empty dirty
-			// buffer is not reseeded from the cache, which would resurrect
-			// the deleted text under the user's caret.
+			// Reseeding an empty dirty buffer would resurrect the deleted
+			// text under the caret.
 			name: "same tile, pending edit emptied the buffer → preserve",
 			in: TextareaSyncInput{
 				FocusedTileID: "5",
@@ -173,11 +155,9 @@ func TestDecideTextareaSync(t *testing.T) {
 			},
 		},
 		{
-			// The fast-pane-switch case: typing into tile 4 arms the
-			// debounced save, and switching to another text descent within
-			// the debounce rebinds the textarea. The rebind seeds the new
-			// tile; tile 4's typing already lives in its own cache entry,
-			// and the dirty sweep posts it regardless of where focus went.
+			// A rebind within the debounce seeds the new tile; tile 4's
+			// typing lives in its own cache entry and the dirty sweep
+			// posts it wherever focus went.
 			name: "different tile with pending edit → rebind; the old edit is cache-owned",
 			in: TextareaSyncInput{
 				FocusedTileID: "7",
@@ -194,8 +174,6 @@ func TestDecideTextareaSync(t *testing.T) {
 			},
 		},
 		{
-			// Same tile: the buffer still belongs to the focused tile; the
-			// debounced save owns persistence, not the rebind flush.
 			name: "same tile with pending edit → no flush, preserve typing",
 			in: TextareaSyncInput{
 				FocusedTileID: "5",

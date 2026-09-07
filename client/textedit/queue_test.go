@@ -57,10 +57,8 @@ func TestSaveQueueKeysAreIndependent(t *testing.T) {
 	}
 }
 
-// One document, one chain. The two flush paths hold different ids for a
-// linked document — the ascent flush the link row, the debounce sweep the
-// content id — and both must name the same chain, or the same edit is saved
-// twice concurrently under one basis.
+// The two flush paths hold different ids for a linked document and must name
+// one chain, or the same edit is saved twice under one basis.
 func TestSaveQueueKeyIsOnePerDocument(t *testing.T) {
 	for _, tc := range []struct {
 		name            string
