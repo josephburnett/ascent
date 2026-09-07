@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// chainPane is a pane four namespace levels deep, with wells and content
-// descents mixed in: home well 12, a link into n5, a text descent there,
-// a link into mnt7, two wells, and a text descent at the leaf.
+// chainPane is four namespace levels deep, with wells and content descents
+// mixed in.
 func chainPane() *Pane {
 	p := &Pane{ID: "p1", Stack: NewStack("k3x9m2q/1")}
 	p.Push(Frame{Door: "12", Zoom: 1})
@@ -68,9 +67,7 @@ func TestCrumbsRootOnly(t *testing.T) {
 	}
 }
 
-// The ascent arithmetic: n pops reach the crumb n levels out, the current
-// crumb is 0 (clicking where you are does nothing), and popping n really
-// lands on that crumb's level.
+// n pops reach the crumb n levels out, and the current crumb is 0.
 func TestAscentsToLandsOnTheCrumb(t *testing.T) {
 	full := chainPane().Crumbs()
 	for target, c := range full {

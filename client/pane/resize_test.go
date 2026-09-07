@@ -5,17 +5,12 @@ import (
 	"testing"
 )
 
-// Dragging a divider cascades: the pane adjacent to the divider compresses to
-// its minimum first, then the drag starts compressing the next pane along the
-// axis, tmux-style. A single-ratio clamp would squash the whole opposite
-// subtree proportionally and stop at 32px for the side as a whole, whatever
-// it contained.
+// Dragging a divider cascades: the adjacent pane compresses to its minimum
+// first, then the next along the axis. A single-ratio clamp would squash the
+// opposite subtree proportionally and stop at 32px for the side as a whole.
 
-// stack3 builds three panes stacked vertically (two nested Horizontal
-// splits): top = A of the outer split, middle/bottom nested in B.
-//
-//	outer: Split{Dir: Horizontal, Ratio: 1/3, A: top, B: inner}
-//	inner: Split{Dir: Horizontal, Ratio: 1/2, A: middle, B: bottom}
+// stack3 is three panes stacked vertically: top is the outer split's A, and
+// middle and bottom are nested in its B.
 func stack3() (outer, inner *Split) {
 	top := &Pane{ID: "top"}
 	middle := &Pane{ID: "middle"}
@@ -46,11 +41,9 @@ func paneHeights(root TreeNode, container Rect) map[string]float64 {
 func near(a, b float64) bool { return math.Abs(a-b) < 0.01 }
 
 func TestResizeThroughCascades(t *testing.T) {
-	// 300px tall, three 100px panes. Drag the outer divider, the top-middle
-	// boundary at y=100, down to y=250: the top grows to 250, and the
-	// remaining 50px is the middle at its 32px min with the bottom keeping
-	// the rest. 18px would breach the bottom's min, so the clamp stops
-	// earlier, at 300-32-32=236.
+	// 300px tall, three 100px panes. Dragging the top-middle boundary to
+	// y=250 would leave 50px for two panes, so the clamp stops at
+	// 300-32-32=236.
 	c := Rect{X: 0, Y: 0, W: 100, H: 300}
 	outer, _ := stack3()
 	ResizeThrough(TreeNode{Split: outer}, c, outer, 250, 32)
@@ -67,9 +60,8 @@ func TestResizeThroughCascades(t *testing.T) {
 }
 
 func TestResizeThroughCompressesAdjacentFirst(t *testing.T) {
-	// A smaller drag, to y=150: only the adjacent pane, the middle one,
-	// shrinks — 100 to 50 — and the bottom is untouched. A proportional
-	// squash would take 25px from each instead.
+	// To y=150 only the adjacent pane shrinks, 100 to 50. A proportional
+	// squash would take 25px from each.
 	c := Rect{X: 0, Y: 0, W: 100, H: 300}
 	outer, _ := stack3()
 	ResizeThrough(TreeNode{Split: outer}, c, outer, 150, 32)
@@ -86,10 +78,8 @@ func TestResizeThroughCompressesAdjacentFirst(t *testing.T) {
 }
 
 func TestResizeThroughInnerDividerCascadesUpward(t *testing.T) {
-	// Drag the INNER divider (middle/bottom boundary at y=200) UP to y=40:
-	// middle compresses to its 32px min... and the cascade must cross into
-	// the OUTER split, shrinking top too. Travel wall: top>=32, middle>=32 →
-	// boundary can reach 64.
+	// Dragging the inner divider up to y=40 compresses middle to its min and
+	// the cascade crosses into the outer split, shrinking top: the wall is 64.
 	c := Rect{X: 0, Y: 0, W: 100, H: 300}
 	outer, inner := stack3()
 	ResizeThrough(TreeNode{Split: outer}, c, inner, 40, 32)
@@ -106,9 +96,8 @@ func TestResizeThroughInnerDividerCascadesUpward(t *testing.T) {
 }
 
 func TestResizeThroughGrowGivesAdjacent(t *testing.T) {
-	// Dragging AWAY (divider down 100→160 shrinks nothing on the growing
-	// side): top grows; on the shrinking side only middle compresses.
-	// Perpendicular splits inside are only re-scaled, never re-ratioed.
+	// Dragging away grows top and compresses only middle; perpendicular
+	// splits inside are re-scaled, never re-ratioed.
 	left := &Pane{ID: "left"}
 	right := &Pane{ID: "right"}
 	perp := &Split{Dir: Vertical, Ratio: 0.25, A: TreeNode{Pane: left}, B: TreeNode{Pane: right}}
@@ -124,11 +113,10 @@ func TestResizeThroughGrowGivesAdjacent(t *testing.T) {
 	}
 }
 
-// Tmux-like pane zoom. Zoomed, the leaf owns the whole root rect and every
-// other pane vanishes from the layout, their live views parking through the
-// missing-rect path. Dividers vanish with them, so no gesture can arm on an
-// invisible boundary. Structural edits unzoom first, and unzoom restores the
-// exact prior layout, because the split ratios were never touched.
+// Zoomed, the leaf owns the whole root rect and every other pane vanishes,
+// their views parking through the missing-rect path. Dividers vanish too, so
+// no gesture arms on an invisible boundary, and unzoom restores the exact
+// prior layout because the ratios were never touched.
 func TestZoomLayout(t *testing.T) {
 	tr := NewTree()
 	p2, err := tr.Split(Vertical)
@@ -198,11 +186,9 @@ func TestZoomUnknownPaneIsNoOp(t *testing.T) {
 	}
 }
 
-// TestPlanCrushThresholds pins the crush model: a segment reds when the
-// cursor presses past where it sits at its minimum in the current layout —
-// its bump on the way in, so closing a middle pane needs no travel to the
-// screen edge, and the wall on the way out. The move loop is Update then
-// ResizeThrough, mirrored here.
+// A segment reds when the cursor presses past where it sits at its minimum in
+// the current layout. The move loop is Update then ResizeThrough, mirrored
+// here.
 func TestPlanCrushThresholds(t *testing.T) {
 	outer, inner := stack3()
 	root := TreeNode{Split: outer}
@@ -222,9 +208,8 @@ func TestPlanCrushThresholds(t *testing.T) {
 		return ids
 	}
 
-	// Inner divider (middle|bottom boundary at y=200): pressing up, middle
-	// bottoms out at 100+32=132; past that it reds while top starts
-	// crushing; top reds past its own live bump at 32.
+	// Pressing the inner divider up, middle bottoms out at 132 and reds past
+	// it while top starts crushing; top reds past its own live bump at 32.
 	if r := move(150); r != nil {
 		t.Errorf("mid-resize cursor reds %v, want none", r)
 	}
@@ -244,11 +229,9 @@ func TestPlanCrushThresholds(t *testing.T) {
 	}
 }
 
-// Push through both upper panes, deep past the wall, then back off to just
-// above the wall: everything sits at its minimum and nothing stays red, so a
-// release keeps all panes at min. A grab-size-based threshold (132 here)
-// would make un-redding require retreating almost to the grab point, growing
-// the pane far past its min on the way.
+// Pushing deep past the wall and backing off to just above it leaves every
+// pane at its minimum and nothing red. A grab-size threshold would instead
+// require retreating almost to the grab point.
 func TestPlanCrushBackOffToWallClearsRed(t *testing.T) {
 	outer, inner := stack3()
 	root := TreeNode{Split: outer}

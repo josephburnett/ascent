@@ -2,33 +2,28 @@ package pane
 
 import "slices"
 
-// The framing writeback and the liveness projection: the two decisions that
-// read a pane's place and say who owns what. Both are projections of the
-// frame stack (place.go), so neither can drift from where the pane actually
-// is.
+// The framing writeback and the liveness projection. Both are projections of
+// the frame stack, so neither can drift from where the pane is.
 
-// FramingOwner names the row that owns the settled framing of a pane's
-// current place — the one question every ascent and every settle tick asks.
+// FramingOwner names the row that owns the settled framing of a pane's place,
+// the one question every ascent and settle tick asks.
 type FramingOwner struct {
 	// Content: the place is a content tile, so what settles is its text
-	// scroll, not grid framing. TileID is the content tile.
+	// scroll, not grid framing.
 	Content bool
-	// TileID is the doorway tile the pane came into its grid through (the
-	// content tile when Content). Empty at a root grid with no doorway.
-	TileID string
-	// DoorAnchor/DoorPath locate the doorway's own grid: the row lives
-	// there, one level out.
-	DoorAnchor string
+	// TileID is the doorway the pane came in through, or the content tile.
+	// Empty at a root grid with no doorway.
+	TileID     string
+	DoorAnchor string // the doorway's own grid, one level out
 	DoorPath   []string
-	// RootGridID is the grid whose own row owns the framing when there is
-	// no doorway. Always set for a grid place, so a caller whose doorway
-	// lookup misses (a + menu portal has no tile in the origin grid) falls
-	// back to it without a second rule.
+	// RootGridID owns the framing when there is no doorway. Always set for a
+	// grid place, so a caller whose doorway lookup misses, as a + menu
+	// portal's does, falls back without a second rule.
 	RootGridID string
 }
 
-// FramingTarget projects the pane's place onto the row that owns its
-// framing: the doorway tile it came in by, or the grid itself at a root.
+// FramingTarget is the row that owns the pane's framing: the doorway it came
+// in by, or the grid itself at a root.
 func (s *Stack) FramingTarget() FramingOwner {
 	if s.Content {
 		return FramingOwner{Content: true, TileID: s.Door}
@@ -42,26 +37,21 @@ func (s *Stack) FramingTarget() FramingOwner {
 	if len(path) > 0 {
 		own.DoorAnchor, own.DoorPath = anchor, slices.Clone(path[:len(path)-1])
 	} else {
-		// A namespace crossing: the link tile lives in the level below.
 		own.DoorAnchor, own.DoorPath = s.AnchorPathAt(len(s.below) - 1)
 	}
 	return own
 }
 
-// PaneGrid names one pane and the grid it currently shows — the input to
-// the framing-ownership rule between panes.
+// PaneGrid names one pane and the grid it shows.
 type PaneGrid struct {
 	PaneID string
 	GridID string
 }
 
-// FramingWriters applies the one-active-surface rule to grid framing: when
-// several panes show the same grid, exactly one — the focused pane — owns the
-// framing writeback and the others are passive viewers. A pane that shares
-// its grid with nobody always writes, being trivially the active surface.
-// Focusing a shared grid's sibling is the takeover, exactly as opening a live
-// tile elsewhere takes the stream. Letting every sibling write its own
-// rect-derived values each settle tick thrashes the persisted framing.
+// FramingWriters applies the one-active-surface rule to grid framing: of
+// several panes showing one grid only the focused one writes, because every
+// sibling writing its own rect-derived values each settle tick thrashes the
+// persisted framing.
 func FramingWriters(panes []PaneGrid, focusedID string) map[string]bool {
 	byGrid := map[string]int{}
 	for _, p := range panes {
@@ -74,18 +64,16 @@ func FramingWriters(panes []PaneGrid, focusedID string) map[string]bool {
 	return out
 }
 
-// Holder names a pane and the content tile it is descended into — the
-// liveness projection's unit.
+// Holder names a pane and the content tile it is descended into.
 type Holder struct {
 	PaneID string
 	TileID string
 }
 
-// TakeOver applies one live surface per content tile: opening tileID live in
+// TakeOver applies one live surface per content tile: opening tileID in
 // openerID freezes every other pane's surface on the same content, at any
-// stack level, and returns those panes. The opener takes over. A pane that
-// already holds this tile is not in the list, so a keep-alive return is
-// idempotent.
+// stack level, and returns those panes. The opener is never in the list, so a
+// keep-alive return is idempotent.
 func TakeOver(holders []Holder, openerID, tileID string) []string {
 	var out []string
 	for _, h := range holders {

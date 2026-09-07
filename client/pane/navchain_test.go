@@ -17,9 +17,8 @@ func TestNavChainOutsideAnyView(t *testing.T) {
 	}
 }
 
-// Inside two nested levels: the root crumb (close-all, wearing the origin's
-// root face), one boundary crumb per level in stack order, then the live
-// pane's own chain — never the intermediate trees' chains.
+// Inside two nested levels: the root crumb, one boundary crumb per level, then
+// the live pane's own chain, never the intermediate trees'.
 func TestNavChainInsideViews(t *testing.T) {
 	outer := NewTree()
 	op := outer.FocusedPane()
@@ -46,12 +45,8 @@ func TestNavChainInsideViews(t *testing.T) {
 	}
 }
 
-// TestNavChainRootCrumbAlwaysHasAFace: the close-all root crumb wears the face
-// of wherever its click lands, however the level was entered. A descent parked
-// a tree, so it takes that tree's origin pane's root; a boot restore parked
-// none, so it takes the grid the level's pane tile sits in — exactly where the
-// close-all ascent re-anchors. A faceless crumb is a blank square in the bar
-// with nothing to say what it is.
+// The close-all root crumb wears the face of wherever its click lands, however
+// the level was entered, since a faceless crumb is a blank square.
 func TestNavChainRootCrumbAlwaysHasAFace(t *testing.T) {
 	var boot Levels
 	boot.Push(Level{TileID: "pt", GridID: "u1/0"})
