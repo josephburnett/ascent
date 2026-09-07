@@ -17,12 +17,10 @@ func TestDecideUnloadFlush(t *testing.T) {
 	}{
 		{"cached editable row, basis", true, true, true, 7, 5, true, 5, UnloadBeacon},
 		{"cached editable row, no basis", true, true, true, 7, 0, false, 7, UnloadBeacon},
-		// A link row lends its version to nothing: it tracks its own
-		// placement, not the target's bytes (SaveClaim's rule).
+		// A link row's version tracks its placement, not the bytes.
 		{"cached link row, no basis", true, true, false, 7, 0, false, 0, UnloadBeacon},
 		{"cached read-only or non-text row", true, false, true, 7, 5, true, 0, UnloadSkip},
-		// The lost-edit case this rule exists for: a dirty edit whose
-		// owner row was never cached (a leaf link's foreign target).
+		// A dirty edit whose owner row was never cached.
 		{"uncached row, basis", false, false, false, 0, 5, true, 5, UnloadBeacon},
 		{"uncached row, no basis", false, false, false, 0, 0, false, 0, UnloadAsync},
 	}
@@ -57,9 +55,7 @@ func TestDescentModeTable(t *testing.T) {
 		in   ModeInput
 		want string
 	}{
-		// Which rows are documents is rpc.TextDocument's question
-		// (pinned there); here it is one input, and everything that is not
-		// one has no text mode at all.
+		// Which rows are documents is rpc.TextDocument's question.
 		{"not a document (url, shell, page tile)", ModeInput{Cached: true, Stored: "text"}, ""},
 		{"read-only is rendered even with a cursor url", ModeInput{TextDocument: true, ReadOnly: true, Cached: true, CursorURL: true, Stored: "text"}, rpc.TextModeRendered},
 		{"cursor url forces text", ModeInput{TextDocument: true, Cached: true, CursorURL: true, Stored: rpc.TextModeRendered}, rpc.TextModeText},

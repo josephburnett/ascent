@@ -2,14 +2,10 @@ package textedit
 
 import "sync"
 
-// SaveQueue serializes content writes per document (SaveQueueKey names the
-// chain): one in flight, the rest FIFO.
-// Text saves are optimistic-concurrency writes — each claims the tile's
-// version — so two pipelined saves would claim the same version and the
-// loser's edit would be rejected and reconciled away, losing typed input.
-// Serializing means each task runs after the previous write's response has
-// advanced the cached version, so tasks that read the version at send time
-// chain instead of race.
+// SaveQueue serializes content writes per document, SaveQueueKey naming the
+// chain: one in flight, the rest FIFO. Text saves claim a version, so two in
+// flight would claim the same one and the loser's typed input would be
+// reconciled away.
 type SaveQueue struct {
 	mu      sync.Mutex
 	busy    map[string]bool
@@ -17,21 +13,11 @@ type SaveQueue struct {
 }
 
 // SaveQueueKey names the chain a text save belongs on: one document, one
-// chain. A leaf link and its target are one document — one {bytes, base,
-// dirty} cache entry, one version to claim — so the id that OWNS the bytes
-// names the chain, never the row the edit was viewed through.
-//
-// The rule needs an owner because the flush paths hold different ids: the
-// ascent flush holds the viewed row (for a leaf link, the link row) and the
-// debounce sweep holds the content id. Spelled per call site, those are two
-// chains for one document, and an ascent flush and a debounce flush of the
-// same edit then run concurrently, both claim the same SaveBasis, and the
-// server refuses the loser — the client conflicting with itself.
-//
-// An empty content id means the caller could not resolve the owner row; the
-// viewed row is then the document, as rpc.ContentID and the wasm
-// contentKey both fall back, and never the empty chain every document would
-// share.
+// chain. The id that owns the bytes names it, never the row the edit was
+// viewed through, because the flush paths hold different ids for one document
+// and two chains would let them claim the same version concurrently. An empty
+// content id falls back to the viewed row, as rpc.ContentID does, and never
+// to the empty chain every document would share.
 func SaveQueueKey(viewedID, contentID string) string {
 	if contentID != "" {
 		return contentID
@@ -44,10 +30,9 @@ func NewSaveQueue() *SaveQueue {
 	return &SaveQueue{busy: map[string]bool{}, pending: map[string][]func(){}}
 }
 
-// Enqueue schedules task on key's serial chain. Tasks for one key run
-// strictly one-after-another (each fully returns before the next starts);
-// different keys are independent. task runs on a queue goroutine — it should
-// do the blocking send itself, not spawn.
+// Enqueue schedules task on key's serial chain; different keys are
+// independent. task runs on a queue goroutine and should do the blocking send
+// itself rather than spawn.
 func (q *SaveQueue) Enqueue(key string, task func()) {
 	q.mu.Lock()
 	if q.busy[key] {

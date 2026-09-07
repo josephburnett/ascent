@@ -9,25 +9,17 @@ import (
 type UnloadFlush int
 
 const (
-	// UnloadSkip: the entry must not write (a non-text or read-only row).
-	UnloadSkip UnloadFlush = iota
-	// UnloadBeacon: beacon now with the returned version claim.
-	UnloadBeacon
-	// UnloadAsync: no claim exists to beacon with — the async path (which
-	// resolves the owner row) is the only door left.
+	UnloadSkip   UnloadFlush = iota // a non-text or read-only row must not write
+	UnloadBeacon                    // beacon now with the returned claim
+	// UnloadAsync: no claim exists to beacon with, so the async path, which
+	// resolves the owner row, is the only door left.
 	UnloadAsync
 )
 
-// DecideUnloadFlush is the one rule for what a dying page does with a dirty
-// text body. The subtle case is rowKnown=false: an owner row living in no
-// cached grid (a leaf link's target in a never-fetched foreign grid) is not a
-// dead end, because the SaveBasis alone is the claim and only editable text
-// ever becomes dirty. The server issues the verdict either way. Skipping that
-// case would lose the edit outright: unload is the one flush with no next
-// sweep behind it.
-//
-// What it beacons with is SaveClaim's, like every other text write: this
-// decides whether to write, not what to claim.
+// DecideUnloadFlush decides whether a dying page writes a dirty text body;
+// what it claims is SaveClaim's. An unknown row still writes, because the
+// SaveBasis alone is the claim and only editable text becomes dirty, and
+// unload is the one flush with no next sweep behind it.
 func DecideUnloadFlush(rowKnown, rowEditableText, rowOwnsContent bool, rowVersion, basis int64, haveBasis bool) (claim int64, do UnloadFlush) {
 	if rowKnown && !rowEditableText {
 		return 0, UnloadSkip
@@ -38,12 +30,9 @@ func DecideUnloadFlush(rowKnown, rowEditableText, rowOwnsContent bool, rowVersio
 	return SaveClaim(rowKnown && rowOwnsContent, rowVersion, basis, haveBasis), UnloadBeacon
 }
 
-// Framing is a text tile's persisted window: scroll, size, and mode — the
-// SetTextView payload. FramingOf reads it off a tile; FramingChanged is the
-// one rule both framing writers (the settle-persist and the ascent save) gate
-// on, so a pure descend-and-ascent, or a resize that only changed the window
-// size, writes exactly when something differs. Writing unconditionally would
-// mutate updated_at and broadcast an event for a read.
+// Framing is a text tile's persisted window, the SetTextView payload. Both
+// framing writers gate on FramingChanged, because writing unconditionally
+// would mutate updated_at and broadcast an event for a read.
 type Framing struct {
 	X, Y, W, H int64
 	Mode       string
@@ -59,29 +48,17 @@ func FramingChanged(cur, next Framing) bool { return cur != next }
 
 // ModeInput is everything the descent-mode decision reads.
 type ModeInput struct {
-	// TextDocument: the row's content is its own document body
-	// (rpc.TextDocument, the owner). Nothing else has a text mode, so
-	// the kind and the page flag never travel here separately.
-	TextDocument bool
+	TextDocument bool // rpc.TextDocument: nothing else has a text mode
 	ReadOnly     bool
-	// Cached: the tile row is known (an uncached restore has no stored
-	// mode to honor).
-	Cached bool
-	// CursorURL: the address encodes a text cursor — the user was
-	// editing; text mode, unless the tile is read-only.
-	CursorURL bool
-	Stored    string
+	Cached       bool // the tile row is known, so Stored can be honored
+	CursorURL    bool // the address encodes a text cursor
+	Stored       string
 }
 
-// DescentMode is the one owner of which mode a text descent shows. A row
-// that is not a text document — a url, a shell, a serves_page tile — has no
-// text/rendered mode ("" — the textarea overlay never shows). A read-only
-// text tile always shows rendered: never a caret
-// over content the user can't change, and rendered is the selectable DOM
-// surface. A cursor URL forces text. Otherwise the stored mode, defaulting to
-// raw text for a never-opened or uncached tile. Every path that decides a
-// text mode — descent, session restore — reads this and never re-derives
-// it.
+// DescentMode is the one owner of which mode a text descent shows; descent
+// and session restore both read it. A row that is not a text document has no
+// mode, so "". A read-only tile is always rendered, never a caret over
+// content the user cannot change.
 func DescentMode(in ModeInput) string {
 	if !in.TextDocument {
 		return ""

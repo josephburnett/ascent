@@ -8,10 +8,6 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
-// The whole toggle rule as a table: (presentation, read-only, name). A
-// declared presentation is the authority and the name never enters into it;
-// only an undeclared tile falls to the default, where a writable doc always
-// toggles and a read-only one toggles when its name is renderable.
 func TestToggleVisibleTable(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -28,8 +24,8 @@ func TestToggleVisibleTable(t *testing.T) {
 		{"undeclared, read-only, unrenderable name", "", true, "status", false},
 
 		{"both, writable", rpc.TextPresentationBoth, false, "notes.md", true},
-		// "both" keeps the toggle whether or not the tile is writable: the
-		// flip is between rendered and raw SOURCE, and raw stays uneditable.
+		// The flip is between rendered and raw source, so raw stays
+		// uneditable and "both" keeps the toggle either way.
 		{"both, read-only", rpc.TextPresentationBoth, true, "status", true},
 
 		{"plain, writable", rpc.TextPresentationPlain, false, "notes.md", false},
@@ -45,9 +41,7 @@ func TestToggleVisibleTable(t *testing.T) {
 	}
 }
 
-// The renderer follows the declaration, and the name only chooses between the
-// two document dialects. "plain" is verbatim: the marker text survives as
-// characters instead of becoming a heading.
+// The declaration picks the renderer; the name only picks the dialect.
 func TestPresentationHTMLTable(t *testing.T) {
 	body := []byte("* one\n")
 	cases := []struct {
@@ -59,8 +53,6 @@ func TestPresentationHTMLTable(t *testing.T) {
 	}{
 		{"plain is verbatim", rpc.TextPresentationPlain, "notes.md", "* one", "<h2"},
 		{"undeclared markdown name renders a list", "", "notes.md", "<li", "<h2"},
-		// The same source is a headline in org, not a list item: the name is
-		// what picks the dialect.
 		{"undeclared org name renders a heading", "", "notes.org", "<h2", ""},
 		{"rendered declaration renders too", rpc.TextPresentationRendered, "notes.md", "<li", ""},
 		{"both declaration renders too", rpc.TextPresentationBoth, "notes.md", "<li", ""},
