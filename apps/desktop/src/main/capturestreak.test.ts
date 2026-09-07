@@ -1,0 +1,128 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { decideStreak, FRESH, AttemptKind, StreakDecision, StreakState } from './capturestreak';
+
+// Every failure kind, so no arm can be added without a row here.
+const FAILURES: AttemptKind[] = ['empty', 'timeout', 'rejected', 'view-gone'];
+
+// A mirror that has captured before: the state every "it froze" row starts in.
+function live(failures = 0): StreakState {
+  return { everCaptured: true, failures };
+}
+
+const TABLE: { name: string; prev: StreakState; kind: AttemptKind; want: StreakDecision }[] = [
+  {
+    name: '1. the first frame a pane ever produces says nothing',
+    prev: FRESH,
+    kind: 'ok',
+    want: { state: live(0), report: null },
+  },
+  {
+    name: '2. a healthy mirror that captures again says nothing',
+    prev: live(0),
+    kind: 'ok',
+    want: { state: live(0), report: null },
+  },
+  // 3–6: the failures the streak never used to see. A timeout, a rejection and
+  // an empty image all resolved to '' inside captureJpegBase64, so capture()'s
+  // catch — the only place the count moved — never ran. These are the actual
+  // "frozen preview with no evidence" cases.
+  ...FAILURES.map((kind, i) => ({
+    name: `${i + 3}. the first ${kind} on a live mirror opens the streak and is reported`,
+    prev: live(0),
+    kind,
+    want: { state: live(1), report: { kind: 'failing' as const, reason: kind } },
+  })),
+  {
+    name: '7. a second failure counts but does not report again',
+    // The pump captures every live pane on a timer; reporting per frame would
+    // bury the log.
+    prev: live(1),
+    kind: 'timeout',
+    want: { state: live(2), report: null },
+  },
+  {
+    name: '8. a failure of a different kind mid-streak is still silent',
+    prev: live(2),
+    kind: 'rejected',
+    want: { state: live(3), report: null },
+  },
+  {
+    name: '9. a success after failures reports recovery, with the count lost',
+    prev: live(3),
+    kind: 'ok',
+    want: { state: live(0), report: { kind: 'recovered', afterFailures: 3 } },
+  },
+  {
+    name: '10. the next success after a recovery is silent',
+    // Recovery is reported exactly once: the count is back to 0, so the arm
+    // above cannot fire again until a new failure opens a new streak.
+    prev: live(0),
+    kind: 'ok',
+    want: { state: live(0), report: null },
+  },
+  {
+    name: '11. a destroyed view recovers like anything else',
+    // The old flag latched here: view-gone was the one arm that set it, and it
+    // was cleared only by a success the same view could never produce. A
+    // reloaded renderer does capture again, and the count is what says so.
+    prev: live(1),
+    kind: 'ok',
+    want: { state: live(0), report: { kind: 'recovered', afterFailures: 1 } },
+  },
+  {
+    name: '12. a new failure after a recovery opens a new streak',
+    prev: live(0),
+    kind: 'empty',
+    want: { state: live(1), report: { kind: 'failing', reason: 'empty' } },
+  },
+  {
+    name: '13. a view that has never painted is not a frozen mirror',
+    // Chromium answers capturePage with an empty image for the first frames
+    // after a place. The pane is showing its stored preview, which is right;
+    // there is nothing frozen to report.
+    prev: FRESH,
+    kind: 'empty',
+    want: { state: { everCaptured: false, failures: 1 }, report: null },
+  },
+  {
+    name: '14. warm-up failures keep counting but stay silent',
+    prev: { everCaptured: false, failures: 1 },
+    kind: 'timeout',
+    want: { state: { everCaptured: false, failures: 2 }, report: null },
+  },
+  {
+    name: '15. the first real frame after warm-up reports no recovery',
+    // Nothing was ever reported failing, so there is nothing to recover from.
+    prev: { everCaptured: false, failures: 2 },
+    kind: 'ok',
+    want: { state: live(0), report: null },
+  },
+];
+
+for (const c of TABLE) {
+  test(`decideStreak: ${c.name}`, () => {
+    assert.deepEqual(decideStreak(c.prev, c.kind), c.want);
+  });
+}
+
+test('decideStreak: a placed pane warms up quietly, then reports one freeze and one recovery', () => {
+  const reports: string[] = [];
+  let state = FRESH;
+  const feed = (kind: AttemptKind) => {
+    const d = decideStreak(state, kind);
+    state = d.state;
+    if (d.report) reports.push(d.report.kind);
+  };
+  feed('empty'); // not painted yet
+  feed('empty');
+  feed('ok'); // the mirror is live
+  feed('timeout'); // and now it froze
+  feed('timeout');
+  feed('empty');
+  feed('rejected');
+  feed('ok'); // reloaded
+  feed('ok');
+  assert.deepEqual(reports, ['failing', 'recovered']);
+  assert.deepEqual(state, { everCaptured: true, failures: 0 });
+});

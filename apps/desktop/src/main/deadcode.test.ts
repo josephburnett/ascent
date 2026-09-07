@@ -33,6 +33,14 @@ const ALLOWED: Record<string, string> = {
     'the decision\'s input shape; the executor builds it inline as an object literal, so only the table test names the type',
   'main/focusguard.ts:GuardAction':
     'the decision\'s output shape; the executor switches on act.kind, so only the table test names the type',
+  'main/capture.ts:CaptureAttempt':
+    'the labelled outcome of one capture; captureAttempt returns it and describeAttempt takes it, and the executor holds it in an inferred const',
+  'main/capturestreak.ts:AttemptKind':
+    'the decision\'s input vocabulary; the executor passes attempt.kind structurally, so only the table test names the type',
+  'main/capturestreak.ts:StreakReport':
+    'the decision\'s report shape; the executor switches on report.kind, so only the table test names the type',
+  'main/capturestreak.ts:StreakDecision':
+    'the decision\'s output shape; the executor reads its fields, so only the table test names the type',
 };
 
 function walkTs(dir: string, out: string[] = []): string[] {

@@ -19,7 +19,8 @@ import {
   openBelowUrl,
 } from './viewutil';
 import { urlContextMenuTemplate } from './contextmenu';
-import { captureJpegBase64 } from './capture';
+import { captureAttempt, captureJpegBase64, describeAttempt } from './capture';
+import { decideStreak, FRESH, StreakState } from './capturestreak';
 import { decideFocus, isPressInput, GuardPhase } from './focusguard';
 
 // urlViewPreload is the script injected into every live url view; it forwards
@@ -51,10 +52,11 @@ interface Entry {
   // remove() can cancel it: the closure holds the view, and firing after
   // webContents.close() would throw uncaught in main.
   focusSettle: ReturnType<typeof setTimeout> | null;
-  // captureFailing marks a mirror capture in a failing streak, so entering and
-  // leaving failure each log exactly once. A silently frozen mirror otherwise
-  // leaves no evidence anywhere.
-  captureFailing?: boolean;
+  // captureStreak is this pane's mirror-capture history: whether it has ever
+  // produced a frame, and how many captures have failed since the last one. It
+  // is the whole streak state — "failing" is failures > 0, derived, never
+  // stored beside it — and capturestreak.decideStreak is what moves it.
+  captureStreak: StreakState;
 }
 
 interface RegistryCallbacks {
@@ -326,7 +328,7 @@ export class WebviewRegistry {
     // page they never clicked on. syncURLViews calls setHidden for this pane on
     // the next draw() and reaffirms both.
     const startHidden = hidden;
-    const e: Entry = { view, tileId, bounds: rounded, hidden: startHidden, focused, userZoom: contentZoom, presses: 0, durable, focusSettle: null };
+    const e: Entry = { view, tileId, bounds: rounded, hidden: startHidden, focused, userZoom: contentZoom, presses: 0, durable, focusSettle: null, captureStreak: FRESH };
     this.entries.set(paneId, e);
     this.win.contentView.addChildView(view);
     view.setBounds(startHidden ? parkedBounds(rounded.width, rounded.height) : rounded);
@@ -500,26 +502,31 @@ export class WebviewRegistry {
   }
 
   // capture grabs a current frame for mirroring to other panes, without
-  // tearing the view down. Returns '' if the pane has no live view.
+  // tearing the view down. Returns '' if the pane has no live view, and ''
+  // for any failed attempt — the contract callers see is unchanged.
+  //
+  // Every outcome is labelled and fed to capturestreak, which owns whether this
+  // is a new streak, a continuing one, or a recovery. This shim runs the I/O and
+  // sends what it is told to send; it compares nothing. A hidden pane is not an
+  // attempt at all, so it neither opens nor closes a streak.
   async capture(paneId: string): Promise<string> {
     const e = this.entries.get(paneId);
     if (!e || e.hidden) return '';
-    try {
-      const jpeg = await captureJpegBase64(e.view);
-      if (e.captureFailing && jpeg) {
-        e.captureFailing = false;
-        this.cb.onError?.({ source: 'electron:webview', message: `pane ${paneId}: mirror capture recovered` });
-      }
-      return jpeg;
-    } catch (err) {
-      // A frozen mirror must not be evidence-free. Log the transition into
-      // failure once per streak; per-frame captures would spam.
-      if (!e.captureFailing) {
-        e.captureFailing = true;
-        this.cb.onError?.({ source: 'electron:webview', message: `pane ${paneId}: mirror capture failing: ${String(err)}` });
-      }
-      return '';
+    const attempt = await captureAttempt(e.view);
+    const decision = decideStreak(e.captureStreak, attempt.kind);
+    e.captureStreak = decision.state;
+    const report = decision.report;
+    if (report) {
+      // A frozen mirror must not be evidence-free, and a mirror that came back
+      // must say so — otherwise the failing report reads as permanent.
+      const message =
+        report.kind === 'failing'
+          ? `pane ${paneId}: mirror capture failing: ${describeAttempt(attempt)}`
+          : `pane ${paneId}: mirror capture recovered after ${report.afterFailures} failed ` +
+            `${report.afterFailures === 1 ? 'capture' : 'captures'}`;
+      this.cb.onError?.({ source: 'electron:webview', message });
     }
+    return attempt.kind === 'ok' ? attempt.jpegBase64 : '';
   }
 
   // goBack is the one back action for a live view: the bar's back button over

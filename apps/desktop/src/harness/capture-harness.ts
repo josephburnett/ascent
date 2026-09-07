@@ -653,6 +653,89 @@ app.whenReady().then(async () => {
   await regM.remove('paneM');
   console.log('capture streak ok: the failure is reported once, not per frame');
 
+  // ── a crashed renderer's frozen mirror is reported, and its recovery too ─
+  // The case the streak used to miss entirely. A crashed renderer is not a
+  // destroyed view: reading webContents works, capturePage answers, and what it
+  // answers with — an empty image, a rejection, or nothing before the time box
+  // — used to be flattened to '' inside captureJpegBase64, so capture()'s catch
+  // never ran and the mirror froze with no evidence. The far side was the same
+  // bug: the streak state was a latch only a success could clear, and the one
+  // arm that ever set it (a destroyed view) could never succeed again, so the
+  // recovery report was unreachable. Reloading a crashed renderer is exactly
+  // the success that must now reach it.
+  const streakErrs: string[] = [];
+  const regCrash = new WebviewRegistry(win, { onError: (ev) => streakErrs.push(ev.message) });
+  await regCrash.place('paneCrash', 'u1/75', DATA_URL, { x: 0, y: 0, width: 400, height: 300 });
+  if ((await waitForNonEmptyCapture(regCrash, 'paneCrash', 6000)).length === 0) fail('streak scenario: no frame within 6s');
+  // A control pane in its own registry, never crashed, captured the same way.
+  // A renderer crash sometimes takes the viz process with it under xvfb, and
+  // then capturePage rejects with UnknownVizError for EVERY view in the
+  // process, forever: no mirror can recover because nothing can capture. The
+  // control is how this scenario tells that environment collapse from the
+  // product bug it is looking for, instead of blaming the change for it.
+  const ctlErrs: string[] = [];
+  const regCtl = new WebviewRegistry(win, { onError: (ev) => ctlErrs.push(ev.message) });
+  await regCtl.place('paneCtl', 'u1/76', DATA_URL, { x: 400, y: 0, width: 400, height: 300 });
+  if ((await waitForNonEmptyCapture(regCtl, 'paneCtl', 6000)).length === 0) fail('control pane: no frame within 6s');
+  const wcCrash = regCrash.webContentsFor('paneCrash')!;
+  wcCrash.forcefullyCrashRenderer();
+  // The pump is what captures in production; here the harness is the pump.
+  // Capture until the report lands, so a crash that takes a moment to reach
+  // capturePage is not read as a missing report.
+  let sawFailing = false;
+  const failDeadline = Date.now() + 8000;
+  while (Date.now() < failDeadline) {
+    if ((await regCrash.capture('paneCrash')) === '' && streakErrs.some((m) => m.includes('mirror capture failing'))) {
+      sawFailing = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  if (!sawFailing) {
+    fail(`a crashed renderer's frozen mirror was never reported (errors: ${JSON.stringify(streakErrs)})`);
+  }
+  const failMsg = streakErrs.find((m) => m.includes('mirror capture failing'))!;
+  if (!failMsg.includes('paneCrash')) fail(`the failing report does not name the pane: ${failMsg}`);
+
+  wcCrash.reload();
+  let recoveredFrame = '';
+  let ctlMisses = 0;
+  const recDeadline = Date.now() + 10000;
+  while (Date.now() < recDeadline) {
+    recoveredFrame = await regCrash.capture('paneCrash');
+    if (recoveredFrame) break;
+    ctlMisses = (await regCtl.capture('paneCtl')) ? 0 : ctlMisses + 1;
+    if (ctlMisses >= 3) break; // the compositor, not this pane
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  if (!recoveredFrame && ctlMisses >= 3) {
+    // Not a pass and not a failure of the code under test: nothing in this
+    // process can capture, so there is no recovery to observe. The failing half
+    // above already asserted, and capturestreak.test.ts owns the transition.
+    console.log(
+      'capture streak SKIPPED the recovery half: the crash took the compositor with it, ' +
+        `so the untouched control pane stopped capturing too (xvfb artifact) — control said ${JSON.stringify(ctlErrs)}`,
+    );
+  } else {
+    if (!recoveredFrame) fail(`a reloaded renderer never captured again (errors: ${JSON.stringify(streakErrs)})`);
+    const recovered = streakErrs.filter((m) => m.includes('mirror capture recovered'));
+    if (recovered.length !== 1) {
+      fail(`recovery was reported ${recovered.length} times, want 1 (errors: ${JSON.stringify(streakErrs)})`);
+    }
+    // The streak is closed, so a further good capture says nothing more, and
+    // the failing report never fired per frame while the renderer was down.
+    if ((await regCrash.capture('paneCrash')).length === 0) fail('a recovered mirror stopped capturing');
+    if (streakErrs.filter((m) => m.includes('mirror capture recovered')).length !== 1) {
+      fail('a healthy capture re-reported recovery');
+    }
+    if (streakErrs.filter((m) => m.includes('mirror capture failing')).length !== 1) {
+      fail(`the failing report fired more than once per streak: ${JSON.stringify(streakErrs)}`);
+    }
+    console.log('capture streak ok: a crashed renderer reports failing, and a reload reports recovered');
+  }
+  await regCtl.remove('paneCtl');
+  await regCrash.remove('paneCrash');
+
   // ── Freeze Page appears only where there is something to freeze ─────────
   // canFreeze is the registry's half of the gating: contextmenu.test.ts owns
   // the template's arms, and url-circle-menu.spec.ts the durable positive. What
