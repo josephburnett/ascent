@@ -1,13 +1,12 @@
-// Package dragdrop holds the pure-math helpers used by the canvas client to
-// translate cursor positions into grid cell coordinates and to validate
-// proposed drops.
+// Package dragdrop turns cursor positions into grid cell coordinates and
+// decides what a drag release does. DecideDrop is the one verdict both the
+// in-flight preview and the commit obey.
 package dragdrop
 
 import "math"
 
-// Pane describes the screen rectangle and viewport state for one pane. CellPx
-// is the rendered size of one cell at zoom 1.0; the actual pixel size on
-// screen is CellPx*Zoom.
+// Pane is one pane's screen rectangle and viewport. CellPx is a cell's size
+// at zoom 1.0, so a cell is CellPx*Zoom pixels on screen.
 type Pane struct {
 	ScreenX, ScreenY float64 // top-left of the pane in screen coordinates
 	ScreenW, ScreenH float64
@@ -16,19 +15,16 @@ type Pane struct {
 	CellPx           float64
 }
 
-// ScreenToCell converts (sx, sy) in screen coordinates to (cx, cy) in cell
-// coordinates within the pane's viewport. Returns floating-point cells; the
-// caller floors / rounds depending on context.
+// ScreenToCell converts screen coordinates to floating-point cells in the
+// pane's viewport. The caller floors or rounds them.
 func (p Pane) ScreenToCell(sx, sy float64) (float64, float64) {
-	// Top-left of the viewport in screen space is centered on (Cx, Cy).
-	// Scale: 1 cell = CellPx * Zoom screen pixels.
 	cellSize := p.CellPx * p.Zoom
 	cx := p.Cx + (sx-(p.ScreenX+p.ScreenW/2))/cellSize
 	cy := p.Cy + (sy-(p.ScreenY+p.ScreenH/2))/cellSize
 	return cx, cy
 }
 
-// CellToScreen does the inverse mapping.
+// CellToScreen is the inverse of ScreenToCell.
 func (p Pane) CellToScreen(cx, cy float64) (float64, float64) {
 	cellSize := p.CellPx * p.Zoom
 	sx := p.ScreenX + p.ScreenW/2 + (cx-p.Cx)*cellSize
@@ -36,76 +32,57 @@ func (p Pane) CellToScreen(cx, cy float64) (float64, float64) {
 	return sx, sy
 }
 
-// CellAt returns the integer cell containing screen point (sx, sy) using
-// floor semantics (see FloorCellAt for the rationale). It is the one place
-// the dragdrop.Pane + ScreenToCell + floor combination lives.
+// CellAt is the integer cell containing a screen point, with floor
+// semantics. See FloorCellAt.
 func (p Pane) CellAt(sx, sy float64) (int64, int64) {
 	cx, cy := p.ScreenToCell(sx, sy)
 	return int64(math.Floor(cx)), int64(math.Floor(cy))
 }
 
 // SnapToCell rounds a floating-cell coordinate to the nearest whole cell,
-// rounding halves away from zero — so an exact boundary value snaps to the
-// cell of larger magnitude: 0.5 -> 1, 1.5 -> 2, -0.5 -> -1, -1.5 -> -2.
-//
-// Use this for "where should a tile come to rest?" semantics. For "what
-// cell is the cursor currently INSIDE?" use FloorCellAt — round and floor
-// disagree on the lower-right half of every cell, and that mismatch will
-// make hit-tests miss.
+// halves away from zero, so the snap is symmetric about zero. It answers
+// where a dragged tile comes to rest; use FloorCellAt to ask which cell the
+// cursor is inside.
 func SnapToCell(c float64) int64 {
 	if c >= 0 {
 		return int64(c + 0.5)
 	}
-	// Negative values round the same way by magnitude (e.g. -0.5 -> -1), so
-	// the snap is symmetric about zero.
 	return int64(c - 0.5)
 }
 
-// FloorCellAt returns the integer cell that contains the screen point
-// (sx, sy) on a cell grid whose top-left is at (originX, originY) and
-// whose cell size is cellSize screen pixels.
-//
-// "Floor" semantics: every interior point of cell N reports N — never
-// N±1. This is the right answer for hit-testing "what tile is under
-// the cursor?". SnapToCell, by contrast, rounds to the nearest cell
-// boundary and is the right answer for "where should a dragged tile
-// snap on release?". Mixing them up means the lower-right half of
-// each cell rounds forward, so a hit-test using SnapToCell silently
-// misses half of every cell.
+// FloorCellAt is the integer cell containing the screen point (sx, sy) on a
+// grid whose top-left is (originX, originY) and whose cells are cellSize
+// pixels. Every interior point of cell N reports N, which is what a hit-test
+// needs; SnapToCell rounds instead and would miss the lower-right half of
+// every cell.
 func FloorCellAt(originX, originY, cellSize, sx, sy float64) (int64, int64) {
 	return int64(math.Floor((sx - originX) / cellSize)),
 		int64(math.Floor((sy - originY) / cellSize))
 }
 
-// HiddenMatch reports whether a tile should be skipped during render
-// because it is currently being dragged. The drag layer paints a
-// ghost following the cursor; the source's static row in the cache
-// needs to be hidden underneath it so we don't see two copies.
+// HiddenMatch reports whether a tile is skipped during render because it is
+// being dragged, so the ghost and the cached row do not both show.
 //
-// It matches by tile id — the primary-key row, the only identity a tile has.
-// A clone is a different row that looks the same, so matching on anything a
-// clone shares with its source would make every clone of the dragged tile
-// vanish during the drag. Row id keeps each one visible.
+// It matches by tile id, the only identity a tile has. A clone is a different
+// row that looks the same, so matching on anything a clone shares with its
+// source would make every clone vanish during the drag.
 func HiddenMatch(hiddenTileID string, hiddenPaneID, currentPaneID string, tileID string) bool {
 	return hiddenTileID != "" && hiddenPaneID == currentPaneID && tileID == hiddenTileID
 }
 
-// ChildPreview describes a well's child-grid preview as drawn inside
-// its parent grid. Origin is the screen coord of child cell (0, 0)
-// and CellPx is the rendered size of one child cell in screen pixels.
-// Use ChildPreviewFor to compute these from a well's footprint plus
-// the parent pane's transform.
+// ChildPreview is a well's child-grid preview as drawn inside its parent
+// grid. Origin is the screen coordinate of child cell (0, 0) and CellPx is a
+// child cell's size in screen pixels. ChildPreviewFor computes both.
 type ChildPreview struct {
 	OriginX, OriginY float64
 	CellPx           float64
 }
 
-// ChildPreviewFor returns the screen-coord transform for a well's
-// child-grid preview, given the parent pane, the well's footprint and
-// stored framing center (ViewCx/ViewCy, in child-grid cells), and a
-// resolved child-cell-per-parent-cell ratio (caller computes via
-// zoomtrans.EffectiveViewZoom). previewCell = parentCell × previewRatio.
-// Pane-size independent.
+// ChildPreviewFor is the screen transform for a well's child-grid preview.
+// ViewCx and ViewCy are the well's stored framing center in child cells, and
+// previewRatio is the child cells per parent cell, which the caller resolves
+// through zoomtrans.EffectiveViewZoom. The result is independent of pane
+// size.
 func ChildPreviewFor(parent Pane, well struct {
 	X, Y, W, H     int64
 	ViewCx, ViewCy float64
@@ -122,39 +99,34 @@ func ChildPreviewFor(parent Pane, well struct {
 	}
 }
 
-// ChildCellAtScreen returns the child-grid cell coordinate (as a
-// float, caller floors/rounds as needed) for a screen point inside
+// ChildCellAtScreen is the floating child-grid cell at a screen point inside
 // the preview.
 func (cp ChildPreview) ChildCellAtScreen(sx, sy float64) (float64, float64) {
 	return (sx - cp.OriginX) / cp.CellPx, (sy - cp.OriginY) / cp.CellPx
 }
 
-// CellToScreen returns the screen coordinate of the top-left corner
-// of child cell (cx, cy) in the preview.
+// CellToScreen is the screen coordinate of child cell (cx, cy)'s top-left
+// corner in the preview.
 func (cp ChildPreview) CellToScreen(cx, cy float64) (float64, float64) {
 	return cp.OriginX + cx*cp.CellPx, cp.OriginY + cy*cp.CellPx
 }
 
-// TileContainsCell reports whether the cell (cx, cy) lies within the
-// rectangle (x, y, w, h). Used to decide whether a cursor's child-cell
-// hits a tile inside a well preview.
+// TileContainsCell reports whether cell (cx, cy) lies within the rectangle
+// (x, y, w, h).
 func TileContainsCell(x, y, w, h, cx, cy int64) bool {
 	return cx >= x && cx < x+w && cy >= y && cy < y+h
 }
 
-// RectsOverlap reports whether two cell-space footprints intersect — the same
-// predicate the server's overlap check applies, so the client's drop
-// preflight and the authoritative PlaceTile cannot disagree about what counts
-// as a collision.
+// RectsOverlap reports whether two cell-space footprints intersect. It is
+// the predicate the server's overlap check applies, so the drop preflight and
+// PlaceTile cannot disagree about a collision.
 func RectsOverlap(ax, ay, aw, ah, bx, by, bw, bh int64) bool {
 	return ax < bx+bw && bx < ax+aw && ay < by+bh && by < ay+ah
 }
 
-// InTileCenter reports whether the cell-space point (cellX, cellY) lies
-// inside the inner 1/3 × 1/3 of the tile at (x, y, w, h). The center
-// region scales with the tile so it's always 1/9 of the footprint, even
-// on 1×1 tiles, and the right-button "copy/link grab handle" feels the
-// same at every zoom.
+// InTileCenter reports whether a cell-space point lies in the inner third of
+// the tile at (x, y, w, h). The region scales with the tile, so the copy and
+// link grab handle feels the same at every zoom and on a 1x1 tile.
 func InTileCenter(x, y, w, h int64, cellX, cellY float64) bool {
 	xf, yf := float64(x), float64(y)
 	wf, hf := float64(w), float64(h)
@@ -162,23 +134,20 @@ func InTileCenter(x, y, w, h int64, cellX, cellY float64) bool {
 		cellY >= yf+hf/3 && cellY <= yf+2*hf/3
 }
 
-// ResizeAnchors are the cell-coord state captured at the start of a
-// right-button tile resize. PinX/PinY is the corner of the original
-// tile diagonally opposite the click quadrant (clicking in the BR
-// quadrant pins TL, etc.). OrigMovingX/OrigMovingY is the corner in
-// the click quadrant — where the moving corner starts. ClickCellX/Y is
-// the cell the cursor was rounded to at the click, so that mouse
-// movement deltas can be translated cell-for-cell.
+// ResizeAnchors is the cell state captured when a right-button tile resize
+// starts. PinX and PinY are the corner diagonally opposite the click
+// quadrant, OrigMovingX and OrigMovingY are the corner under the cursor, and
+// ClickCellX and ClickCellY are the cursor's rounded cell, so a movement
+// delta translates cell for cell.
 type ResizeAnchors struct {
 	PinX, PinY               int64
 	OrigMovingX, OrigMovingY int64
 	ClickCellX, ClickCellY   int64
 }
 
-// ResizeAnchorsFor returns the anchors for a tile at (x, y, w, h) given
-// the cursor's float cell coordinates at click time. Which quadrant the
-// click lands in decides which corner is pinned (opposite) and which is
-// moving (under the cursor).
+// ResizeAnchorsFor is the anchors for a tile at (x, y, w, h) given the
+// cursor's cell coordinates at click time. The click quadrant decides which
+// corner is pinned.
 func ResizeAnchorsFor(x, y, w, h int64, cellXf, cellYf float64) ResizeAnchors {
 	var a ResizeAnchors
 	midX := float64(x) + float64(w)/2
@@ -202,10 +171,8 @@ func ResizeAnchorsFor(x, y, w, h int64, cellXf, cellYf float64) ResizeAnchors {
 	return a
 }
 
-// ResizeFromCursor returns the proposed (x, y, w, h) for the tile given
-// the cursor's current rounded cell. The moving corner is
-// OrigMoving + (cur - click); the new tile is bb(pin, moving) with each
-// side at least 1.
+// ResizeFromCursor is the proposed (x, y, w, h) for the tile at the cursor's
+// current rounded cell. Each side is at least 1.
 func ResizeFromCursor(a ResizeAnchors, curCellX, curCellY int64) (int64, int64, int64, int64) {
 	movX := a.OrigMovingX + (curCellX - a.ClickCellX)
 	movY := a.OrigMovingY + (curCellY - a.ClickCellY)
@@ -214,11 +181,10 @@ func ResizeFromCursor(a ResizeAnchors, curCellX, curCellY int64) (int64, int64, 
 	return x, y, w, h
 }
 
-// RangeFromAnchors returns [start, length] of a 1-D range given a pinned
-// anchor and a moving anchor in integer cells. Minimum length is 1; on
-// the degenerate moving == pin case, the 1-cell range is placed on the
-// side the user originally clicked (origRight) so the rectangle's
-// identity stays stable across the crossover.
+// RangeFromAnchors is the start and length of a one-dimensional range
+// between a pinned and a moving anchor, at least 1 long. When the two meet
+// the range sits on the side the user first clicked, so the rectangle keeps
+// its identity across the crossover.
 func RangeFromAnchors(pin, moving int64, origRight bool) (start, length int64) {
 	if moving == pin {
 		if origRight {
@@ -232,22 +198,16 @@ func RangeFromAnchors(pin, moving int64, origRight bool) (start, length int64) {
 	return moving, pin - moving
 }
 
-// MoveForbidden reports whether a left-drag from a tile in a grid that
-// declares host_content (srcHost) to a destination grid that declares it
-// (dstHost) would be rejected by the server. The fact is the owning plugin's
-// DECLARATION, carried on the grid — no kind names here.
+// MoveForbidden reports whether the server would reject a left-drag between
+// grids when either end declares host_content. The fact is the owning
+// plugin's declaration, carried on the grid.
 //
-// Crossing an id namespace is not a forbidden move; it is not a move at all.
-// A cross-plugin left-drag creates a link (DropLink): identity never
-// migrates, the content stays where its id lives, and the destination gains a
-// reference. That is why crossPlugin exempts the host arms here — linking a
-// host file or directory into a Gridwell grid is the mount philosophy, and a
-// read-only destination is rejected by the separate TargetReadOnly gate. What
-// remains forbidden is the same-namespace cross-grid move with a
-// host-content endpoint: a host file cannot migrate into Gridwell, regular
-// tiles cannot move into a host directory, and host-side mv between two
-// source dirs is not implemented. A same-grid move crosses no boundary and is
-// always allowed.
+// A drag across an id namespace is not a move at all, so crossPlugin exempts
+// the host arms: it becomes a link, and TargetReadOnly gates a read-only
+// destination separately. What stays forbidden is a same-namespace cross-grid
+// move with a host-content end, because host content cannot migrate into
+// Gridwell and host-side mv is not implemented. A same-grid move crosses no
+// boundary.
 func MoveForbidden(sameGrid, crossPlugin, srcHost, dstHost bool) bool {
 	if sameGrid || crossPlugin {
 		return false
@@ -255,163 +215,116 @@ func MoveForbidden(sameGrid, crossPlugin, srcHost, dstHost bool) bool {
 	return srcHost || dstHost
 }
 
-// Intent is what the armed gesture means to leave at the destination, fixed
-// by the press that arms the drag and never re-derived afterwards. It is the
-// one owner of that fact: the drag state carries it, and the preview and the
-// commit both read it from there, so no call site can decide on a flavor that
-// disagrees with the gesture the user actually started.
+// Intent is what the armed gesture leaves at the destination. It is fixed by
+// the press that arms the drag and never re-derived, so the preview and the
+// commit cannot disagree with the gesture the user started.
 type Intent int
 
 const (
-	// IntentMove is a left-drag: the tile itself travels. Across an id
-	// namespace there is no move, so it verdicts a link instead. It is the
-	// zero value, which a palette template drag also leaves unset.
+	// IntentMove is a left-drag, where the tile itself travels. Across an
+	// id namespace it verdicts a link instead. It is the zero value, which
+	// a palette template drag leaves unset.
 	IntentMove Intent = iota
-	// IntentCopy is a right-drag: an independent copy at the destination, in
+	// IntentCopy is a right-drag, an independent copy at the destination in
 	// the same namespace or across one.
 	IntentCopy
-	// IntentLink is ctrl + right-drag: ctrl flips the right button's meaning
-	// from copy to link, so the destination gains a reference and the source
-	// is untouched. It links in whatever namespace the drop lands in — the
-	// same namespace or across one — because a link is a link; the
-	// cross-namespace case is exactly what a plain left-drag already makes.
+	// IntentLink is ctrl with a right-drag, where ctrl flips the right
+	// button from copy to link. It links in whatever namespace the drop
+	// lands in.
 	IntentLink
 )
 
-// Creates reports whether the intent puts a NEW tile at the destination
-// rather than relocating the dragged one. Copy and link are both creation:
-// the source stays put, so it is a real neighbor the drop must not land on,
-// a read-only destination refuses the arrival, and a move-only rule like
+// Creates reports whether the intent puts a new tile at the destination. A
+// copy and a link both create, so the source stays put and is a neighbor the
+// drop must not land on, a read-only destination refuses the arrival, and
 // MoveForbidden does not apply.
 func (i Intent) Creates() bool { return i != IntentMove }
 
-// DropAction is the single verdict for a drag release and the matching
-// in-flight preview. Both the commit handlers and the ghost-preview handlers
-// in the wasm client route through DecideDrop, so they cannot disagree: a
-// preview that reads one set of facts and a commit that reads another is how
-// the ghost and the outcome drift apart.
+// DropAction is the verdict for a drag release and its in-flight preview.
+// The commit handlers and the ghost-preview handlers both route through
+// DecideDrop, so the ghost and the outcome cannot drift apart.
 type DropAction int
 
 const (
-	// DropNavigate: a bare click (no drag started) on an already-focused
-	// pane — the wasm side runs descent/ascent/selection. Not a placement.
+	// DropNavigate is a bare click on an already-focused pane, which
+	// descends, ascends or selects. It places nothing.
 	DropNavigate DropAction = iota
-	// DropNavigateSplit: the same bare click with ctrl held at press time —
-	// a descent lands in a new split pane instead of this one; every other
-	// outcome of the click (selection, the url-configure prompt) is
-	// unchanged. Ctrl is the split ask only on an already-focused pane: on
-	// an unfocused one the click is still focus-only.
+	// DropNavigateSplit is that bare click with ctrl held at press time, so
+	// a descent lands in a new split pane. Every other outcome of the click
+	// is unchanged, and on an unfocused pane the click is still focus-only.
 	DropNavigateSplit
-	// DropFocusOnly: a bare click whose only job was moving focus to the
-	// pane (it was unfocused at press time); no navigation, no selection.
+	// DropFocusOnly is a bare click on a pane that was unfocused at press
+	// time, which only moved focus.
 	DropFocusOnly
-	// DropCreateTemplate: a palette-swatch drag — create a fresh tile at
-	// the snapped cell.
+	// DropCreateTemplate creates a fresh tile at the snapped cell from a
+	// palette swatch.
 	DropCreateTemplate
-	// DropPanEnd: an empty-space (tileID==0) drag — just persist viewport.
+	// DropPanEnd is an empty-space drag, which persists the viewport.
 	DropPanEnd
-	// DropDelete: released over the source pane's + (trashcan) button.
+	// DropDelete is a release over the source pane's trashcan button.
 	DropDelete
-	// DropRejected: nothing legal here (no target, a forbidden cross-grid
-	// move, the same cell, or an occupied one) — snap back.
+	// DropRejected snaps back.
 	DropRejected
-	// DropMove: a clean left-drag — MoveTile.
+	// DropMove relocates the tile.
 	DropMove
-	// DropClone: a clean right-drag — CloneTile.
+	// DropClone copies it.
 	DropClone
-	// DropLink: create a link at the destination (an exit well for a grid, a
-	// leaf link for text/url/shell/pane). Two gestures verdict it: a ctrl +
-	// right-drag, which asks for a link anywhere, and a clean left-drag whose
-	// endpoints are in different id namespaces, where there is no other
-	// answer — there is no cross-plugin move. Either way identity never
-	// migrates, the content stays where its id lives, and the source tile is
-	// untouched.
+	// DropLink creates a reference at the destination, an exit well for a
+	// grid and a leaf link otherwise. Two gestures verdict it: ctrl with a
+	// right-drag, and a left-drag whose ends are in different id namespaces,
+	// where there is no cross-plugin move. Either way the source is
+	// untouched and identity never migrates.
 	DropLink
 )
 
-// DropInput is the snapshot of every world-read a drop decision needs,
-// gathered once at release (or per preview frame) before any teardown nils
-// out drag state. It holds no App fields and no js.Value: gather first, then
-// decide, so a cleared field can never be read late.
-//
-// Field provenance in the wasm caller (impure resolvers stay there):
-//   - OverDelete:  a.overDeleteButton(d, sx, sy)
-//   - HasTarget:   a.dropTargetAt(sx, sy, tileID) resolved
-//   - Forbidden:   move only — a.dropForbiddenForMove(d, t) (MoveForbidden).
-//     No creation is forbidden (a solid well deep-copies, a link copies as a
-//     link), so a copy or a link leaves it false
-//   - CrossPlugin: dropCrossNamespace(d, t) — NamespaceOf(src) != NamespaceOf(dst)
-//   - SameCell:    target grid == source grid && drop cell == source cell
-//   - Occupied:    a.occupiedForDrop(t.gridID, dropX, dropY, w, h, exclude)
-//     — the dragged footprint against the cached tiles, excluding the
-//     moving tile itself on a move (never on a creation), mirroring the
-//     server's PlaceTile self-exclusion
+// DropInput is every world-read a drop decision needs, gathered once at
+// release or per preview frame before any teardown clears the drag state. It
+// holds no App fields and no js.Value, so a cleared field can never be read
+// late. The caller resolves each field; Forbidden comes from MoveForbidden
+// and is false for a copy or a link, and Occupied excludes the moving tile on
+// a move, mirroring the server's PlaceTile.
 type DropInput struct {
 	Started bool
-	// OriginFocused: the origin pane was already focused when the press
-	// landed. A bare click (!Started) on an unfocused pane is focus-only —
-	// the mousedown moved focus, and the release must not also navigate or
-	// select, whatever tile sits under the cursor. The + button and the
-	// corner circle follow the same rule: act only when already focused.
+	// OriginFocused means the origin pane was already focused when the
+	// press landed. A bare click on an unfocused pane is focus-only,
+	// whatever tile sits under the cursor, and the + button and the corner
+	// circle follow the same rule.
 	OriginFocused bool
-	// SplitNav: ctrl was held at left-press time — fixed at press like
-	// every drag fact, so releasing ctrl mid-click cannot change the
-	// verdict. Read only by the bare-click arm: a started drag with ctrl
-	// held is still a plain move. Touch synthesizes no ctrlKey, so touch
-	// never sets it.
+	// SplitNav means ctrl was held at left-press time. It is fixed at
+	// press, so releasing ctrl mid-click cannot change the verdict, and
+	// only the bare-click arm reads it. Touch synthesizes no ctrlKey.
 	SplitNav   bool
 	IsTemplate bool
-	// Intent is the armed gesture's meaning — move, copy, or link — read
-	// from the drag state, never re-derived per call site.
+	// Intent is the armed gesture's meaning, read from the drag state.
 	Intent     Intent
-	TileID     string // "" = pan / empty-space drag
+	TileID     string // "" for a pan or empty-space drag
 	OverDelete bool
 	HasTarget  bool
 	Forbidden  bool
-	// TargetReadOnly: the destination grid refuses creation (Grid.writable
-	// false — an fs or proc grid), so an arrival there (a cross-grid drop, a
-	// clone) is rejected up front instead of firing an RPC the server must
-	// refuse. A same-grid left-drag is exempt: that is placement, not
-	// creation (see DecideDrop).
+	// TargetReadOnly means the destination grid refuses creation, so an
+	// arrival is rejected before an RPC the server would refuse. A
+	// same-grid left-drag is placement rather than creation and is exempt.
 	TargetReadOnly bool
-	// SameGrid: the drop lands in the tile's own grid — a rearrangement,
-	// no arrival anywhere.
+	// SameGrid means the drop lands in the tile's own grid, so it is a
+	// rearrangement and arrives nowhere.
 	SameGrid bool
 	SameCell bool
 	Occupied bool
-	// CrossPlugin: the source grid and the target grid live in different id
-	// namespaces. A clean left-drag then verdicts DropLink instead of
-	// DropMove; a clean right-drag stays DropClone, and the server copies.
+	// CrossPlugin means the source and target grids live in different id
+	// namespaces. A left-drag then verdicts DropLink; a right-drag stays
+	// DropClone and the server copies.
 	CrossPlugin bool
 }
 
-// DecideDrop maps a gathered DropInput to the single action both preview
-// and commit obey.
+// DecideDrop maps a gathered DropInput to the action both the preview and
+// the commit obey. The branch order is the decision: an earlier arm wins.
 //
-// The order is canonical and load-bearing — it mirrors the left-drag
-// commit (onMouseUp) and reconciles the right-drag commit
-// (commitRightClone). Earlier branches strictly win:
-//
-//  1. !Started      → Navigate     (bare click beats everything;
-//     ctrl held at press → NavigateSplit)
-//  2. TileID == "" && !IsTemplate → PanEnd
-//  3. OverDelete    → Delete
-//  4. !HasTarget    → Rejected
-//  5. IsTemplate    → CreateTemplate
-//  6. Forbidden     → Rejected      (cross-grid move; move-only input)
-//  7. SameCell      → Rejected
-//  8. Occupied      → Rejected
-//  9. else          → the Intent: copy → DropClone, link → DropLink, move →
-//     DropMove, and a move across an id namespace → DropLink too, since
-//     there is no cross-plugin move
-//
-// The target check sits above EVERY arm that lands something in a grid,
-// creation included, so no arm can commit against a destination the target
-// resolution refused (a content descent, off-canvas). Only the two arms that
-// land in no grid stand above it: a pan, which ends wherever it ends, and the
-// trashcan, which resolves against the bar's own button rather than the grid
-// under the cursor. A template carries no tile id, so it never reaches the
-// delete arm — OverDelete is false without one.
+// The HasTarget check sits above every arm that lands something in a grid,
+// creation included, so no arm commits against a destination the target
+// resolution refused. Only the two arms that land in no grid stand above it:
+// a pan, which ends wherever it ends, and the trashcan, which resolves
+// against the bar's own button. A template carries no tile id, so OverDelete
+// is false and it never reaches the delete arm.
 func DecideDrop(in DropInput) DropAction {
 	switch {
 	case !in.Started && !in.OriginFocused:
@@ -431,9 +344,8 @@ func DecideDrop(in DropInput) DropAction {
 	case in.Forbidden:
 		return DropRejected
 	case in.TargetReadOnly && !(in.SameGrid && !in.Intent.Creates()):
-		// Read-only gates arrivals, which are creation-class. A same-grid
-		// left-drag is placement, which read-only projections accept and
-		// persist. Copies and links stay creation.
+		// Read-only gates arrivals. A same-grid left-drag is placement,
+		// which a read-only projection accepts and persists.
 		return DropRejected
 	case in.SameCell:
 		return DropRejected
@@ -442,52 +354,39 @@ func DecideDrop(in DropInput) DropAction {
 	case in.Intent == IntentCopy:
 		return DropClone
 	case in.Intent == IntentLink || in.CrossPlugin:
-		// Ctrl asked for a link; a move across an id namespace has no other
-		// answer. Both land on the one link commit, so the gesture that says
-		// "link" and the boundary that forces one cannot produce two
-		// different kinds of reference.
+		// Ctrl asked for a link, and a move across an id namespace has no
+		// other answer. Both land on the one link commit, so they cannot
+		// produce two different kinds of reference.
 		return DropLink
 	default:
 		return DropMove
 	}
 }
 
-// GhostPlan is how the in-flight drag ghost should render for a drop
-// verdict — the visual consequence of DecideDrop. DecideDrop decides the
-// action; this decides what the user sees while hovering. Extracted so the
-// verdict→styling mapping is table-tested too, not just the verdict.
+// GhostPlan is how the in-flight drag ghost renders for a drop verdict.
 type GhostPlan struct {
 	PaneID         string  // pane whose coordinate space the ghost rests in
 	TargetCellSize float64 // size the ghost lerps toward
-	Fragmentation  float64 // 1 = shattering into the trashcan
+	Fragmentation  float64 // 1 shatters into the trashcan
 	Forbidden      bool    // draw the no-entry badge
-	// Link: this drop creates a link rather than moving the tile, so draw
-	// the dashed ghost and chain badge. The user learns mid-drag that the
-	// source stays put and the destination gains a reference; without the
-	// signal a cross-plugin left-drag would look like a move and the
-	// source's survival would read as a surprise duplicate.
+	// Link draws the dashed ghost and chain badge, so the user learns
+	// mid-drag that the source stays put and the destination gains a
+	// reference. Without it a cross-plugin left-drag would look like a move
+	// and the source's survival would read as a surprise duplicate.
 	Link   bool
 	Cursor string // CSS cursor: "" or "not-allowed"
 }
 
-// GhostPlanForDrop maps a DecideDrop verdict (plus the reject cause) to the
-// ghost styling. The verdict already carries the intent — DropClone, DropMove
-// and DropLink are three of its values — so the intent is not passed again.
-// The pane ids and cell sizes are passed in because the ghost rests in a
-// different pane per verdict: the origin pane for a delete or an off-canvas
-// reject, the drop target for a placement or a forbidden cross-grid move.
+// GhostPlanForDrop maps a DecideDrop verdict and its reject cause to the
+// ghost styling. The verdict already carries the intent, so it is not passed
+// again. The ghost rests in a different pane per verdict, which is why both
+// pane ids and both cell sizes come in: the origin pane for a delete or an
+// off-canvas reject, the target pane for a placement or a forbidden
+// cross-grid move.
 //
-//   - Delete  → shrink to 1/5 and fully fragment, in the origin pane.
-//   - Rejected, forbidden → source size in the target pane, no-entry badge.
-//   - Rejected, otherwise (off-canvas, or a content descent) → source size
-//     in origin, no badge.
-//   - Link → snap to the target cell size in the target pane, chain badge:
-//     the drop creates a reference and the source stays put.
-//   - Move/Clone → snap to the target cell size in the target pane.
-//
-// SameCell and Occupied never reach here as a distinct style: the preview is
-// optimistic about placement and shows the snap-to-cell, while the commit
-// does the authoritative overlap check.
+// SameCell and Occupied get no style of their own. The preview is optimistic
+// about placement and shows the snap-to-cell, and the commit does the
+// authoritative overlap check.
 func GhostPlanForDrop(action DropAction, forbidden bool,
 	originPaneID, targetPaneID string, srcCellSize, targetCellSize float64) GhostPlan {
 	switch action {
@@ -505,12 +404,11 @@ func GhostPlanForDrop(action DropAction, forbidden bool,
 	}
 }
 
-// PromoteToWell reports whether the tile under the cursor promotes a drop
-// target to the tile's child grid: an enterable well (well kind with a child
-// grid) that is not the dragged tile itself — dropping a well into its own
-// subtree would create a parent/child cycle the server rejects. isWell is
-// rpc.IsWellKind(tile.Kind), resolved by the caller to keep this package
-// rpc-free.
+// PromoteToWell reports whether the tile under the cursor promotes the drop
+// target to its own child grid. The tile must be an enterable well and must
+// not be the dragged tile, since dropping a well into its own subtree would
+// make a cycle the server rejects. The caller resolves isWell from
+// rpc.IsWellKind, which keeps this package free of api/rpc.
 func PromoteToWell(isWell bool, childGridID, tileID, draggedTileID string) bool {
 	return isWell && childGridID != "" && tileID != draggedTileID
 }
