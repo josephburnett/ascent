@@ -1,9 +1,8 @@
 package node
 
-// The node's home: its own content — text, urls, shells, wells, pane tiles —
-// over its store, with the shell manager, a private per-node tmux server, and
-// the boot sweeps. It is not a plugin: the node constructs it from its own
-// config.
+// The node's home: its own content over its store, with the shell manager, a
+// private per-node tmux server, and the boot sweeps. It is not a plugin; the
+// node constructs it from its own config.
 
 import (
 	"context"
@@ -15,10 +14,9 @@ import (
 	"github.com/josephburnett/gridwell/internal/local/tmux"
 )
 
-// newHome builds the home over st. Shell tiles are tmux sessions on a
-// private per-node socket (gridwell-<id>), so they survive restarts. A
-// host without tmux degrades to no live shells (the node must come up;
-// the failure surfaces on shell use), never to a dead node.
+// newHome builds the home over st. Shell tiles are tmux sessions on a private
+// per-node socket (gridwell-<id>), so they survive restarts. A host without
+// tmux comes up with no live shells, never as a dead node.
 func newHome(st *store.Store, id, shell string) *local.Plugin {
 	socket := "gridwell"
 	if id != "" {
@@ -31,9 +29,8 @@ func newHome(st *store.Store, id, shell string) *local.Plugin {
 		mgr = shellsvc.NewManager(shellsvc.NewLive(ctrl))
 	}
 	p := local.New(st, mgr)
-	// Scratch tiles are ephemeral (deleted on ascent); this sweep is the
-	// crash net. Before the orphan sweep, so a swept shell's session
-	// reads as orphaned and gets killed there.
+	// Scratch tiles are deleted on ascent; this sweep is the crash net. Before
+	// the orphan sweep, so a swept shell's session reads as orphaned there.
 	if swept, err := p.CleanupScratch(context.Background()); err != nil {
 		log.Printf("gridwell: home: scratch cleanup: %v", err)
 	} else if swept > 0 {

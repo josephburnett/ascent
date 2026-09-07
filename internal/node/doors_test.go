@@ -13,11 +13,9 @@ import (
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
-// The listener seam of the two doors: Start binds the web door where config
-// says and the connection door as a 0600 unix socket at `federation:`,
-// never TCP, so the ungated gRPC export is reachable by the owning uid only
-// while the web door keeps its Connect API. A fresh home's first BuildConfig
-// mints the password, so the web door is gated from the first serve.
+// The listener seam of the two doors: the web door binds where config says,
+// the connection door is a 0600 unix socket at `federation:` and never TCP,
+// and a fresh home is password-gated from the first serve.
 func TestStartBindsTheConnectionDoorOnASocketOnly(t *testing.T) {
 	home := t.TempDir()
 	cfg, err := BuildConfig(home, filepath.Join(home, "server.yaml"))
@@ -70,8 +68,7 @@ func TestStartBindsTheConnectionDoorOnASocketOnly(t *testing.T) {
 	if _, err := os.Stat(cfg.Federation.Socket); !os.IsNotExist(err) {
 		t.Errorf("socket not unlinked on close: %v", err)
 	}
-	// The password is the file beside the config: minted by BuildConfig,
-	// stable across serves, rotated by deleting it.
+	// The password is the file beside the config, stable across serves.
 	pwFile := filepath.Join(home, "web-password")
 	if st, err := os.Stat(pwFile); err != nil || st.Mode().Perm() != 0o600 {
 		t.Fatalf("web-password file = %v %v, want 0600", st, err)

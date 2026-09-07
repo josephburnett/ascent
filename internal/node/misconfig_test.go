@@ -28,11 +28,9 @@ func writeFile(t *testing.T, path, body string) {
 	}
 }
 
-// A host-local config fact this machine can settle must fail the boot. An ssh
+// A host-local config fact this machine can settle must fail the boot: an ssh
 // connection whose key: is a typo can never dial, so serve refuses to start
-// and says which connection and which path — the alternative, and what the
-// node used to do, is a server that comes up happily with the connection
-// quietly dark.
+// and names the connection and the path.
 func TestStartRefusesAConnectionKeyThatIsNotThere(t *testing.T) {
 	home, cfg := startCfg(t)
 	key := filepath.Join(home, "keys", "id_ed25519") // never written
@@ -51,8 +49,7 @@ func TestStartRefusesAConnectionKeyThatIsNotThere(t *testing.T) {
 	}
 }
 
-// The same for known_hosts: the check is over every host-local file the dial
-// plan names, not over the one field somebody remembered.
+// The check covers every host-local file the dial plan names.
 func TestStartRefusesAKnownHostsThatIsNotThere(t *testing.T) {
 	home, cfg := startCfg(t)
 	key := filepath.Join(home, "id_ed25519")
@@ -101,9 +98,8 @@ func TestStartRefusesAConnectionKeyItCannotRead(t *testing.T) {
 	}
 }
 
-// addr is required either way — the far node's connection-door socket path is
-// something only the operator knows. A row without one could never dial, so it
-// fails the boot rather than the first read.
+// addr is required either way: only the operator knows the far node's socket
+// path, so a row without one fails the boot rather than the first read.
 func TestStartRefusesAConnectionWithNoAddr(t *testing.T) {
 	home, cfg := startCfg(t)
 	cfg.Connections = []config.ConnectionConfig{{Name: "geneva", Label: "rtb"}}
@@ -117,11 +113,9 @@ func TestStartRefusesAConnectionWithNoAddr(t *testing.T) {
 	}
 }
 
-// The other half of the class, pinned: a plugin whose binary: path is not
-// there fails the boot too, naming the path. `serve` resolves an unpinned
-// binary before it starts the node, and a pinned one that is not there fails
-// the spawn, which stops LoadInto — a plugin without the binary or the config
-// it needs must never come up as an empty grid.
+// A plugin whose binary: path is not there fails the boot too, naming the
+// path: a plugin without the binary it needs must never come up as an empty
+// grid.
 func TestStartRefusesAPluginBinaryThatIsNotThere(t *testing.T) {
 	home, cfg := startCfg(t)
 	bin := filepath.Join(home, "nowhere", "gridwell-plugin-fs")
@@ -136,10 +130,8 @@ func TestStartRefusesAPluginBinaryThatIsNotThere(t *testing.T) {
 	}
 }
 
-// The boundary, from the other side: a remote that does not answer is a
-// NETWORK fact, and offline boot is decided behavior — a laptop on a plane
-// serves its home and its cache. The connection stays dark at runtime, with
-// its reason on its menu row, and the node serves.
+// A remote that does not answer is a network fact, not a config one: the node
+// serves and the connection stays dark at runtime with its reason on its row.
 func TestStartServesWhenTheRemoteIsMerelyUnreachable(t *testing.T) {
 	home, cfg := startCfg(t)
 	cfg.Connections = []config.ConnectionConfig{{
@@ -160,10 +152,9 @@ func TestStartServesWhenTheRemoteIsMerelyUnreachable(t *testing.T) {
 	}
 }
 
-// A home in the layout Gridwell used before one database per node still has
-// all of the user's content in db/<id>/. Serve refuses it and names the
-// release that folds it in: minting a fresh gridwell.db beside those files
-// would come up as a home that had lost everything.
+// A home still in the db/<id>/ layout keeps all the user's content there, so
+// serve refuses it and names the release that folds it in rather than minting
+// a fresh gridwell.db beside those files.
 func TestStartRefusesTheOldPerNamespaceLayout(t *testing.T) {
 	home := t.TempDir()
 	cfgPath := filepath.Join(home, "server.yaml")

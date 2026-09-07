@@ -5,10 +5,8 @@ import (
 	"testing"
 )
 
-// TestCloseIsIdempotent pins Node.Close's contract: the CLI both defers it
-// and calls it explicitly, so the second call must be a harmless no-op that
-// returns the first call's verdict, never a double shutdown of listeners,
-// plugins, or the store behind them.
+// The CLI both defers Close and calls it explicitly, so the second call must
+// return the first call's verdict without shutting anything down twice.
 func TestCloseIsIdempotent(t *testing.T) {
 	home := t.TempDir()
 	cfg, err := BuildConfig(home, filepath.Join(home, "server.yaml"))

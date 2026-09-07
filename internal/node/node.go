@@ -1,14 +1,8 @@
 // Package node is the embeddable Gridwell node: everything `gridwell serve`
-// does between config in hand and listener up, as a library — the home store,
-// the transport, plugin loading, the server assembly, and the lifecycle. The
-// CLI is the wrapper, not the wiring: it adds flags, the serve lock, the
-// banner, and signal handling around this, and reimplements none of the
-// middle.
-//
-// The node is its home: one id qualifies the home store ("<id>/12") and every
-// connection through this node ("<id>/<conn>/…"). The store and the transport
-// are constructed here, by the node, from its own config; they are not plugins
-// and never appear in `plugins:`.
+// does between config in hand and listener up. The CLI is a wrapper that adds
+// flags, the serve lock, the banner and signal handling, and reimplements none
+// of the middle. The store and the transport are constructed here from the
+// node's own config, so they never appear in `plugins:`.
 package node
 
 import (
@@ -37,11 +31,8 @@ import (
 )
 
 // BuildConfig loads server.yaml at cfgPath and prepares it for launch. A
-// missing file is a fresh home, so an empty config. Any absent id, the node's
-// own or a plugin's, is minted and the file written back: the one config
-// write the node ever makes. Every plugin gets its derived db_file injected,
-// never stored in the config; the store is created on first serve; the web
-// password is read or minted; and CacheDir is derived for the source cache.
+// missing file is a fresh home. Minting an absent id and writing the file back
+// is the one config write the node ever makes.
 func BuildConfig(home, cfgPath string) (*config.ServerConfig, error) {
 	cfg, err := config.Load(cfgPath)
 	if errors.Is(err, fs.ErrNotExist) {
@@ -57,17 +48,15 @@ func BuildConfig(home, cfgPath string) (*config.ServerConfig, error) {
 			return nil, err
 		}
 	}
-	// The web door is never open: the password is the web-password file
-	// beside the config, minted here on first serve, printed by serve, and
-	// rotated by deleting it.
+	// The web door is never open: the file is the password, and deleting it
+	// rotates.
 	if cfg.WebPassword, err = config.EnsurePasswordFile(home); err != nil {
 		return nil, err
 	}
 	if cfg.Federation.Socket == "" {
 		cfg.Federation.Socket = config.FederationSocket(home)
 	}
-	// The source cache lives beside the DB, never inside it: disposable and
-	// excluded from backup.
+	// The source cache lives beside the DB, never inside it: disposable.
 	cfg.CacheDir = home
 	if err := ensureStore(home, cfg); err != nil {
 		return nil, err
@@ -75,16 +64,15 @@ func BuildConfig(home, cfgPath string) (*config.ServerConfig, error) {
 	return cfg, nil
 }
 
-// ensureStore makes <home>/gridwell.db exist. A fresh home gets one, with its
-// identity stamped through pluginmeta; an existing home is left alone. A home
-// still in the retired db/<id>/ layout is refused: its content is in those
-// files, and minting an empty store beside them would look like a home that
-// lost everything.
+// ensureStore makes <home>/gridwell.db exist, stamped with this node's
+// identity. A home still in the retired db/<id>/ layout is refused: its
+// content is in those files, and minting an empty store beside them would
+// look like a home that lost everything.
 func ensureStore(home string, cfg *config.ServerConfig) error {
 	path := config.DBFile(home)
 	if _, err := os.Stat(path); err == nil {
-		// An existing store must be this node's: a changed id must never
-		// silently open, or shadow, another identity's data.
+		// A changed id must never silently open, or shadow, another
+		// identity's data.
 		if _, err := pluginmeta.Verify(path, cfg.ID, "home"); err != nil {
 			return fmt.Errorf("%s is not the store of id %q — did `id` change? (an id is immutable; restore the old one): %w", path, cfg.ID, err)
 		}
@@ -103,11 +91,9 @@ func ensureStore(home string, cfg *config.ServerConfig) error {
 
 // Options configures Start.
 type Options struct {
-	// Home is the Gridwell home, from the one config.Home() derivation: the
-	// store, the cache, and every plugin's state directory hang off it.
+	// Home is the Gridwell home: store, cache and plugin state hang off it.
 	Home string
-	// Cfg is the prepared config: BuildConfig plus any caller adjustments,
-	// such as the bind, a static override, or a forced DisableShells.
+	// Cfg is BuildConfig's result plus any caller adjustments.
 	Cfg *config.ServerConfig
 	// StaticFS serves the web client at /; nil disables static files.
 	StaticFS fs.FS
@@ -116,8 +102,8 @@ type Options struct {
 // Node is a running (or listen-ready) Gridwell node.
 type Node struct {
 	Reg *plugin.Registry
-	// Ln is the web door's listener, bound where web.bind says. ConnLn is the
-	// connection door's unix socket, and is nil when the door is closed.
+	// Ln is the web door's listener. ConnLn is the connection door's socket,
+	// nil when the door is closed.
 	Ln     net.Listener
 	ConnLn net.Listener
 
@@ -131,25 +117,19 @@ type Node struct {
 	closeErr      error
 }
 
-// Start assembles the node — home, plugins, transport, server — and listens,
-// but does not serve yet: the caller announces the bound address first, which
-// is the CLI's banner contract, and then calls ServeBackground. On error
-// nothing is left running.
+// Start assembles the node and listens, but does not serve: the caller
+// announces the bound address first, which is the CLI's banner contract, and
+// then calls ServeBackground. On error nothing is left running.
 func Start(opts Options) (*Node, error) {
 	cfg := opts.Cfg
-	// The store: home content, every plugin's namespace, and the transport's
-	// connections. One file, one handle, identity verified against the node's
-	// id.
+	// One store file, one handle, identity verified against the node's id.
 	st, err := local.OpenVerified(config.DBFile(opts.Home), cfg.ID, "home")
 	if err != nil {
 		return nil, err
 	}
-	// The source cache: one disposable file remembering what a connection last
-	// said. It is opened here, once, and put in front of the transport below,
-	// which is the one place the node decides who is cached. A cache earns its
-	// keep across a network and nowhere else: home's answers are the durable
-	// file, and a plugin is a subprocess on this machine, so both are read
-	// live.
+	// One disposable file remembering what a connection last said, put in
+	// front of the transport below and nowhere else: a cache earns its keep
+	// across a network, and home and a plugin are both on this machine.
 	cache := openCache(cfg)
 	reg := plugin.NewRegistry()
 	fail := func(err error) (*Node, error) {
@@ -165,17 +145,14 @@ func Start(opts Options) (*Node, error) {
 	if err := startHome(reg, st, cfg); err != nil {
 		return fail(fmt.Errorf("home: %w", err))
 	}
-	// A content plugin is registered bare. Its source is a subprocess on this
-	// machine, so a call to it is a function call; remembering the answers
-	// bought no network round trip. What a subprocess needs instead is
-	// supervision, and internal/plugin gives it one: a plugin that dies is
-	// respawned, and the outage reaches the strip as that namespace's health.
+	// A content plugin is registered bare: its source is a subprocess here, so
+	// remembering answers buys no round trip. What it needs is supervision,
+	// and internal/plugin respawns one that dies.
 	if err := plugin.LoadInto(reg, cfg, opts.Home, st); err != nil {
 		return fail(fmt.Errorf("load plugins: %w", err))
 	}
-	// The transport gets the engine with prefetch: a connection's answers
-	// cross a network, and offline readability means everything on the far
-	// machine, not only what was visited.
+	// The transport gets prefetch: offline readability means everything on the
+	// far machine, not only what was visited.
 	if err := startTransport(reg, st, cfg, func(ns namespace.Namespace) namespace.Namespace {
 		if cache == nil {
 			return ns
@@ -194,11 +171,9 @@ func Start(opts Options) (*Node, error) {
 		return fail(err)
 	}
 	requestCtx, cancel := context.WithCancel(context.Background())
-	// Two doors, two listeners. The web door binds where config says; a
-	// tailnet address is fine, because it is password-gated. The connection
-	// door is a 0600 unix socket, or closed, and never TCP, so no config can
-	// expose the ungated gRPC export to another uid, let alone a network. ssh
-	// tunnels terminate on it.
+	// The web door binds where config says; a tailnet address is fine because
+	// it is password-gated. The connection door is a 0600 unix socket or
+	// closed, never TCP, so no config can expose the ungated gRPC export.
 	webSrv := server.WebDoorServer(srv.WebHandler())
 	webSrv.BaseContext = func(net.Listener) context.Context { return requestCtx }
 	connSrv := server.ConnectionDoorServer(srv.ConnectionHandler())
@@ -221,18 +196,16 @@ func Start(opts Options) (*Node, error) {
 }
 
 // startHome registers the home over the store: a Go value the router calls
-// directly, with no hop at all. Home does not own the store handle; the node
-// opened it and the node closes it.
+// directly. The node owns the store handle, not home.
 func startHome(reg *plugin.Registry, st *store.Store, cfg *config.ServerConfig) error {
 	reg.Register(cfg.ID, "home", newHome(st, cfg.ID, cfg.Shell), nil)
 	reg.SetLabel(cfg.ID, "home")
 	return nil
 }
 
-// openCache opens the node's one source cache, <home>/cache.db. A cache that
-// cannot open degrades to the uncached node, loudly but never fatally: the
-// cache is an availability layer, and refusing to serve because it broke would
-// invert its purpose.
+// openCache opens <home>/cache.db. A cache that cannot open degrades to the
+// uncached node, loudly but never fatally: refusing to serve because an
+// availability layer broke would invert its purpose.
 func openCache(cfg *config.ServerConfig) *sourcecache.Store {
 	if cfg.CacheDir == "" {
 		return nil
@@ -249,11 +222,9 @@ func openCache(cfg *config.ServerConfig) *sourcecache.Store {
 	return cache
 }
 
-// startTransport opens the connection store, reconciles it against the
-// declared connections, dials them (bounded — the boot doesn't serve
-// mysteries), and installs the transport as the node's connection
-// namespace ("<id>/<conn>/…"), fronted by the source cache so a dark
-// remote degrades to stale-but-readable instead of blank.
+// startTransport reconciles the connection store against the declared
+// connections, dials them bounded, and installs the transport as the node's
+// connection namespace ("<id>/<conn>/…") behind front.
 func startTransport(reg *plugin.Registry, st *store.Store, cfg *config.ServerConfig, front func(namespace.Namespace) namespace.Namespace) error {
 	db, err := connection.NewDB(st.SQL())
 	if err != nil {
@@ -277,9 +248,8 @@ func startTransport(reg *plugin.Registry, st *store.Store, cfg *config.ServerCon
 	return nil
 }
 
-// closeImpl releases a native impl's own resources (the store's DB, the
-// transport's sessions). A close failure at shutdown is reported, never
-// fatal — the process is exiting.
+// closeImpl releases a native impl's own resources. A close failure at
+// shutdown is reported, never fatal; the process is exiting.
 func closeImpl(impl any) {
 	c, ok := impl.(interface{ Close() error })
 	if !ok {
@@ -290,9 +260,8 @@ func closeImpl(impl any) {
 	}
 }
 
-// listenConnectionDoor opens the connection door's socket: a stale file from a
-// crashed serve is unlinked first (the serve lock guarantees no live
-// holder), and the socket is 0600 — the kernel is the gate.
+// listenConnectionDoor unlinks a stale socket from a crashed serve (the serve
+// lock guarantees no live holder) and creates one 0600.
 func listenConnectionDoor(path string) (net.Listener, error) {
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("connection door: %w", err)
@@ -308,9 +277,8 @@ func listenConnectionDoor(path string) (net.Listener, error) {
 	return ln, nil
 }
 
-// ServeBackground starts serving on the listeners (the connection door
-// only when open); the returned channel carries the first serve error
-// (never http.ErrServerClosed).
+// ServeBackground starts serving; the returned channel carries the first serve
+// error, never http.ErrServerClosed.
 func (n *Node) ServeBackground() <-chan error {
 	errCh := make(chan error, 2)
 	serve := func(s *http.Server, ln net.Listener) {
@@ -325,11 +293,9 @@ func (n *Node) ServeBackground() <-chan error {
 	return errCh
 }
 
-// Close shuts the node down: in-flight requests get a bounded drain,
-// then the registry (home, plugins, transport) closes. Idempotent by
-// contract — the CLI both defers it (every exit path) and calls it
-// explicitly (to report the error); the second call is a no-op returning
-// the first call's verdict.
+// Close drains in-flight requests, bounded, then closes the registry.
+// Idempotent by contract: the CLI both defers it and calls it to report the
+// error, and the second call returns the first's verdict.
 func (n *Node) Close() error {
 	n.closeOnce.Do(func() {
 		n.cancelRequest()
@@ -339,9 +305,8 @@ func (n *Node) Close() error {
 		if n.ConnLn != nil {
 			err = errors.Join(err, n.connSrv.Shutdown(ctx)) // Close unlinks the socket
 		}
-		// The cache closes BEFORE the transport it fronts: its prefetch
-		// walk reads through it and writes into the file, and a walk
-		// must be out before either goes away.
+		// The cache closes BEFORE the transport it fronts: its prefetch walk
+		// reads through it and must be out before either goes away.
 		if n.cache != nil {
 			err = errors.Join(err, n.cache.Close())
 		}
