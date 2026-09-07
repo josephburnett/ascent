@@ -14,8 +14,8 @@ var plugins = []*gridwellv1.PluginInfo{
 	{Uuid: "sshc/ns1", Label: "rtb", RootGridId: "sshc/ns1/rp1/root7"},
 }
 
-// The tile actually descended through wins over every declaration — an
-// adopted plugin well carries the user's name for the place.
+// The tile descended through wins over every declaration, so an adopted
+// plugin well carries the user's name for the place.
 func TestFindPrefersTheParentGridWell(t *testing.T) {
 	parent := map[string]*gridwellv1.Tile{
 		"loc/5": {Id: "loc/5", Kind: rpc.KindWell, AltText: "my rtb",
@@ -28,8 +28,8 @@ func TestFindPrefersTheParentGridWell(t *testing.T) {
 	}
 }
 
-// A menu-row descent has no parent-grid well; the connection row is the
-// door — its label, declaration-owned (renaming is a yaml edit).
+// A menu-row descent has no parent-grid well, so the connection row is the
+// door and its label is declaration-owned.
 func TestFindResolvesConnectionRows(t *testing.T) {
 	got, kind := Find("sshc/ns1/rp1/root7", nil, plugins)
 	if kind != Root || got.AltText != "rtb" {
@@ -37,10 +37,8 @@ func TestFindResolvesConnectionRows(t *testing.T) {
 	}
 }
 
-// A menu-swatch descent into a declared entry resolves to the entry's pseudo
-// swatch: its EntryName and glyph, declaration-owned (not renamable). The
-// crumb wears the provenance because the entry is a top-level doorway, with
-// no level above it to say whose collection it is.
+// An entry is a top-level doorway with no level above it, so its crumb wears
+// the provenance.
 func TestFindResolvesRootEntries(t *testing.T) {
 	got, kind := Find("loc/9", nil, plugins)
 	if kind != Entry || got.AltText != "home · trash" || got.ChildGridId != "loc/9" {
@@ -48,10 +46,6 @@ func TestFindResolvesRootEntries(t *testing.T) {
 	}
 }
 
-// EntryName is the whole naming rule, uniform over every entry of every row:
-// the instance, then the collection. An entry that declares no label of its
-// own is the instance alone, which is the identity of a plugin with a single
-// collection.
 func TestEntryName(t *testing.T) {
 	cases := []struct{ row, entry, want string }{
 		{"hey", "Feed", "hey · Feed"},
@@ -83,15 +77,8 @@ func TestFindMissesCleanly(t *testing.T) {
 	}
 }
 
-// A + menu row wears one face, in the menu and in the bar alike: the swatch
-// and the crumb of the grid that row roots read the same owner, so an
-// undeclared glyph cannot mean one thing at one call site and another at the
-// next. A row that declares a glyph keeps it; a row that declares none takes
-// the grid face, because a plugin serves grids. A connection takes the globe
-// — declared where connection rows are minted (rpc.ConnectionRow), so nothing
-// here switches on a kind — and it takes it even over what the far node's own
-// grid declares, because that grid is the connection as far as this node is
-// concerned.
+// A + menu row wears one face in the menu and the bar alike, so an undeclared
+// glyph cannot mean one thing at one call site and another at the next.
 func TestRowFaceIsTheSameInTheMenuAndInTheBar(t *testing.T) {
 	conn := rpc.ConnectionRow(&gridwellv1.ConnectionInfo{Uuid: "n2/rtb", RootGridId: "n2/rtb/rp/1"})
 	rows := []*gridwellv1.PluginInfo{
@@ -109,8 +96,8 @@ func TestRowFaceIsTheSameInTheMenuAndInTheBar(t *testing.T) {
 			&gridwellv1.Grid{Id: "ufs/1", Glyph: rpc.GlyphFolder, HostContent: true}, rpc.GlyphFolder},
 		{"undeclared plugin takes the grid face", rows[1],
 			&gridwellv1.Grid{Id: "ugl/1"}, rpc.GlyphWell},
-		// The far node's home grid declares its own local well; the row is a
-		// connection, and the connection's face wins on its own root.
+		// The far node's home grid declares its own well, and the
+		// connection's face still wins on its own root.
 		{"a connection takes the globe", conn,
 			&gridwellv1.Grid{Id: "n2/rtb/rp/1", Glyph: rpc.GlyphWell, NodeNs: "n2/rtb"}, rpc.GlyphGlobe},
 	} {
@@ -125,8 +112,7 @@ func TestRowFaceIsTheSameInTheMenuAndInTheBar(t *testing.T) {
 	}
 }
 
-// The trash grid is an ordinary local grid — only the entry declaration
-// knows its face. Anything undeclared answers "".
+// The trash grid is an ordinary local grid, so only the entry knows its face.
 func TestEntryGlyph(t *testing.T) {
 	if g := EntryGlyph("loc/9", plugins); g != "trash" {
 		t.Errorf("EntryGlyph(trash grid) = %q, want trash", g)
@@ -136,13 +122,8 @@ func TestEntryGlyph(t *testing.T) {
 	}
 }
 
-// The grid's face comes from what its plugin DECLARED, never from a kind the
-// client recognizes. fs and proc get the folder and the process faces because
-// they declare them; a plugin that declares nothing — the gitlab shape — is
-// owned content and takes the well, exactly as it did when the client
-// switched on a source kind it had no declaration for. Without this the
-// glyph arm is free to grow a kind switch back, which is the leak the
-// declared facts replaced.
+// The grid's face comes from what its plugin declared, never from a kind the
+// client recognizes. A plugin that declares nothing takes the well.
 func TestGlyphForReadsDeclarationsOnly(t *testing.T) {
 	plugins := []*gridwellv1.PluginInfo{
 		{Uuid: "ufs", Glyph: rpc.GlyphFolder, RootGridId: "ufs/1"},
@@ -174,10 +155,8 @@ func TestGlyphForReadsDeclarationsOnly(t *testing.T) {
 	}
 }
 
-// A doorway carries the framing of the grid behind it, and each doorway
-// carries its own: a menu entry's pseudo-row takes the entry's view, never
-// the declaring row's, so entering a collection lands where it was left
-// rather than where the row's own grid was.
+// A menu entry's pseudo-row takes the entry's view, never the declaring
+// row's, so a collection lands where it was left.
 func TestEntryPluginCarriesTheEntrysFraming(t *testing.T) {
 	row := &gridwellv1.PluginInfo{Uuid: "hey", Label: "hey", RootViewCx: 9, RootViewCy: 9, RootViewZoom: 9}
 	e := &gridwellv1.MenuEntry{Id: "feed", Label: "Feed", GridId: "hey/2",
@@ -192,9 +171,6 @@ func TestEntryPluginCarriesTheEntrysFraming(t *testing.T) {
 	}
 }
 
-// PlacesOf enumerates what a row is a doorway onto: its own grid where it
-// names one, then each entry that names one, in declaration order. A plugin
-// names none of its own, so its places are exactly its collections.
 func TestPlacesOf(t *testing.T) {
 	cases := []struct {
 		name string
@@ -225,9 +201,8 @@ func TestPlacesOf(t *testing.T) {
 	}
 }
 
-// ByRoot resolves a declared entry's grid as well as a row's own: the framing
-// of a collection is remembered against the same doorway the menu descends
-// through, so a reframe inside one has somewhere to land.
+// A collection's framing is remembered against the doorway the menu descends
+// through, so ByRoot must resolve an entry's grid as well as a row's own.
 func TestByRootResolvesADeclaredEntry(t *testing.T) {
 	got, ok := ByRoot("loc/9", plugins)
 	if !ok || got.Label != "home · trash" || got.RootGridId != "loc/9" {
