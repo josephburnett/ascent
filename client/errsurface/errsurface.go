@@ -1,15 +1,13 @@
-// Package errsurface owns the client's queue of user-visible failure
-// notices — the single answer to "what has gone wrong that the user has not
-// yet seen." A failure that only reaches the console presents to the user as
-// "it just disappeared." Every layer that detects a failure
-// (wasm RPC dispatch, stream clients, the Electron host via its error IPC
-// event, server health events) *reports* here; only the render layer *reads*
-// here. No other code holds or draws error state.
+// Package errsurface owns the client's queue of user-visible failure notices.
+// A failure that only reaches the console looks to the user like it just
+// disappeared, so every layer that detects one reports here: wasm RPC
+// dispatch, stream clients, the Electron host's error IPC event, and server
+// health events. Only the render layer reads, and no other code holds or draws
+// error state.
 //
-// The package is js-free and pure so the whole policy — coalescing, ordering,
-// capacity, expiry, strip geometry, dismiss hit-testing — is table-testable
-// without a browser. The wasm shell contributes only pixels, timers, and
-// event plumbing.
+// The package is js-free and pure, so coalescing, ordering, capacity, expiry,
+// strip geometry, and dismiss hit-testing are all table-testable without a
+// browser. The wasm shell contributes pixels, timers, and event plumbing.
 package errsurface
 
 import (
@@ -18,10 +16,10 @@ import (
 	"time"
 )
 
-// Severity classifies a notice for display. There are exactly two: Error is
-// an unexpected failure (something the user asked for did not happen), Info
-// is an expected-but-noteworthy reconciliation (a lost version race that was
-// resolved by refetching). No Debug tier — that is what the console is for.
+// Severity classifies a notice for display. Error is an unexpected failure,
+// something the user asked for that did not happen. Info is an expected
+// reconciliation worth mentioning, such as a lost version race resolved by
+// refetching. There is no debug tier, because the console is that.
 type Severity int
 
 const (
@@ -31,65 +29,61 @@ const (
 
 // Notice is one row on the surface.
 type Notice struct {
-	// ID is a monotonically-assigned handle for dismissal. Stable for the
-	// life of the notice, including across coalesced re-reports.
+	// ID is a monotonically assigned handle for dismissal, stable for the life
+	// of the notice including across coalesced re-reports.
 	ID int
-	// Source is the stable key of the failure site, e.g. "rpc:MoveTile",
-	// "events", "electron:webview". One notice exists per source: a retry
-	// loop re-reporting the same source updates its row in place rather
-	// than scrolling the strip.
+	// Source is the stable key of the failure site, such as "rpc:MoveTile",
+	// "events" or "electron:webview". One notice exists per source, so a retry
+	// loop updates its row in place rather than scrolling the strip.
 	Source string
 	// Message is the most recent human-readable failure text for Source.
 	Message  string
 	Severity Severity
-	// Count is how many times Source has reported since it was last
-	// dismissed/resolved. Rendered as a "×N" suffix when > 1.
+	// Count is how many times Source has reported since it was last dismissed
+	// or resolved. It renders as a "×N" suffix when above 1.
 	Count int
-	// deadline is when this notice expires if its source stops reporting;
-	// zero for sticky sources (see Sticky), which live until Dismiss/Resolve.
+	// deadline is when this notice expires if its source stops reporting. It is
+	// zero for sticky sources, which live until Dismiss or Resolve.
 	deadline time.Time
 }
 
 // ExpireAfter is how long a non-sticky notice stays visible after its most
-// recent report. A one-shot failure (a bad URL, one refused RPC) fades once
-// it stops recurring; a failure that keeps happening keeps refreshing its
-// deadline via Report's coalescing and stays up.
+// recent report. A one-shot failure fades once it stops recurring, while a
+// recurring one keeps refreshing its deadline through Report and stays up.
 const ExpireAfter = 10 * time.Second
 
 // Sticky reports whether source names an ongoing condition rather than a
-// one-shot event. A sticky notice never expires — it stands for a state
-// ("this plugin's event stream is down", "the backend exited") that is
-// reported once on the transition and would otherwise silently vanish while
-// still true. Each sticky source has an explicit exit: plugin health resolves
-// on the recovery event; the backend notice can only be dismissed, because
-// there is no recovery short of a restart. This table is the one owner of the
-// sticky/expiring split — report sites do not choose.
+// one-shot event. A sticky notice never expires, because it stands for a state
+// reported once on the transition that would otherwise vanish while still
+// true. Each sticky source has an exit: plugin health resolves on the recovery
+// event, and the backend notice can only be dismissed, since nothing short of
+// a restart recovers. This table is the one owner of the split, and report
+// sites do not choose.
 func Sticky(source string) bool {
 	return source == "electron:backend" || strings.HasPrefix(source, "plugin:")
 }
 
 // maxNotices bounds the queue so an unattended failure loop cannot grow
-// memory; oldest notices fall off. Far above MaxRows — the bound is a
-// safety valve, not a display rule.
+// memory, dropping the oldest. It sits far above MaxRows because it is a
+// safety valve rather than a display rule.
 const maxNotices = 50
 
-// Surface is the notice queue. Zero value is not ready; use New.
-// Not safe for concurrent use — the wasm client is single-threaded
-// (goroutines interleave, never run in parallel), matching every other
-// client-side store.
+// Surface is the notice queue. The zero value is not ready, so use New. Like
+// every other client-side store it is not safe for concurrent use, because the
+// wasm client is single-threaded and its goroutines interleave without running
+// in parallel.
 type Surface struct {
-	notices []Notice // index 0 = newest
+	notices []Notice // index 0 is the newest
 	nextID  int
 }
 
 func New() *Surface { return &Surface{nextID: 1} }
 
-// Report adds a notice, or refreshes the existing notice for the same
-// source: latest message and severity win, Count increments, and the row
-// moves to the top (newest) position keeping its ID. `now` (the caller's
-// clock — the package stays clock-free and testable) restarts the expiry
-// countdown, so a recurring failure stays visible for as long as it keeps
-// recurring plus ExpireAfter of silence.
+// Report adds a notice, or refreshes the existing one for the same source. The
+// latest message and severity win, Count increments, and the row moves to the
+// top keeping its ID. The caller passes now, which keeps the package clock-free
+// and testable, and it restarts the expiry countdown, so a recurring failure
+// stays visible while it recurs plus ExpireAfter of silence.
 func (s *Surface) Report(sev Severity, source, message string, now time.Time) {
 	deadline := now.Add(ExpireAfter)
 	if Sticky(source) {
@@ -116,9 +110,8 @@ func (s *Surface) Report(sev Severity, source, message string, now time.Time) {
 }
 
 // Expire drops every non-sticky notice whose deadline has passed and reports
-// whether anything changed (so the caller knows to repaint). Expiry is an
-// explicit mutation on the caller's clock tick — reading (Notices, Rows)
-// never mutates.
+// whether anything changed, so the caller knows to repaint. Expiry is an
+// explicit mutation on the caller's clock tick, and reading never mutates.
 func (s *Surface) Expire(now time.Time) bool {
 	kept := s.notices[:0]
 	for _, n := range s.notices {
@@ -132,9 +125,8 @@ func (s *Surface) Expire(now time.Time) bool {
 }
 
 // NextDeadline returns how long until the soonest pending expiry, and false
-// when nothing expires (empty or all-sticky). The wasm shell uses this to arm
-// a single timer instead of polling; the returned duration can be <= 0 if a
-// deadline has already passed.
+// when nothing expires. The wasm shell arms a single timer from it instead of
+// polling. The duration can be zero or negative if a deadline has passed.
 func (s *Surface) NextDeadline(now time.Time) (time.Duration, bool) {
 	var soonest time.Time
 	for _, n := range s.notices {
@@ -151,8 +143,7 @@ func (s *Surface) NextDeadline(now time.Time) (time.Duration, bool) {
 	return soonest.Sub(now), true
 }
 
-// Notices returns the queue, newest first. The slice is a copy; mutating it
-// does not affect the surface.
+// Notices returns a copy of the queue, newest first.
 func (s *Surface) Notices() []Notice {
 	out := make([]Notice, len(s.notices))
 	copy(out, s.notices)
@@ -161,7 +152,7 @@ func (s *Surface) Notices() []Notice {
 
 func (s *Surface) Len() int { return len(s.notices) }
 
-// Dismiss removes the notice with the given ID; unknown IDs are a no-op.
+// Dismiss removes the notice with the given ID. An unknown ID does nothing.
 func (s *Surface) Dismiss(id int) {
 	for i := range s.notices {
 		if s.notices[i].ID == id {
@@ -171,9 +162,9 @@ func (s *Surface) Dismiss(id int) {
 	}
 }
 
-// Resolve removes the notice for source, if any. The "condition cleared"
-// path: the event stream reconnecting resolves its own disconnect notice, so
-// a healed failure does not linger as stale bad news.
+// Resolve removes the notice for source, if any. It is how a cleared condition
+// takes its notice down, such as the event stream resolving its own disconnect
+// notice when it reconnects.
 func (s *Surface) Resolve(source string) {
 	for i := range s.notices {
 		if s.notices[i].Source == source {
@@ -185,16 +176,15 @@ func (s *Surface) Resolve(source string) {
 
 // ── strip geometry ───────────────────────────────────────────────────────────
 //
-// The strip is *reserved layout*, not an overlay: the pane tree is laid out
-// into (canvas height − StripHeight), so the strip can never be covered by a
-// native WebContentsView (those track pane rects). An error is only surfaced
-// if it owns pixels nothing else can paint over.
+// The strip is reserved layout rather than an overlay. The pane tree is laid
+// out into the canvas height minus StripHeight, so a native WebContentsView,
+// which tracks pane rects, can never cover the strip.
 
 // RowH is the height of one notice row in CSS pixels.
 const RowH = 24.0
 
-// MaxRows caps how many notices are visible at once; older ones are
-// summarized by the OverflowCount of the last visible row.
+// MaxRows caps how many notices are visible at once. The OverflowCount of the
+// last visible row summarizes the rest.
 const MaxRows = 3
 
 // StripHeight is the canvas height to reserve for count pending notices.
@@ -208,18 +198,18 @@ func StripHeight(count int) float64 {
 	return float64(count) * RowH
 }
 
-// Row is one rendered line of the strip: which notice, its top edge in
-// canvas coordinates, and how many further notices are hidden behind it
-// (non-zero only on the last visible row).
+// Row is one rendered line of the strip: the notice, its top edge in canvas
+// coordinates, and how many further notices hide behind it. OverflowCount is
+// non-zero only on the last visible row.
 type Row struct {
 	Notice        Notice
 	Y             float64
 	OverflowCount int
 }
 
-// Rows lays out the visible rows top-down (newest first) given the strip's
-// top edge in canvas coordinates. Render and hit-testing both read this, so
-// they cannot disagree.
+// Rows lays out the visible rows top down, newest first, from the strip's top
+// edge in canvas coordinates. Render and hit-testing both read it, so they
+// cannot disagree.
 func Rows(notices []Notice, stripTop float64) []Row {
 	n := len(notices)
 	if n == 0 {
@@ -237,7 +227,8 @@ func Rows(notices []Notice, stripTop float64) []Row {
 	return rows
 }
 
-// Label is the display text for a notice: "message" or "message ×N".
+// Label is the display text for a notice, either the message or the message
+// with a "×N" suffix.
 func Label(n Notice) string {
 	if n.Count > 1 {
 		return fmt.Sprintf("%s ×%d", n.Message, n.Count)
@@ -245,10 +236,10 @@ func Label(n Notice) string {
 	return n.Message
 }
 
-// DismissAt handles a click at canvas y within the strip (caller has already
-// established x is on the canvas and y >= stripTop): it dismisses the notice
-// whose row contains y and reports whether anything changed. Clicking a row
-// is the dismiss gesture — the whole row is the target, no tiny close box.
+// DismissAt dismisses the notice whose row contains canvas y and reports
+// whether anything changed. The caller has already established that x is on
+// the canvas and y is at or below stripTop. The whole row is the dismiss
+// target, with no separate close box.
 func (s *Surface) DismissAt(y, stripTop float64) bool {
 	rows := Rows(s.notices, stripTop)
 	for _, r := range rows {

@@ -65,7 +65,7 @@ func TestDismissAndResolve(t *testing.T) {
 	if s.Len() != 1 || s.Notices()[0].Source != "b" {
 		t.Fatalf("dismiss removed wrong row: %+v", s.Notices())
 	}
-	s.Dismiss(999) // unknown: no-op
+	s.Dismiss(999)
 	if s.Len() != 1 {
 		t.Fatalf("unknown dismiss mutated queue")
 	}
@@ -73,7 +73,7 @@ func TestDismissAndResolve(t *testing.T) {
 	if s.Len() != 0 {
 		t.Fatalf("resolve did not clear source b")
 	}
-	s.Resolve("b") // absent: no-op
+	s.Resolve("b")
 }
 
 func TestDismissedSourceReportsFreshCount(t *testing.T) {
@@ -110,7 +110,7 @@ func TestStripHeight(t *testing.T) {
 		want  float64
 	}{
 		{0, 0}, {1, RowH}, {2, 2 * RowH}, {MaxRows, MaxRows * RowH},
-		{MaxRows + 5, MaxRows * RowH}, // display is capped; height must not grow unbounded
+		{MaxRows + 5, MaxRows * RowH}, // the display is capped, so the height cannot grow unbounded
 	}
 	for _, c := range cases {
 		if got := StripHeight(c.count); got != c.want {
@@ -159,13 +159,13 @@ func TestSticky(t *testing.T) {
 		source string
 		want   bool
 	}{
-		// Ongoing conditions with an explicit heal signal: stay until resolved.
+		// Ongoing conditions with a heal signal stay until resolved.
 		{"plugin:0b6f3a", true},
 		{"electron:backend", true},
-		// One-shot events: fade once they stop recurring.
+		// One-shot events fade once they stop recurring.
 		{"rpc:MoveTile", false},
 		{"events", false},         // the event retry loop re-reports every second while down
-		{"launcher:files", false}, // a click answer, not a condition — must fade
+		{"launcher:files", false}, // a click answer rather than a condition, so it fades
 		{"electron:webview", false},
 		{"electron:session", false},
 		{"conflict:UpdateText", false},
@@ -196,8 +196,8 @@ func TestNonStickyNoticeExpires(t *testing.T) {
 }
 
 func TestReReportRefreshesDeadline(t *testing.T) {
-	// A failure that keeps happening must stay visible: each re-report
-	// pushes the deadline out, so only ExpireAfter of *silence* clears it.
+	// Each re-report pushes the deadline out, so only ExpireAfter of silence
+	// clears a failure that keeps happening.
 	s := New()
 	s.Report(Error, "rpc:UpdateText", "save failed", t0)
 	t1 := t0.Add(ExpireAfter / 2)
@@ -260,18 +260,18 @@ func TestNextDeadline(t *testing.T) {
 
 func TestDismissAt(t *testing.T) {
 	s := New()
-	s.Report(Error, "a", "x", t0) // will be row 1 (older)
-	s.Report(Error, "b", "y", t0) // row 0 (newest)
+	s.Report(Error, "a", "x", t0) // the older notice, row 1
+	s.Report(Error, "b", "y", t0) // the newest, row 0
 	top := 500.0
 
-	// Click in the second row dismisses the older notice "a".
+	// A click in the second row dismisses the older notice "a".
 	if !s.DismissAt(top+RowH+1, top) {
 		t.Fatalf("click in row 1 did not dismiss")
 	}
 	if s.Len() != 1 || s.Notices()[0].Source != "b" {
 		t.Fatalf("wrong notice dismissed: %+v", s.Notices())
 	}
-	// Click below the populated rows: no-op.
+	// A click below the populated rows does nothing.
 	if s.DismissAt(top+RowH+1, top) {
 		t.Errorf("click below last row must not dismiss")
 	}
