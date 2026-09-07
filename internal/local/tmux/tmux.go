@@ -1,18 +1,14 @@
-// Package tmux owns the gridwell-private tmux server: its socket
-// location, its config file, and the commands needed to create,
-// attach, kill, and enumerate sessions. The package does NOT spawn
-// PTYs — it composes the argv vectors for `tmux ...` invocations and
-// shells out for the metadata operations (has-session, list-sessions,
-// kill-session). The PTY-attaching exec is driven by shelldriver.
+// Package tmux owns the gridwell-private tmux server: its socket location, its
+// config file, and the commands to create, attach, kill, and enumerate
+// sessions. It spawns no PTYs. It composes the argv for `tmux ...` and shells
+// out for the metadata commands, and shelldriver drives the PTY-attaching
+// exec.
 //
-// One Controller corresponds to one tmux server. By using `-L
-// <socket>` we get a server isolated from the user's daily tmux,
-// which means: arbitrary user .tmux.conf doesn't leak into shell
-// tiles, gridwell can kill ALL its sessions with one `kill-server`,
-// and the namespace can't collide with anything the user runs by
-// hand. By using `-f <our-config>` we lock the prefix, scrollback,
-// status-bar, and TERM choices to what gridwell expects rather than
-// inheriting whatever the user's home config says.
+// One Controller is one tmux server. `-L <socket>` isolates that server from
+// the user's daily tmux, so an arbitrary user .tmux.conf never leaks into a
+// shell tile and gridwell's session names collide with nothing the user runs
+// by hand. `-f <our-config>` pins the prefix, scrollback, status bar, and TERM
+// to what gridwell expects.
 package tmux
 
 import (
@@ -27,26 +23,24 @@ import (
 	"strings"
 )
 
-// gridwellConfig is the tmux server config gridwell writes once at
-// New(). It deliberately avoids any user-facing chrome:
+// gridwellConfig is the tmux server config gridwell writes once at New(). It
+// carries no user-facing chrome:
 //
-//   - status off: the bottom status bar would duplicate Gridwell's
-//     own pane chrome.
-//   - history-limit 50000: scrollback per pane. The standard default
-//     of 2000 is far too small for a working shell.
-//   - default-terminal: xterm.js claims xterm-256color upstream;
-//     match it here so $TERM is sane inside bash.
-//   - escape-time 0: kill the meta-key delay (tmux's default 500ms
-//     interferes with terminal apps reading raw escape sequences).
-//   - allow-passthrough on: the gridwell-open browser shim emits its
-//     OSC 5522 url sequence through tmux's DCS passthrough, which is
-//     off by default.
-//   - mouse on: the outer terminal (xterm.js) keeps the tmux client in
-//     the alternate buffer, where a wheel becomes arrow keys and the
-//     history above is unreachable except by C-b [. With mouse on,
-//     wheel-up enters copy-mode and scrolls the 50k-line history and
-//     wheel-down at the bottom drops back to live. Apps that request
-//     mouse reporting still receive it through passthrough.
+//   - status off: a bottom status bar would duplicate Gridwell's own pane
+//     chrome.
+//   - history-limit 50000: per-pane scrollback. The default 2000 is far too
+//     small for a working shell.
+//   - default-terminal: match the xterm-256color xterm.js claims upstream, so
+//     $TERM is sane inside bash.
+//   - escape-time 0: tmux's default 500ms meta-key delay interferes with
+//     terminal apps reading raw escape sequences.
+//   - allow-passthrough on: the gridwell-open shim emits its OSC 5522 url
+//     sequence through tmux's DCS passthrough, which is off by default.
+//   - mouse on: xterm.js keeps the tmux client in the alternate buffer, where
+//     a wheel is arrow keys and the history above is reachable only by C-b [.
+//     With mouse on, wheel-up enters copy-mode and scrolls the 50k-line
+//     history and wheel-down at the bottom drops back to live. Apps that
+//     request mouse reporting still receive it through passthrough.
 const gridwellConfig = `set-option -g status off
 set-option -g history-limit 50000
 set-option -g default-terminal "xterm-256color"
@@ -56,11 +50,11 @@ set-option -g mouse on
 `
 
 // browserShimScript is the $BROWSER target injected into every new shell
-// session. Instead of launching a browser on the host, it hands the url back
-// to the gridwell terminal as an OSC 5522 sequence, which the client turns
-// into an ephemeral url descent. Inside tmux the sequence rides the DCS
-// passthrough wrapper, with inner ESCs doubled, matching what
-// allow-passthrough unwraps for the outer terminal.
+// session. It hands the url back to the gridwell terminal as an OSC 5522
+// sequence, which the client turns into an ephemeral url descent, rather than
+// launching a browser on the host. Inside tmux the sequence rides the DCS
+// passthrough wrapper with inner ESCs doubled, which is what allow-passthrough
+// unwraps for the outer terminal.
 const browserShimScript = `#!/bin/sh
 # gridwell-open: hand a url back to the gridwell terminal (issue #90).
 url="$1"
@@ -72,22 +66,21 @@ fi
 `
 
 // shadowLauncherNames are the url-opening commands shadowed in front of PATH
-// for new shell sessions. $BROWSER alone is not enough: emacs browse-url
-// execs xdg-open directly, and a desktop-backed xdg-open resolves the
-// handler through the desktop environment without ever reading $BROWSER. gio
-// is deliberately not shadowed — it is a general-purpose file tool, and every
-// flow that would reach `gio open` goes through xdg-open first, which is
-// shadowed.
+// for new shell sessions. $BROWSER alone is not enough: emacs browse-url execs
+// xdg-open directly, and a desktop-backed xdg-open resolves the handler
+// through the desktop environment without ever reading $BROWSER. gio stays
+// unshadowed because it is a general-purpose file tool and every flow that
+// would reach `gio open` goes through the shadowed xdg-open first.
 var shadowLauncherNames = []string{
 	"xdg-open", "gnome-open", "kde-open",
 	"x-www-browser", "www-browser", "sensible-browser",
 }
 
-// shadowLauncherScript is the body of every shadow launcher. Web urls are
-// handed to the gridwell-open shim, the first %q. Anything else — xdg-open
-// opens files too — falls through to the real command of the same name by
-// stripping the shadow dir, the second %q, from PATH and re-exec'ing, so host
-// workflows keep working and the script can never exec itself.
+// shadowLauncherScript is the body of every shadow launcher. Web urls go to
+// the gridwell-open shim, the first %q. Anything else, since xdg-open opens
+// files too, falls through to the real command of the same name by stripping
+// the shadow dir, the second %q, from PATH and re-exec'ing, so host workflows
+// keep working and the script can never exec itself.
 const shadowLauncherScript = `#!/bin/sh
 # gridwell shadow launcher (issue #166): web urls come back to gridwell.
 case "$1" in
@@ -106,27 +99,23 @@ export PATH="$newpath"
 exec "$(basename "$0")" "$@"
 `
 
-// Controller is one gridwell-owned tmux server. Construct with New;
-// the returned cleanup removes the on-disk config file.
+// Controller is one gridwell-owned tmux server. Construct with New; the
+// returned cleanup removes the on-disk config file.
 type Controller struct {
-	// binary is the path to the tmux executable. Allows tests to
-	// substitute a stub.
+	// binary is the tmux executable, which tests point at a stub.
 	binary string
-	// socketName is passed to `tmux -L <name>`. Combined with the
-	// runtime socket dir (default /tmp/tmux-<uid>), this gives the
-	// server a deterministic, gridwell-only address.
+	// socketName is passed to `tmux -L <name>`. With the runtime socket dir,
+	// /tmp/tmux-<uid> by default, it is the server's gridwell-only address.
 	socketName string
-	// configPath is the file passed to `tmux -f <path>`. Lives under
-	// os.TempDir for the lifetime of the controller.
+	// configPath is the file passed to `tmux -f <path>`, under os.TempDir.
 	configPath string
-	// shell is the login shell spawned inside a newly-created session.
-	// Resolved once in New, from config, then $SHELL, then "bash"; Args uses
-	// it verbatim. Only ModeCreate consults it: existing tmux sessions keep
-	// whatever shell they were created with.
+	// shell is the login shell spawned inside a newly-created session,
+	// resolved once in New and used verbatim by Args. Only ModeCreate
+	// consults it: an existing tmux session keeps the shell it was created
+	// with.
 	shell string
-	// browserShim is the path of the gridwell-open script, written by New
-	// alongside the config. ModeCreate injects it as $BROWSER so terminal
-	// apps hand urls back to gridwell instead of spawning a host browser.
+	// browserShim is the path of the gridwell-open script, which ModeCreate
+	// injects as $BROWSER so terminal apps hand urls back to gridwell.
 	browserShim string
 	// shadowDir is the directory of shadow launchers ModeCreate prepends to
 	// the session PATH, catching programs that exec a system opener directly
@@ -134,19 +123,15 @@ type Controller struct {
 	shadowDir string
 }
 
-// New initializes a Controller on the given socket name. The config
-// file is written to a fresh path under os.TempDir; the returned
-// cleanup func removes it. Returns an error only on filesystem
-// failures — tmux itself is not invoked here (the server is lazy-
-// started by the first command).
+// New initializes a Controller on the given socket name, writing the config
+// file and the shim scripts under os.TempDir; the returned cleanup func
+// removes them. It errors only on filesystem failures, because tmux is not
+// invoked here: the server is lazy-started by the first command.
 //
-// binary may be "" to default to "tmux" looked up on $PATH. Tests
-// pass a fully-qualified path or a stub.
-//
-// shell is the login shell for newly-created sessions, from the `shell:`
-// config key. "" falls back to $SHELL, then "bash". This is the one
-// resolution point, and the choice applies only to sessions created after it
-// takes effect; existing tmux sessions persist with their original shell.
+// binary may be "" to default to "tmux" looked up on $PATH. shell is the login
+// shell for newly-created sessions, from the `shell:` config key, and this is
+// the one place it is resolved: "" falls back to $SHELL, then "bash". An
+// existing tmux session keeps the shell it was created with.
 func New(socketName, binary, shell string) (*Controller, func() error, error) {
 	if socketName == "" {
 		return nil, nil, errors.New("tmux: socketName must be non-empty")
@@ -160,11 +145,10 @@ func New(socketName, binary, shell string) (*Controller, func() error, error) {
 	if shell == "" {
 		shell = "bash"
 	}
-	// Stable per-socket paths, overwritten every New because the contents
-	// are static: one directory per tmux socket, forever. A per-boot temp
-	// path would leak artifacts per server start, and a /tmp cleaner could
-	// delete a running session's shim out from under it. A stable path
-	// survives restarts, is reused by the next boot, and lets a restarted
+	// Stable per-socket paths, one directory per tmux socket, overwritten on
+	// every New because the contents are static. A per-boot temp path would
+	// leak an artifact per server start and would let a /tmp cleaner delete a
+	// running session's shim; a stable path survives restarts, so a restarted
 	// server's long-lived sessions still resolve the same shim.
 	dir := filepath.Join(os.TempDir(), "gridwell-tmux-"+socketName)
 	shadowDir := filepath.Join(dir, "shadow-bin")
@@ -289,9 +273,8 @@ func (c *Controller) Env() []string {
 	return env
 }
 
-// Mode is the create-or-attach choice the shell door makes per refresh. The
-// client decides which by combining ShellSessionAlive with the tile's
-// PreviewBlobID; see internal/server/shell_door.go.
+// Mode is the create-or-attach choice made once per attach. internal/local's
+// shell stream owns it, deriving allowCreate from the tile's PreviewBlobID.
 type Mode int
 
 const (
