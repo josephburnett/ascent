@@ -14,13 +14,11 @@ import (
 	"github.com/josephburnett/gridwell/client/wsbar"
 )
 
-// This file holds the creation-palette: the screen-space layout adapters
-// over the pure client/palette package, the floating "+" button, and the
-// popover drawing (one swatch per templateKind, with its identity glyph).
+// The creation palette: the screen-space adapters over client/palette, the
+// "+" button, and the popover drawing.
 
-// paletteLayoutFor builds the pure-go palette.Layout snapshot for a
-// given pane. The palette package owns the geometry; wasm only has to
-// pour the inputs in.
+// paletteLayoutFor builds the palette.Layout snapshot for a pane.
+// client/palette owns the geometry.
 func (a *App) paletteLayoutFor(p *pane.Pane) palette.Layout {
 	l, _ := a.paletteLayoutAndShow(p)
 	return l
@@ -36,19 +34,16 @@ func (a *App) paletteLayoutAndShow(p *pane.Pane) (palette.Layout, palette.Shown)
 		PlusX:    cx,
 		PlusY:    cy,
 		NumTiles: len(items),
-		// Plugins fill the top row; the primitives, if any, drop to a second
-		// row below. Both counts come from the one item list, so a folded
-		// section leaves the top row empty rather than needing a second flag.
+		// Both counts come from the one item list, so a folded section leaves
+		// the top row empty rather than needing a second flag.
 		TopRow: paletteTopRow(items),
 		Toggle: show.Toggle,
 	}, show
 }
 
-// plusButtonCenter returns the screen-space center of the circle button in
-// the one bar's right-end slot — the position clicks hit-test against and the
-// open palette anchors to. There is one slot, wearing the focused pane's
-// mode. It falls back to the window corner only when the window is too short
-// to hold the band.
+// plusButtonCenter is what clicks hit-test against and what the open palette
+// anchors to. It falls back to the window corner when the window is too short
+// for the band.
 func (a *App) plusButtonCenter() (float64, float64) {
 	bx, top, bw, ok := a.bottomBarRect()
 	if !ok {
@@ -65,18 +60,15 @@ func (a *App) pointInPlus(x, y float64) bool {
 	return dx*dx+dy*dy <= rr*rr
 }
 
-// drawPlusButton paints the circular + button in the bar's slot. During a
-// tile drag, the same round button becomes the delete target: it shows a
-// trashcan instead of a +, and its circle goes danger-red while the dragged
-// ghost hovers over it ("release here deletes"). The round chrome is
-// identical either way so the position is muscle-memory-stable.
+// drawPlusButton paints the circular + button, which during a tile drag
+// becomes the delete target. The round chrome is identical either way, so the
+// position stays muscle memory.
 func (a *App) drawPlusButton(p *pane.Pane) {
 	cx, cy := a.plusButtonCenter()
 	deleting := a.tileDragInFlight()
 	hot := deleting && a.pointInPlus(a.dragging.curScreenX, a.dragging.curScreenY)
-	// The button wears the pane's family hue, saturated on the subtle dark
-	// band so it stands out while still matching the scheme. The hot
-	// trashcan goes danger-red; an open menu gets a brighter ring.
+	// The button wears the pane's family hue. The hot trashcan goes
+	// danger-red; an open menu gets a brighter ring.
 	band, button := a.barTheme()
 	bg := button
 	if hot {
@@ -96,13 +88,11 @@ func (a *App) drawPlusButton(p *pane.Pane) {
 	a.cctx.Set("lineWidth", 1.0)
 
 	if deleting {
-		// Trashcan glyph centered in the circle — drop a tile here to delete.
 		side := float64(plusButtonRadius) * 1.4
 		drawTrashcanIcon(a.cctx, cx-side/2, cy-side/2, side, side)
 		return
 	}
 
-	// Plus glyph: two strokes through center, dark on the family face.
 	a.cctx.Set("strokeStyle", band)
 	a.cctx.Set("lineWidth", 2.0)
 	a.cctx.Call("beginPath")
@@ -126,10 +116,8 @@ func (a *App) paletteTileRect(p *pane.Pane, i int) (x, y, w, h float64) {
 	return tr.X, tr.Y, tr.W, tr.H
 }
 
-// drawPalette paints the creation popover: a background container, the
-// disclosure strip for the plugin section when there is one, and a row of
-// preview tiles per palette item group — plugins on top, then the tile
-// primitives in writable grids.
+// drawPalette paints the creation popover: the plugin section's disclosure
+// strip when there is one, plugins on top, then the primitives.
 func (a *App) drawPalette(p *pane.Pane) {
 	mx, my, mw, mh := a.paletteRect(p)
 	a.cctx.Set("fillStyle", colorMenuBg)
@@ -148,20 +136,16 @@ func (a *App) drawPalette(p *pane.Pane) {
 	}
 }
 
-// drawPaletteToggle paints the plugin section's disclosure strip: a flat band
-// with a centered chevron pointing the way the press moves the section — up
-// to open it above the primitives, down to fold it back. It is drawn as a
-// band, never as a swatch, so nothing about it invites the drag a template
-// tile takes.
+// drawPaletteToggle paints the plugin section's disclosure strip, its chevron
+// pointing the way the press moves the section. A band and never a swatch, so
+// nothing invites the drag a template tile takes.
 func (a *App) drawPaletteToggle(r pane.Rect, c palette.Chevron) {
 	a.cctx.Set("fillStyle", colorPlusBg)
 	a.cctx.Call("fillRect", r.X, r.Y, r.W, r.H)
-	// Chevron: two strokes meeting at a point, half the strip's height.
 	cx := r.X + r.W/2
 	cy := r.Y + r.H/2
 	const halfW = 6.0
-	// The apex sits above the ends for "up" (canvas y grows downward) and
-	// below them for "down".
+	// Canvas y grows downward, so the apex sits above the ends for "up".
 	dy := -3.0
 	if c == palette.ChevronDown {
 		dy = -dy
@@ -176,26 +160,22 @@ func (a *App) drawPaletteToggle(r pane.Rect, c palette.Chevron) {
 	a.cctx.Set("lineWidth", 1.0)
 }
 
-// drawPaletteItem renders one preview tile inside the palette. The body
-// (fill + border) is shared with the live-tile renderer so a palette swatch
-// reads identical to what the user drops — same color grammar. A
-// kind-specific glyph is overlaid so the swatch reads "what is this?" before
-// the tile has content.
+// drawPaletteItem shares its body with the live-tile renderer, so a swatch
+// reads identical to what the user drops, with a glyph overlaid for a tile
+// that has no content yet.
 func (a *App) drawPaletteItem(item paletteItem, x, y, w, h float64, hovered bool) {
 	n := paletteItemGhostNode(item)
 	if item.isPlugin {
-		// A plugin swatch is the linked well it drops into a grid: a blue,
-		// dashed-bordered well (dashed means a cross-plugin link you can
-		// unlink), its kind glyph, and its name banner (AltText is the
-		// server.yaml label). Drawn identically here, as the drag ghost, and
-		// once dropped.
+		// A plugin swatch is the linked well it drops into a grid, dashed
+		// because a cross-plugin link can be unlinked. Drawn identically
+		// here, as the drag ghost, and once dropped.
 		a.cctx.Set("fillStyle", colorBg)
 		a.cctx.Call("fillRect", x, y, w, h)
 		strokeTileFrame(a.cctx, x, y, w, h, colorFocusBorder, true /* dashed */, false /* selected */)
 		a.drawPluginGlyph(door.RowGlyph(item.plugin), x, y, w, h)
 		a.drawTileBannerLabel(n, x, y, w, h, false)
 		// A broken or waiting plugin gets the same health tint its link
-		// tiles do; the click guard explains on click.
+		// tiles do.
 		a.drawPluginHealthTint(n, x, y, w, h)
 	} else {
 		outside := tileOutside(n, false)
@@ -209,13 +189,10 @@ func (a *App) drawPaletteItem(item paletteItem, x, y, w, h float64, hovered bool
 	}
 }
 
-// drawPluginGlyph overlays a declared identity glyph, all in the grid blue.
-// This is the name-to-pixels half only: which name a row or a grid wears is
-// door.RowGlyph and door.GlyphFor, so the menu swatch and the bar crumb
-// cannot default differently. Never a kind switch: the client must not know
-// its plugins. Full size (glyphBox). One drawing shared by the menu swatch,
-// the drag ghost, and a cross-plugin well with no preview yet, so all three
-// read identically.
+// drawPluginGlyph is the name-to-pixels half of a declared identity glyph.
+// Which name a row wears is door.RowGlyph's and door.GlyphFor's, so the menu
+// swatch and the bar crumb cannot default differently. Never a kind switch:
+// the client must not know its plugins.
 func (a *App) drawPluginGlyph(glyph string, x, y, w, h float64) {
 	switch glyph {
 	case rpc.GlyphFolder:
@@ -227,30 +204,23 @@ func (a *App) drawPluginGlyph(glyph string, x, y, w, h float64) {
 	case rpc.GlyphTrash:
 		drawTrashGlyph(a.cctx, x, y, w, h, colorFocusBorder)
 	default:
-		// rpc.GlyphGlobe — declared by every connection — and equally any
-		// name this client does not know.
+		// rpc.GlyphGlobe, declared by every connection, and equally any name
+		// this client does not know.
 		drawGlobeGlyph(a.cctx, x, y, w, h, colorFocusBorder)
 	}
 }
 
 // drawPluginHealthTint overlays a plugin link tile with its
-// pluginhealth-decided tint, drawn atop the normal tile so the glyph or
-// preview underneath still reads; an enterable plugin gets no overlay. Which
-// status, if any, is pluginhealth.Classify's decision, and this function only
-// maps it to pixels. Only this node's own plugins have local health; a remote
-// node's plugin tiles surface their state through descent errors instead.
+// pluginhealth-decided tint. Only this node's own plugins have local health,
+// so a remote node's tiles surface their state through descent errors.
 func (a *App) drawPluginHealthTint(n *gridwellv1.Tile, x, y, w, h float64) {
-	// A link with no target is not enterable wherever it lives: a broken or
-	// waiting plugin link, one to a remote plugin included, whose health
-	// the local plugin list cannot know. Dim it; the descent guard explains
-	// on click.
+	// A link with no target is not enterable wherever it lives. The descent
+	// guard explains on click.
 	if pluginhealth.UnrootedLink(n) {
-		// The neutral dimming is also what a row this node cannot classify
-		// gets — a remote plugin's launcher — because not knowing yet is
-		// exactly the waiting face.
+		// A row this node cannot classify gets the neutral dimming too,
+		// because not knowing yet is exactly the waiting face.
 		color := colorLauncherWaitingTint
-		// The local plugin list knows more: a failure of any kind gets the
-		// alarm tint, waiting the neutral one.
+		// The local plugin list knows more: a failure gets the alarm tint.
 		if pl, ok := a.pluginByUUID(rpc.LocalOf(n.Id)); ok {
 			if pluginhealth.Classify(pl) == pluginhealth.Broken {
 				color = colorLauncherBrokenTint
