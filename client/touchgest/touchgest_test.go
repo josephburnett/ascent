@@ -39,8 +39,8 @@ func TestDragBeyondSlopIsLeftDrag(t *testing.T) {
 	if as := m.Move([]Point{pt(102, 101)}, 20); len(as) != 0 {
 		t.Fatalf("within-slop move emitted %+v", as)
 	}
-	// Crossing slop: the press becomes a left drag anchored at the origin so
-	// the downstream gesture engine sees the same press point a mouse would.
+	// Crossing slop makes the press a left drag anchored at the origin, the
+	// same press point a mouse would give.
 	as := m.Move([]Point{pt(100+SlopPx+2, 100)}, 40)
 	wantActions(t, as,
 		Action{Kind: MouseDown, Pos: pt(100, 100), Button: 0},
@@ -55,14 +55,13 @@ func TestDragBeyondSlopIsLeftDrag(t *testing.T) {
 func TestLongPressIsRightButton(t *testing.T) {
 	m := New()
 	m.Start([]Point{pt(200, 200)}, 1000)
-	// A stale timer from an earlier gesture (fired before HoldMs elapsed
-	// for this press) must not classify.
+	// A timer that fires before HoldMs elapsed for this press must not classify.
 	if as := m.Timer(1000 + HoldMs - 50); len(as) != 0 {
 		t.Fatalf("early timer emitted %+v", as)
 	}
 	as := m.Timer(1000 + HoldMs)
 	wantActions(t, as, Action{Kind: MouseDown, Pos: pt(200, 200), Button: 2})
-	// Subsequent movement is a right drag (split/swap/clone/resize vocabulary).
+	// Subsequent movement is a right drag.
 	as = m.Move([]Point{pt(240, 200)}, 1000+HoldMs+50)
 	wantActions(t, as, Action{Kind: MouseMove, Pos: pt(240, 200), Button: 2})
 	as = m.End(nil, 1000+HoldMs+100)
@@ -70,8 +69,8 @@ func TestLongPressIsRightButton(t *testing.T) {
 }
 
 func TestLongPressReleaseInPlaceIsRightClick(t *testing.T) {
-	// Hold without moving, lift: right-click (e.g. on the corner circle =
-	// ascend, matching the desktop right-click-corner gesture).
+	// Hold without moving and lift is a right click, matching the desktop
+	// right-click-corner gesture.
 	m := New()
 	m.Start([]Point{pt(10, 10)}, 0)
 	m.Timer(HoldMs)
@@ -96,7 +95,7 @@ func TestTwoFingerTapIsMiddleClick(t *testing.T) {
 	if as := m.Start([]Point{pt(100, 100), pt(140, 100)}, 30); len(as) != 0 {
 		t.Fatalf("second finger emitted %+v", as)
 	}
-	// Both lift quickly with no movement → middle click at the midpoint (ascend).
+	// Both lift quickly with no movement: a middle click at the midpoint.
 	as := m.End(nil, 100)
 	wantActions(t, as,
 		Action{Kind: MouseDown, Pos: pt(120, 100), Button: 1},
@@ -105,9 +104,8 @@ func TestTwoFingerTapIsMiddleClick(t *testing.T) {
 }
 
 func TestTwoFingerTapWithStaggeredLifts(t *testing.T) {
-	// Real hardware (and CDP injection) reports one touchend PER FINGER: the
-	// machine sees End([p1]) then End([]). The tap must still classify — this
-	// is the sequence an actual two-finger tap produces.
+	// Hardware and CDP injection report one touchend per finger, so the machine
+	// sees End([p1]) then End([]). The tap must still classify.
 	m := New()
 	m.Start([]Point{pt(100, 100)}, 0)
 	m.Start([]Point{pt(100, 100), pt(140, 100)}, 30)
@@ -126,14 +124,14 @@ func TestSlowStaggeredLiftIsNotATap(t *testing.T) {
 	m.Start([]Point{pt(100, 100)}, 0)
 	m.Start([]Point{pt(100, 100), pt(140, 100)}, 30)
 	m.End([]Point{pt(100, 100)}, 80)
-	// The last finger dawdles past the tap window: not a tap, no click.
+	// The last finger lifts past the tap window, so there is no click.
 	if as := m.End(nil, 30+TwoTapMs+50); len(as) != 0 {
 		t.Fatalf("slow lift emitted %+v", as)
 	}
 }
 
 func TestMovedTwoFingerStaggeredLiftIsNotATap(t *testing.T) {
-	// A pinch/scroll that lifts staggered must not fire a phantom middle
+	// A pinch or scroll that lifts staggered must not fire a phantom middle
 	// click on the final lift.
 	m := New()
 	m.Start([]Point{pt(100, 100)}, 0)
@@ -146,10 +144,10 @@ func TestMovedTwoFingerStaggeredLiftIsNotATap(t *testing.T) {
 }
 
 func TestTwoFingerStartFromIdle(t *testing.T) {
-	// Both fingers can arrive in one event — or the first finger landed on a
-	// DOM overlay (the file textarea) that only forwards MULTI-finger touches
-	// to the machine, so the machine never saw a single-finger start. A
-	// two-finger tap must still classify.
+	// Both fingers can arrive in one event, or the first landed on a DOM overlay
+	// (the file textarea) that forwards only multi-finger touches, so the
+	// machine never saw a single-finger start. A two-finger tap must still
+	// classify.
 	m := New()
 	if as := m.Start([]Point{pt(100, 100), pt(140, 100)}, 0); len(as) != 0 {
 		t.Fatalf("two-finger start emitted %+v", as)
@@ -165,8 +163,8 @@ func TestPinchEmitsWheelZoom(t *testing.T) {
 	m := New()
 	m.Start([]Point{pt(100, 100)}, 0)
 	m.Start([]Point{pt(100, 100), pt(200, 100)}, 10) // dist 100, mid (150,100)
-	// Spread apart past the classification lock: zoom in → negative deltaY
-	// (wheel-up), anchored at the current midpoint.
+	// Spreading past the classification lock zooms in, so deltaY is negative,
+	// anchored at the current midpoint.
 	as := m.Move([]Point{pt(80, 100), pt(220, 100)}, 30) // dist 140
 	if len(as) != 1 || as[0].Kind != Wheel {
 		t.Fatalf("actions = %+v, want one Wheel", as)
@@ -177,7 +175,7 @@ func TestPinchEmitsWheelZoom(t *testing.T) {
 	if as[0].Pos != pt(150, 100) {
 		t.Errorf("wheel anchored at %+v, want midpoint (150,100)", as[0].Pos)
 	}
-	// Closing the pinch zooms out → positive deltaY.
+	// Closing the pinch zooms out, so deltaY is positive.
 	as = m.Move([]Point{pt(90, 100), pt(210, 100)}, 50) // dist 120 < 140
 	if len(as) != 1 || as[0].DeltaY <= 0 {
 		t.Fatalf("closing pinch must zoom OUT: %+v", as)
@@ -192,8 +190,8 @@ func TestTwoFingerScrollEmitsWheel(t *testing.T) {
 	m := New()
 	m.Start([]Point{pt(100, 100)}, 0)
 	m.Start([]Point{pt(100, 100), pt(140, 100)}, 10)
-	// Both fingers travel up in parallel (distance constant): scroll. Fingers
-	// moving up read content below → wheel-down (positive deltaY).
+	// Both fingers travel up in parallel with the distance constant, which is a
+	// scroll. Fingers moving up read content below, so deltaY is positive.
 	as := m.Move([]Point{pt(100, 60), pt(140, 60)}, 30)
 	if len(as) != 1 || as[0].Kind != Wheel {
 		t.Fatalf("actions = %+v, want one Wheel", as)
@@ -204,14 +202,13 @@ func TestTwoFingerScrollEmitsWheel(t *testing.T) {
 }
 
 func TestTwoFingerModeLocksOnce(t *testing.T) {
-	// Once classified as a pinch, later parallel travel must keep zooming
-	// (not flip to scroll mid-gesture).
+	// Once classified as a pinch, later parallel travel keeps zooming.
 	m := New()
 	m.Start([]Point{pt(100, 100)}, 0)
 	m.Start([]Point{pt(100, 100), pt(200, 100)}, 10)
 	m.Move([]Point{pt(80, 100), pt(220, 100)}, 30) // locks pinch
 	as := m.Move([]Point{pt(80, 60), pt(220, 60)}, 50)
-	// Parallel move, distance unchanged → zero pinch delta → no action (not a scroll).
+	// A parallel move leaves the distance unchanged, so there is no action.
 	if len(as) != 0 {
 		t.Fatalf("locked pinch emitted %+v for a parallel move", as)
 	}
