@@ -2,10 +2,9 @@ package shellconn
 
 import "testing"
 
-// TestSessionDeadOnClose pins the rule that only the server's explicit 1008
-// PolicyViolation is a definitive "session gone" signal. An abnormal closure
-// (1006) is unknown, not dead-or-alive: SessionDeadOnClose is false and the
-// caller re-probes.
+// TestDecideShellRefreshVisible tables the refresh button's visibility,
+// including that a tile with no preview always shows and an unknown session
+// hides and probes.
 func TestDecideShellRefreshVisible(t *testing.T) {
 	cases := []struct {
 		name                string
@@ -51,10 +50,9 @@ func TestDecodeJPEGDataURL(t *testing.T) {
 	}
 }
 
-// The auto-live descent decision: descending engages — url opens, an alive
-// or fresh shell opens, a dead shell stays frozen, a capability-gated host
-// stays silently frozen, unknown aliveness probes. A serves_page tile gets
-// exactly the url verdict: a page tile and a url tile engage identically.
+// Descending engages: a url opens, an alive or fresh shell opens, a dead
+// shell stays frozen, a host without the capability stays silently frozen,
+// and unknown aliveness probes. A serves_page tile gets the url verdict.
 func TestDecideAutoLive(t *testing.T) {
 	cases := []struct {
 		name                                                                           string
@@ -63,9 +61,8 @@ func TestDecideAutoLive(t *testing.T) {
 	}{
 		{"url on Electron opens", true, false, true, true, true, false, false, false, AutoLiveURL},
 		{"url in a browser stays frozen", true, false, false, false, true, false, false, false, AutoLiveNone},
-		// The user's standing freeze beats the engagement default:
-		// re-descending a deliberately frozen url stays frozen until the
-		// reconnect gesture clears the intent.
+		// The user's standing freeze beats the engagement default until
+		// the reconnect gesture clears it.
 		{"user-frozen url stays frozen", true, false, true, true, true, false, false, true, AutoLiveNone},
 		{"page tile on Electron opens", true, false, true, true, false, false, false, false, AutoLiveURL},
 		{"page tile in a browser stays frozen", true, false, false, false, false, false, false, false, AutoLiveNone},
@@ -86,7 +83,7 @@ func TestDecideAutoLive(t *testing.T) {
 	}
 }
 
-// A click on a url in a live shell belongs to Gridwell alone whenever the
+// A click on a url in a live shell is Gridwell's alone whenever the
 // application would otherwise be told about it too.
 func TestDecideLinkPress(t *testing.T) {
 	for _, c := range []struct {
