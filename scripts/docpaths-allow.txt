@@ -5,3 +5,10 @@ apps/desktop/README.md apps/desktop/.cache
 # A gitignored e2e-output dir (.gitignore: test-results/), absent on a fresh
 # checkout; the gates workflow uploads it as a failure artifact when it exists:
 .github/workflows/gates.yml apps/desktop/test-results
+# The release build's own output (.gitignore: out/), which exists only after
+# electron-builder has run; the release workflow uploads what it finds. The
+# AppImage glob normalizes to a bare `out/*` once the .AppImage suffix is
+# stripped:
+.github/workflows/release.yml apps/desktop/out/*
+.github/workflows/release.yml apps/desktop/out/*.dmg
+.github/workflows/release.yml apps/desktop/out/*.exe

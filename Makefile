@@ -1,4 +1,4 @@
-.PHONY: build bin plugins wasm fmt-check proto-check check check-electron check-e2e check-web check-connections serve clean launch vendor dist stamp-version node-modules
+.PHONY: build bin plugins mac-bins wasm fmt-check proto-check check check-electron check-e2e check-web check-connections serve clean launch vendor dist dist-mac dist-win stamp-version node-modules
 
 # Every plugin kind with a binary in $(PLUGINS_DIR). This is the one list:
 # `plugins` builds from it and `clean` removes from it.
@@ -244,7 +244,7 @@ SERVE_FLAGS ?=
 # binaries incl. the AppImage runtime (into ELECTRON_BUILDER_CACHE) — by
 # running `npm ci` against the committed lockfile and then building the
 # AppImage once. After this completes, `make dist` needs no network.
-vendor: bin wasm
+vendor: build
 	cd $(DESKTOP) && npm ci --cache $(NPM_CACHE)
 	# Electron defers its binary download to first run, so materialize it here,
 	# into the repo-local cache, or the first offline `make launch` or harness
@@ -266,13 +266,53 @@ stamp-version:
 		echo "no VERSION: a development build, package.json untouched"; \
 	fi
 
-# dist is the offline AppImage build. It assumes a prior `make vendor` warmed
-# the caches and installed node_modules. Produces a single self-contained
-# Gridwell-<ver>.AppImage under $(DESKTOP)/out/ that bundles the Electron
-# runtime, the static Go sidecar, and the wasm assets.
-dist: bin wasm node-modules
+# dist, dist-mac and dist-win are the three release builds, one per OS. Each
+# runs on a NATIVE runner (.github/workflows/release.yml sequences them, and
+# the Makefile stays the one recipe): a dmg cannot be produced off macOS, and
+# the portable exe wants a Windows host. Every one bundles the Electron
+# runtime, the Go binaries as extraResources, and — through web/embed.go —
+# the whole web client, so an artifact is self-contained.
+#
+# dist is also the offline AppImage build for local use, and assumes a prior
+# `make vendor` warmed the caches and installed node_modules. It produces
+# Gridwell-<ver>.AppImage under $(DESKTOP)/out/.
+dist: build node-modules stamp-version
 	cd $(DESKTOP) && npm run build && ./node_modules/.bin/electron-builder --linux AppImage
 	@echo "AppImage: $(DESKTOP)/out/"
+
+# dist-mac produces both dmgs, Gridwell-<ver>-arm64.dmg and -x64.dmg, from
+# mac-bins' universal Go binaries. package.json's mac.identity is "-": ad-hoc
+# signing, because an unsigned bundle refuses to launch on Apple Silicon at
+# all. It is not notarized, so a first launch needs "Open Anyway" — see
+# docs/release.md.
+dist-mac: mac-bins wasm node-modules stamp-version
+	cd $(DESKTOP) && npm run build && ./node_modules/.bin/electron-builder --mac
+	@echo "dmg: $(DESKTOP)/out/"
+
+# dist-win produces the portable Gridwell-<ver>.exe. Its accepted
+# degradations are in docs/release.md: no live shells (shelldriver has no PTY
+# there), no serve lock, no proc plugin, and no connection door, whose 0600
+# unix socket has no Windows equivalent.
+dist-win: build node-modules stamp-version
+	cd $(DESKTOP) && npm run build && ./node_modules/.bin/electron-builder --win portable
+	@echo "portable exe: $(DESKTOP)/out/"
+
+# mac-bins makes the Go binaries UNIVERSAL. macOS ships two dmgs, one per
+# arch, but extraResources is ONE set of files for both, so an arm64-only
+# sidecar would ride inside the Intel dmg and never start. Each binary is
+# compiled twice and lipo'd into one file, at exactly the path the Linux and
+# Windows builds write, so package.json names one thing everywhere.
+mac-bins: wasm
+	@set -e; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	fat() { \
+		out=$$1; dir=$$2; pkg=$$3; \
+		echo "universal $$out"; \
+		(cd "$$dir" && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "$(GO_LDFLAGS)" -o "$$tmp/$$out.amd64" "$$pkg"); \
+		(cd "$$dir" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(GO_LDFLAGS)" -o "$$tmp/$$out.arm64" "$$pkg"); \
+		lipo -create -output "$(CURDIR)/$$out" "$$tmp/$$out.amd64" "$$tmp/$$out.arm64"; \
+	}; \
+	fat gridwell apps/gridwell .; \
+	for k in $(PLUGIN_KINDS); do fat gridwell-plugin-$$k $(PLUGINS_DIR)/$$k ./cmd/gridwell-plugin-$$k; done
 
 # `make launch` is the one-shot dev run: build the sidecar and wasm, compile
 # the TS, and launch Electron against ~/.gridwell, so your existing grids are

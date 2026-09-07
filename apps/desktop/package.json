@@ -42,37 +42,41 @@
     ],
     "extraResources": [
       {
-        "from": "../../gridwell",
-        "to": "gridwell"
-      },
-      {
-        "from": "../../gridwell-plugin-fs",
-        "to": "gridwell-plugin-fs"
-      },
-      {
-        "from": "../../gridwell-plugin-proc",
-        "to": "gridwell-plugin-proc"
-      },
-      {
-        "from": "../../gridwell-plugin-gitlab",
-        "to": "gridwell-plugin-gitlab"
+        "from": "../..",
+        "to": ".",
+        "filter": [
+          "gridwell",
+          "gridwell.exe",
+          "gridwell-plugin-*"
+        ]
       }
     ],
     "linux": {
       "target": [
         "AppImage"
       ],
-      "category": "Utility"
+      "category": "Utility",
+      "artifactName": "${productName}-${version}.${ext}"
     },
     "mac": {
       "target": [
-        "dmg"
-      ]
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "identity": "-",
+      "category": "public.app-category.productivity",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "win": {
       "target": [
         "portable"
-      ]
+      ],
+      "artifactName": "${productName}-${version}.${ext}"
     }
   }
 }
