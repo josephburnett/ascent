@@ -58,6 +58,27 @@ never bumps `version`, and there is no cross-plugin move.
    quietly do something else. Fix a stale comment in the same commit that
    touches the file.
 
+## Comments
+
+A comment says what the code cannot: the decision, the constraint, or the
+consequence a reader would not guess. If the code says it, no comment.
+
+- Once, at the owner. Every other site names the owner
+  (`// see textedit.SaveQueueKey`) instead of restating it.
+- No history. What a field was, what was torn out, why a bug was not
+  caught: commit messages and `reserved` own those.
+- No mechanics. Do not narrate what the next lines do.
+- A file or package header is one short paragraph: what it owns.
+- An exported name gets one sentence. An unexported name that explains
+  itself gets none.
+- Past five lines a comment is making an argument. State the conclusion
+  and the one fact that forces it.
+- Stale is worse than absent. Leave every comment in a file you touch
+  true.
+
+`scripts/comment-share.sh` measures it: comment bytes against code bytes,
+per file or for the tree. `test/boundary` holds the tree's ceiling.
+
 ## Decisions
 
 These were decided deliberately. Do not reverse one without a new decision.
@@ -235,5 +256,5 @@ green it earns is only worth the gates behind it.
 - [ ] No import of a plugin implementation anywhere, tests included, and no
       switch on a plugin kind.
 - [ ] This is one logical change, and the comments in the files I touched
-      are true.
+      are true and meet the comment standard.
 - [ ] Things stay as the user left them.
