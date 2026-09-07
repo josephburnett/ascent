@@ -66,8 +66,15 @@ xattr -rd com.apple.quarantine /Applications/Gridwell.app
 ```
 
 Both dmgs carry the same Go binaries, built universal: the Makefile's
-`mac-bins` compiles each for amd64 and arm64 and `lipo`s them together,
-because `extraResources` is one set of files for both arches.
+`mac-bins` compiles each for amd64 and arm64, `lipo`s them together, and
+ad-hoc signs the result — Apple Silicon refuses to exec an unsigned Mach-O,
+and `lipo` writes a new file whose inherited signature no longer covers it.
+The app bundle's signing pass does not reach a plain executable in
+`Contents/Resources`, so that step is what makes the sidecar runnable.
+
+`hardenedRuntime` is off. It exists to satisfy notarization, which this
+build does not do, and with an ad-hoc signature it turns on library
+validation, which stops the app from launching at all.
 
 **Windows.** Accepted degradations, all of them states rather than faults:
 

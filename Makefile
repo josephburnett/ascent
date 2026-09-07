@@ -337,6 +337,13 @@ dist-win: build node-modules stamp-version
 # sidecar would ride inside the Intel dmg and never start. Each binary is
 # compiled twice and lipo'd into one file, at exactly the path the Linux and
 # Windows builds write, so package.json names one thing everywhere.
+#
+# Then codesign --sign -, because Apple Silicon refuses to exec an unsigned
+# Mach-O outright. Go's linker ad-hoc signs each arm64 build, but lipo writes
+# a NEW fat file, and the signature it carries no longer covers what is on
+# disk. The app bundle's own signing pass does not reach a plain executable
+# in Contents/Resources, so this is the one that counts for the sidecar and
+# the six plugins.
 mac-bins: wasm
 	@set -e; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
 	fat() { \
@@ -345,6 +352,7 @@ mac-bins: wasm
 		(cd "$$dir" && CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "$(GO_LDFLAGS)" -o "$$tmp/$$out.amd64" "$$pkg"); \
 		(cd "$$dir" && CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -ldflags "$(GO_LDFLAGS)" -o "$$tmp/$$out.arm64" "$$pkg"); \
 		lipo -create -output "$(CURDIR)/$$out" "$$tmp/$$out.amd64" "$$tmp/$$out.arm64"; \
+		codesign --force --sign - "$(CURDIR)/$$out"; \
 	}; \
 	fat gridwell apps/gridwell .; \
 	for k in $(PLUGIN_KINDS); do fat gridwell-plugin-$$k $(PLUGINS_DIR)/$$k ./cmd/gridwell-plugin-$$k; done
