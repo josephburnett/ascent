@@ -9,10 +9,6 @@ import (
 	"github.com/josephburnett/gridwell/client/errsurface"
 )
 
-// The whole classification, as a table. Four statuses: enterable, waiting
-// (asked, no answer yet — only a connection row can be in it), broken, which
-// every failure collapses into, and no-door, the plugin that answered and
-// declares doorways rather than being one.
 func TestClassifyTable(t *testing.T) {
 	cases := []struct {
 		name string
@@ -22,19 +18,15 @@ func TestClassifyTable(t *testing.T) {
 		{"rooted plugin", &gridwellv1.PluginInfo{Label: "Home", RootGridId: "u/1"}, Enterable},
 		{"rooted connection", rpc.ConnectionRow(&gridwellv1.ConnectionInfo{Uuid: "c1", RootGridId: "c1/1"}), Enterable},
 		{"info failed", &gridwellv1.PluginInfo{Label: "Files", InfoError: "plugin not responding: connection refused"}, Broken},
-		// A plugin contributes doorways; it is not one. Answering with menu
-		// entries and no root of its own is the ordinary healthy shape, and
-		// answering with neither is a plugin that contributes nothing —
-		// still healthy, still nothing to report.
+		// A plugin contributes doorways rather than being one, so no root of
+		// its own is the healthy shape.
 		{"answered, entries and no root", &gridwellv1.PluginInfo{Label: "Mail",
 			MenuEntries: []*gridwellv1.MenuEntry{{Id: "feed", Label: "Feed", GridId: "u/2"}}}, NoDoor},
 		{"answered, nothing declared", &gridwellv1.PluginInfo{Label: "Files"}, NoDoor},
 		{"connection not answered yet", rpc.ConnectionRow(&gridwellv1.ConnectionInfo{Uuid: "c1", Label: "rtb"}), Waiting},
 		{"connection that failed to dial", rpc.ConnectionRow(&gridwellv1.ConnectionInfo{Uuid: "c1", Label: "rtb",
 			StatusDetail: "dial tcp 127.0.0.1:1: connection refused"}), Broken},
-		// A rooted row with a recorded error is broken: the error is the
-		// newer fact, and descending into a namespace that just failed would
-		// hang rather than say so.
+		// A recorded error outranks a root: the error is the newer fact.
 		{"rooted but errored", &gridwellv1.PluginInfo{Label: "Files", RootGridId: "u/1", InfoError: "boom"}, Broken},
 	}
 	for _, c := range cases {
@@ -44,9 +36,8 @@ func TestClassifyTable(t *testing.T) {
 	}
 }
 
-// Broken is exactly one fact — a recorded failure — and that failure is the
-// reason the click report carries. Every kind of failure collapses into the
-// one status, and the row's own text is what distinguishes them.
+// Every kind of failure collapses into Broken; the recorded text is what
+// distinguishes them.
 func TestBrokenIsOneStatusWithTheReasonInTheText(t *testing.T) {
 	failed := &gridwellv1.PluginInfo{Uuid: "u1", Label: "Files", InfoError: "plugin not responding: boom"}
 	dialed := rpc.ConnectionRow(&gridwellv1.ConnectionInfo{Uuid: "u2", Label: "Files",
@@ -70,9 +61,8 @@ func TestBrokenIsOneStatusWithTheReasonInTheText(t *testing.T) {
 	}
 }
 
-// A plugin that answered and declares no doorway of its own has nothing to
-// report: it is not an error, so a click on it — there is no swatch to click,
-// but the guard is asked anyway — says nothing.
+// A plugin with no doorway of its own is not an error, so a click says
+// nothing.
 func TestClickNotice_NoDoor_NotOk(t *testing.T) {
 	pl := &gridwellv1.PluginInfo{Uuid: "u1", Label: "Mail",
 		MenuEntries: []*gridwellv1.MenuEntry{{Id: "feed", Label: "Feed", GridId: "u1/2"}}}
@@ -100,10 +90,8 @@ func TestClickNotice_KeyedByUUID(t *testing.T) {
 	}
 }
 
-// TestClickNotice_SourceKeyedByLabelCoalesces documents the coalescing
-// contract this feeds into errsurface.Surface.Report: repeated clicks on the
-// same plugin produce the same source key, so they update one row rather
-// than scrolling the strip.
+// Repeated clicks on one plugin share a source key, so errsurface updates one
+// row rather than scrolling the strip.
 func TestClickNotice_SourceKeyedByLabelCoalesces(t *testing.T) {
 	pl := &gridwellv1.PluginInfo{Label: "Files", InfoError: "boom"}
 	_, s1, _, _ := ClickNotice(pl)
@@ -113,10 +101,7 @@ func TestClickNotice_SourceKeyedByLabelCoalesces(t *testing.T) {
 	}
 }
 
-// A connection row that hasn't learned its root is waiting, not broken — the
-// notice reads like the loading it is, at Info severity, and never points at
-// config.root, which doesn't exist for connections. The row is recognized by
-// its declared kind, so an unsegmented uuid reads the same as a chained one:
+// A connection row is recognized by its declared kind, not its uuid shape, so
 // this case is built through rpc.ConnectionRow, the one minter.
 func TestClickNotice_PendingConnection(t *testing.T) {
 	pl := rpc.ConnectionRow(&gridwellv1.ConnectionInfo{Uuid: "conn1", Label: "rtb"})
@@ -134,7 +119,6 @@ func TestClickNotice_PendingConnection(t *testing.T) {
 	if strings.Contains(msg, "config.root") {
 		t.Errorf("pending-connection wording must not point at config.root: %q", msg)
 	}
-	// With a recorded dial failure the detail rides InfoError → Broken.
 	pl.InfoError = "dial tcp 127.0.0.1:1: connection refused"
 	sev, _, msg, ok = ClickNotice(pl)
 	if !ok || sev != errsurface.Error || !strings.Contains(msg, "connection refused") {
@@ -142,10 +126,6 @@ func TestClickNotice_PendingConnection(t *testing.T) {
 	}
 }
 
-// TestUnrootedLink pins the three facts the tint reads together. A well link
-// that resolved a child grid is enterable; a leaf link is not a well, so it
-// is never tinted however it points; and a plain local well is not a
-// reference at all.
 func TestUnrootedLink(t *testing.T) {
 	cases := []struct {
 		name string

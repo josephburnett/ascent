@@ -1,20 +1,7 @@
-// Package pluginhealth decides how a launcher tile should draw and behave for
-// a given gridwellv1.PluginInfo: enterable, waiting (asked, no answer yet), broken
-// (anything that failed), or no-door (answered, and it is not a place). It is
-// the one place that decision is made, so client/wasm's launcher rendering and
-// click handling are both thin reads of it; the wasm file contributes only
-// pixels and event plumbing.
-//
-// One failure state, not several: the user does not care WHY a launcher will
-// not open unless they are debugging, so every failure — Info errored, the
-// probe timed out — is one status with one tint and one message shape, and the
-// specific reason rides the click report's text. Still loading is the one
-// genuinely different thing, and it presents as loading.
-//
-// Declaring no grid of its own is not a failure. A plugin contributes + menu
-// entries; it is not itself a place. A node is: its home, and a connection's
-// far home, are what a row is enterable for. So a row that answered and named
-// no grid of its own is NoDoor — healthy, with nothing to look at.
+// Package pluginhealth owns how a launcher tile draws and behaves. Every
+// failure is one status, Broken, with the reason only in the click report,
+// since the user cannot act on which failure it was. Declaring no grid of its
+// own is not a failure but NoDoor: a plugin is not itself a place.
 package pluginhealth
 
 import (
@@ -27,32 +14,18 @@ import (
 type Status int
 
 const (
-	// Enterable: Info succeeded and declared a root grid. Click descends.
-	Enterable Status = iota
-	// Waiting: asked, not answered yet. A connection row is minted with no
-	// root and no error until the far node answers, and the probe's timeout
-	// is what ends the wait — a timed-out connection carries its detail as
-	// InfoError and is Broken, never Waiting forever.
+	Enterable Status = iota // Info succeeded and declared a root grid
+	// Waiting is a connection row minted with no root and no error, before
+	// the far node answers. The probe's timeout ends the wait as Broken, so
+	// nothing waits forever.
 	Waiting
-	// Broken: not working. Info failed or timed out, which is exactly
-	// InfoError being set. One status, because the difference between the
-	// failures is a debugging detail, not a different thing to look at.
-	Broken
-	// NoDoor: Info answered, nothing failed, and the row names no grid of
-	// its own. That is every plugin: it declares + menu entries, and each
-	// entry is the doorway, not the plugin. Nothing is wrong and nothing is
-	// shown for the row itself.
-	NoDoor
+	Broken // InfoError is set
+	NoDoor // answered, no grid of its own: nothing is wrong, nothing is shown
 )
 
-// Classify decides pl's status from the facts the server's Info handshake
-// produces: whether it failed (InfoError != ""), whether it named a grid of
-// its own (RootGridID != ""), and, for the rootless-and-errorless case,
-// whether the row is a connection (rpc.PluginKindConnection, the row's own
-// declaration, minted by rpc.ConnectionRow — never the shape of the uuid). A
-// connection with no root has not answered yet; anything else with no root
-// has answered and is not a place. This is the ONE classification: no caller
-// asks a second question about the row afterwards.
+// Classify decides pl's status from the Info handshake alone, and no caller
+// asks a second question about the row. Whether a rootless, errorless row is a
+// connection comes from its declared Kind, never from the uuid's shape.
 func Classify(pl *gridwellv1.PluginInfo) Status {
 	if pl.InfoError != "" {
 		return Broken
@@ -66,40 +39,22 @@ func Classify(pl *gridwellv1.PluginInfo) Status {
 	return Enterable
 }
 
-// UnrootedLink reports whether a tile is a well link with nothing behind it:
-// a launcher row for a plugin or connection that declared no root grid. It is
-// the drawn half of the same "not enterable" the descent guard reports on
-// click, derived from the row alone, so it holds for a remote node's launcher
-// rows too — the local plugin list cannot classify those, and Classify is
-// only consulted when it can. It belongs beside Classify because both answer
-// "is this enterable", from the two kinds of fact that can say no.
+// UnrootedLink is a well link with no root grid behind it. It reads the tile
+// alone, so it holds for a remote node's launcher rows too, which the local
+// plugin list cannot classify.
 func UnrootedLink(t *gridwellv1.Tile) bool {
 	return t.Reference && rpc.IsWellKind(t.Kind) && t.ChildGridId == ""
 }
 
-// BrokenReason is the debugging detail behind a Broken status: what the server
-// recorded. Broken is exactly "InfoError is set", so the recorded text is
-// always there and there is no second reason to invent. Only the click report
-// reads it — the tint does not, since every Broken row looks the same.
+// BrokenReason is what the server recorded. Only the click report reads it;
+// every Broken row draws the same.
 func BrokenReason(pl *gridwellv1.PluginInfo) string { return pl.InfoError }
 
-// ClickNotice returns the errsurface.Surface.Report arguments for clicking a
-// non-enterable launcher tile: severity, a per-plugin source key (so a second
-// click updates the same notice rather than scrolling the strip), and a
-// human-readable message. ok is false for Enterable (the caller descends)
-// — that click reports nothing.
-//
-// The source key is "launcher:<uuid>" — the uuid, not the label: two
-// connections can share a label, and a shared source key would make one
-// row's notice silently replace another's.
-// The source namespace is "launcher:", not "plugin:" — "plugin:<uuid>" is the
-// sticky ongoing-condition namespace (errsurface.Sticky) used by health
-// events, whereas a click notice is a one-shot answer to a gesture and should
-// expire off the strip like any other.
-//
-// Severity follows the status, not the reason: Broken is Error (something the
-// user expected to work did not, and BrokenReason says what), Waiting is Info
-// (nothing has gone wrong yet).
+// ClickNotice is errsurface.Surface.Report's arguments for clicking a
+// non-enterable launcher tile; false for Enterable, which descends instead.
+// The source keys on the uuid because two connections can share a label, and
+// on "launcher:" because "plugin:" is errsurface's sticky namespace and a
+// click notice should expire.
 func ClickNotice(pl *gridwellv1.PluginInfo) (sev errsurface.Severity, source, message string, ok bool) {
 	switch Classify(pl) {
 	case Broken:
