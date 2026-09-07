@@ -95,10 +95,21 @@ plugins:
 # that gzipped, and a phone on a relayed link downloads it every boot.
 # gzip runs after the build so the sidecar is always at least as new as
 # the raw file; the server refuses a stale one.
+#
+# The last step proves the pair. `go build` rewrites its output incrementally
+# over about a second, so a gzip reading that file while it grows writes a
+# VALID gzip of a PREFIX and exits 0 — and the browser then gets a clean 200
+# of a truncated module. Decompressing the sidecar and byte-comparing it here
+# means a short one can never reach an embed. web/embed_test.go owns the same
+# property from the other end, over the bytes actually embedded.
 wasm: $(WASM_EXEC)
 	mkdir -p web
 	GOOS=js GOARCH=wasm go build -o $(WASM) ./client/wasm
 	gzip -9 -kf $(WASM)
+	@gzip -dc $(WASM).gz | cmp -s - $(WASM) || { \
+		echo "$(WASM).gz does not decompress to $(WASM) — the sidecar is short (a concurrent build in this tree?); rerun make wasm"; \
+		exit 1; \
+	}
 
 $(WASM_EXEC):
 	mkdir -p web
