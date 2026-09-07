@@ -1,17 +1,13 @@
 package store
 
-// trash.go is home's trashcan, built entirely from facts the store already
-// owns. DeleteTile on an ordinary grid moves the tile into a per-month subgrid
-// of the trash grid: ids and versions continue and links keep resolving,
-// because it moved rather than died. DeleteTile on a tile already inside the
-// trash tree destroys it for real, through the ordinary cascade. The trash
-// grid itself is a system-keyed singleton like the scratch grid, surfaced to
-// the client as a declared root menu entry, so nothing special-cases it.
-//
-// Scratch tiles bypass the trash, which a test pins. The scratch grid holds
-// system-made ephemerals — visited urls, gone-on-ascent shells, the reap's
-// targets — while the trash is a net for things the user placed in space and
-// asked to remove.
+// Home's trashcan, built entirely from facts the store already owns. DeleteTile
+// on an ordinary grid moves the tile into a per-month subgrid of the trash
+// grid, so ids and versions continue and links keep resolving; on a tile
+// already inside the trash tree it destroys for real, through the ordinary
+// cascade. The trash grid is a system-keyed singleton like the scratch grid,
+// surfaced as a declared root menu entry, so nothing special-cases it. Scratch
+// tiles bypass the trash: they are system-made ephemerals, while the trash is
+// a net for what the user placed in space and asked to remove.
 
 import (
 	"context"
@@ -25,18 +21,15 @@ import (
 
 const systemKeyTrashGridID = "trash_grid_id"
 
-// trashCols is the fixed fill width for trash placement: month wells in the
-// trash root, discarded tiles in a month grid. It is layout only; the user can
-// rearrange afterwards and it stays as left.
+// trashCols is the fixed fill width for trash placement. It is layout only;
+// the user can rearrange afterwards and it stays as left.
 const trashCols = 8
 
-// trashAncestryCap bounds the ancestor walk. It matches the depth any real
-// grid tree could have; a cycle would otherwise loop forever.
+// trashAncestryCap bounds the ancestor walk, which a cycle would loop forever.
 const trashAncestryCap = 256
 
-// TrashGridID returns the id of this store's trash grid, creating it on first
-// use, by the same idempotent system-key pattern as ScratchGridID. Info
-// declares it as a root menu entry.
+// TrashGridID returns the trash grid, creating it on first use by the same
+// system-key pattern as ScratchGridID. Info declares it as a root menu entry.
 func (s *Store) TrashGridID(ctx context.Context) (string, error) {
 	var v string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM system WHERE key = ?`, systemKeyTrashGridID).Scan(&v)
@@ -60,8 +53,8 @@ func (s *Store) TrashGridID(ctx context.Context) (string, error) {
 }
 
 // trashGridIDTx reads or mints the trash grid inside an existing transaction.
-// The single writer connection serializes transactions, so re-checking inside
-// the transaction is the whole idempotence story.
+// The single writer connection serializes them, so the re-check inside the
+// transaction is the whole idempotence story.
 func (s *Store) trashGridIDTx(ctx context.Context, tx *sql.Tx) (int64, error) {
 	var v string
 	err := tx.QueryRowContext(ctx, `SELECT value FROM system WHERE key = ?`, systemKeyTrashGridID).Scan(&v)
@@ -89,10 +82,9 @@ func (s *Store) trashGridIDTx(ctx context.Context, tx *sql.Tx) (int64, error) {
 	return id, nil
 }
 
-// deleteBypassesTrash reports a real delete: the tile sits in the scratch
-// grid, holding system ephemerals, or already inside the trash tree, making
-// this the second delete. It reads the system keys without minting, because an
-// absent trash grid means nothing can be inside it yet.
+// deleteBypassesTrash reports a real delete: the tile is in the scratch grid,
+// or already inside the trash tree. It reads the system keys without minting,
+// because an absent trash grid means nothing can be inside it yet.
 func (s *Store) deleteBypassesTrash(ctx context.Context, tx *sql.Tx, srcGrid int64) (bool, error) {
 	for _, key := range []string{systemKeyScratchGridID, systemKeyTrashGridID} {
 		var v string
@@ -124,9 +116,8 @@ func (s *Store) deleteBypassesTrash(ctx context.Context, tx *sql.Tx, srcGrid int
 	return false, nil
 }
 
-// gridInSubtree walks the well-parent chain from gridID up to a root,
-// reporting whether rootID is on the way. It is the same walk
-// wellWouldContainItself does, in the other direction.
+// gridInSubtree walks the well-parent chain from gridID up to a root, reporting
+// whether rootID is on the way.
 func gridInSubtree(ctx context.Context, tx *sql.Tx, gridID, rootID int64) (bool, error) {
 	g := gridID
 	for i := 0; i < trashAncestryCap; i++ {
@@ -147,12 +138,10 @@ func gridInSubtree(ctx context.Context, tx *sql.Tx, gridID, rootID int64) (bool,
 	return false, fmt.Errorf("grid %d: ancestry deeper than %d (cycle?)", gridID, trashAncestryCap)
 }
 
-// moveTileToTrash files t under the current month's subgrid of the trash grid,
-// minting the month well on first use. The move is PlaceTile's cross-grid
-// shape exactly: same row, same id, tile version untouched because a move is
-// layout, both grid versions bumped, and TileRemoved for the source plus
-// TileChanged for the destination, so every client reconciles it as the move
-// it is.
+// moveTileToTrash files t under the current month's subgrid, minting the month
+// well on first use. It is PlaceTile's cross-grid shape exactly: same row and
+// id, tile version untouched, both grid versions bumped, and TileRemoved plus
+// TileChanged, so every client reconciles it as the move it is.
 func (s *Store) moveTileToTrash(ctx context.Context, tx *sql.Tx, events *[]*gridwellv1.Event, t *gridwellv1.Tile) error {
 	tileID, err := parseID(t.Id)
 	if err != nil {
@@ -200,9 +189,8 @@ func (s *Store) moveTileToTrash(ctx context.Context, tx *sql.Tx, events *[]*grid
 }
 
 // monthGridTx finds the trash grid's well for month, whose alt_text is the
-// month itself, minting the well and its child grid on first use. minted
-// reports a fresh well so the caller bumps the trash grid's version exactly
-// once.
+// month, minting it on first use. minted reports a fresh well so the caller
+// bumps the trash grid's version exactly once.
 func (s *Store) monthGridTx(ctx context.Context, tx *sql.Tx, trashID int64, month string) (gridID int64, minted bool, err error) {
 	var childStr sql.NullString
 	err = tx.QueryRowContext(ctx,

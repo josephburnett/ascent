@@ -1,13 +1,8 @@
-// Package store is the SQLite-backed persistence layer for Gridwell.
-//
-// Single-tenant: there is no user/auth model. The store owns one root grid
-// (looked up via the `system` table) and exposes spatial CRUD over a tree
-// of grids and tiles.
-//
-// All mutating methods run inside a single transaction so refcount and tree
-// invariants stay consistent under concurrent callers. The store publishes
-// events to subscribers when grids change so the server's Subscribe stream
-// can fan them out.
+// Package store is the SQLite-backed persistence layer for Gridwell: one root
+// grid, named in the `system` table, over a tree of grids and tiles. Every
+// mutating method runs in one transaction, so refcount and tree invariants
+// hold under concurrent callers, and publishes events for Subscribe to fan
+// out.
 package store
 
 import (
@@ -26,9 +21,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// Sentinel errors. The vocabulary is owned by api/gwerr, where every
-// transport and every plugin classifies from one table. These aliases are
-// the store's own call-site names, and errors.Is identity is preserved.
+// Sentinel errors. api/gwerr owns the vocabulary; these are the store's
+// call-site names, with errors.Is identity preserved.
 var (
 	ErrNotFound        = gwerr.ErrNotFound
 	ErrOverlap         = gwerr.ErrOverlap
@@ -48,9 +42,8 @@ type Store struct {
 	now   func() time.Time // overridden in tests
 	newID func() string    // overridden in tests
 	hub   *eventhub.Hub[*gridwellv1.Event]
-	// pluginID is the plugin identity, injected after verification by
-	// SetPluginID. "" is a bare test store, and PluginUUID then falls back
-	// to the bootstrap mint.
+	// pluginID is injected by SetPluginID. "" is a bare test store, and
+	// PluginUUID then falls back to the bootstrap mint.
 	pluginID string
 }
 
@@ -60,9 +53,8 @@ const (
 	systemKeyScratchGridID = "scratch_grid_id"
 )
 
-// Open opens a SQLite database at the given path, applies the schema, and
-// bootstraps the root grid if it doesn't already exist. Use ":memory:" for
-// in-test stores.
+// Open opens a SQLite database at path, applies the schema, and bootstraps the
+// root grid. ":memory:" is the in-test store.
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -90,11 +82,9 @@ func Open(path string) (*Store, error) {
 		newID: newUUID,
 		hub:   eventhub.New(eventKey),
 	}
-	// Migrate before bootstrapping. bootstrapRoot is a write through the
-	// current column set, and an old file does not have that shape until the
-	// chain has run: a genuine v1 file's grids still carries the NOT NULL
-	// object_id v10 removed, so a pre-migration insert fails its constraint.
-	// Schema first, then writes.
+	// Migrate before bootstrapping: bootstrapRoot writes through the current
+	// column set, and a v1 file's grids still carries the NOT NULL object_id
+	// v10 removed, so a pre-migration insert fails its constraint.
 	if err := s.applyMigrations(context.Background()); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("apply migrations: %w", err)
@@ -107,10 +97,8 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("bootstrap root: %w", err)
 	}
-	// Guard against an out-of-contract shape user_version alone cannot catch,
-	// such as an unstamped DB the fast path stamped as v1 without checking
-	// columns. Fail loudly here rather than let a later insert hit an
-	// orphaned constraint.
+	// user_version alone cannot catch an unstamped DB the fast path stamped
+	// as v1 without checking columns. Fail here, not at a later insert.
 	if err := s.verifySchema(context.Background()); err != nil {
 		db.Close()
 		return nil, err
@@ -118,11 +106,9 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-// bootstrapRoot inserts the initial root grid if none exists. It is
-// idempotent. The root's framing is not seeded here: it lives on the grid row
-// itself, in root_cx/cy/zoom, and a NULL zoom already means never visited, so
-// the client substitutes the calibrated default until the user positions the
-// view.
+// bootstrapRoot inserts the initial root grid if none exists. Framing is not
+// seeded: a NULL root_zoom already means never visited, and the client
+// substitutes the calibrated default until the user positions the view.
 func (s *Store) bootstrapRoot(ctx context.Context) error {
 	var v string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM system WHERE key = ?`, systemKeyRootGridID).Scan(&v)
@@ -159,13 +145,10 @@ func (s *Store) bootstrapRoot(ctx context.Context) error {
 	})
 }
 
-// parseID converts a string tile/grid ID to int64 for SQL binding.
-//
-// Error-mapping convention at call sites: reads map a garbage id to
-// ErrNotFound, because an id that cannot exist behaves like one that does
-// not; mutations map it to ErrInvalidArgument, because the caller asserted
-// an identity in a write and the assertion itself is malformed. The asymmetry
-// is deliberate.
+// parseID converts a string tile or grid id to int64 for SQL binding. Call
+// sites map a garbage id to ErrNotFound on a read, because an id that cannot
+// exist behaves like one that does not, and to ErrInvalidArgument on a write,
+// because the caller asserted a malformed identity.
 func parseID(s string) (int64, error) {
 	return strconv.ParseInt(s, 10, 64)
 }
@@ -180,13 +163,10 @@ func (s *Store) RootGridID(ctx context.Context) (string, error) {
 }
 
 // ScratchGridID returns the id of this store's scratch grid, creating it on
-// first use. The scratch grid holds ephemeral url tiles: pages visited by
-// descending into a url — a link in a shell, a click on the menu url swatch —
-// without ever placing a tile on a visible grid. It is never a plugin root
-// and is never mounted, so it never renders, yet it persists, so it doubles
-// as the durable visited-url history that feeds url autocomplete, and a deep
-// link to one of its tiles still resolves. Idempotent: the id is stored once
-// in system metadata and returned verbatim thereafter.
+// first use. It holds url tiles visited by descending into a url without
+// placing one on a visible grid. It never renders, yet it persists, so it
+// doubles as the visited-url history that feeds autocomplete and a deep link
+// into it still resolves. The id is stored once in system metadata.
 func (s *Store) ScratchGridID(ctx context.Context) (string, error) {
 	var v string
 	err := s.db.QueryRowContext(ctx, `SELECT value FROM system WHERE key = ?`, systemKeyScratchGridID).Scan(&v)
@@ -198,9 +178,8 @@ func (s *Store) ScratchGridID(ctx context.Context) (string, error) {
 	}
 	if err := s.withTx(ctx, func(tx *sql.Tx) error {
 		// Re-check inside the transaction: the single writer connection
-		// serializes transactions, so a concurrent caller that created it
-		// first is committed and visible here, and its id is returned rather
-		// than a second grid made.
+		// serializes them, so a concurrent caller that got there first is
+		// visible here and its id is returned rather than a second grid made.
 		if e := tx.QueryRowContext(ctx, `SELECT value FROM system WHERE key = ?`, systemKeyScratchGridID).Scan(&v); e == nil {
 			return nil
 		} else if !errors.Is(e, sql.ErrNoRows) {
@@ -226,24 +205,20 @@ func (s *Store) ScratchGridID(ctx context.Context) (string, error) {
 	return v, nil
 }
 
-// SchemaVersion returns the on-disk schema generation this binary
-// materializes, stamped into the SQLite header as user_version. It is exposed
-// so the Info handshake reports the real version instead of a literal that
-// could drift from the stored one.
+// SchemaVersion returns the schema generation this binary materializes. It is
+// exposed so the Info handshake reports the real version rather than a literal
+// that could drift from the stored one.
 func (s *Store) SchemaVersion() int { return schemaVersion }
 
-// SetPluginID injects the plugin identity: the config id the binary verified
-// against its DB at spawn, through pluginmeta.Verify. The system.plugin_uuid
-// row is a second, independently minted identity nothing outside this store
-// ever sees; qualified references — layout blobs, every wire id — carry the
-// config id, so a comparison against the mint could never match. Identity
-// flows in from the one verified source, and the mint survives only as the
-// fallback for bare test stores that never had a config.
+// SetPluginID injects the config id the binary verified against its DB at
+// spawn. The system.plugin_uuid row is a second, independently minted identity
+// nothing outside this store sees: qualified references carry the config id,
+// so a comparison against the mint could never match. The mint survives only
+// as the fallback for bare test stores that never had a config.
 func (s *Store) SetPluginID(id string) { s.pluginID = id }
 
-// PluginUUID returns the plugin identity this store's qualified ids carry:
-// the injected config id, see SetPluginID, or else the bootstrap-minted
-// system.plugin_uuid for a bare test store.
+// PluginUUID returns the identity this store's qualified ids carry: the
+// injected config id (see SetPluginID), or the bootstrap mint for a test store.
 func (s *Store) PluginUUID(ctx context.Context) (string, error) {
 	if s.pluginID != "" {
 		return s.pluginID, nil
@@ -253,9 +228,8 @@ func (s *Store) PluginUUID(ctx context.Context) (string, error) {
 	return v, err
 }
 
-// RootFraming returns home's root framing: the same fact, in the same three
-// columns a plugin context's root keeps, on home's root grid row in the empty
-// namespace. ok=false means never visited.
+// RootFraming returns home's root framing, in the same three columns a plugin
+// context's root keeps. ok=false means never visited.
 func (s *Store) RootFraming(ctx context.Context) (f rpc.Framing, ok bool, err error) {
 	rootID, err := rootGridID(ctx, s.db)
 	if err != nil {
@@ -264,10 +238,9 @@ func (s *Store) RootFraming(ctx context.Context) (f rpc.Framing, ok bool, err er
 	return s.Namespace("").RootFraming(rootID)
 }
 
-// GridFraming is the same fact for any grid of home, by its decimal id: what
-// a doorway onto that grid remembers. Home declares its trashcan as a menu
-// entry, and an entry carries the framing of the grid behind it exactly as a
-// root does, so the two read one column set.
+// GridFraming is the same fact for any grid of home, by its decimal id. Home
+// declares its trashcan as a menu entry, and an entry carries the framing of
+// the grid behind it exactly as a root does, so the two read one column set.
 func (s *Store) GridFraming(gridID string) (f rpc.Framing, ok bool, err error) {
 	id, err := parseID(gridID)
 	if err != nil {
@@ -276,16 +249,12 @@ func (s *Store) GridFraming(gridID string) (f rpc.Framing, ok bool, err error) {
 	return s.Namespace("").RootFraming(id)
 }
 
-// SetFraming is the one framing writer: "how this grid looked when I left it
-// through this doorway" — a float center in the grid's own coordinates plus
-// the pane-size-independent zoom — onto the row that owns it. Exactly one
-// target is set: req.TileID names a doorway tile (a well, interior or exit,
-// or a well link, since framing is per-doorway and a link keeps its own), and
-// req.RootGridID names a root grid, which has no doorway to carry it.
-//
-// Framing is not a content edit: it carries no version claim and does not
-// bump the tile version. It is an in-place write to the owning row, and
-// clones are already independent, so there is nothing to fork.
+// SetFraming is the one framing writer: how this grid looked when the user
+// left it through this doorway, a float center plus the pane-size-independent
+// zoom, onto the row that owns it. Exactly one target is set: req.TileID names
+// a doorway tile, a well link included, since framing is per-doorway;
+// req.RootGridID names a root grid, which has no doorway to carry it. Framing
+// is not a content edit: no version claim, no bump.
 func (s *Store) SetFraming(ctx context.Context, req *gridwellv1.SetFramingRequest) (*gridwellv1.Tile, error) {
 	if req.RootGridId != "" {
 		return nil, s.setRootFraming(ctx, req)
@@ -312,9 +281,8 @@ func (s *Store) SetFraming(ctx context.Context, req *gridwellv1.SetFramingReques
 	return out, err
 }
 
-// setRootFraming is SetFraming's root arm: the write lands on the grid row
-// and announces itself as a grid change, because a root has no tile to
-// change.
+// setRootFraming is SetFraming's root arm: the write lands on the grid row and
+// announces a grid change, because a root has no tile to change.
 func (s *Store) setRootFraming(ctx context.Context, req *gridwellv1.SetFramingRequest) error {
 	gridID, err := parseID(req.RootGridId)
 	if err != nil {
@@ -364,8 +332,8 @@ func (s *Store) withTx(ctx context.Context, fn func(*sql.Tx) error) error {
 	return tx.Commit()
 }
 
-// withMutation runs fn in a transaction. fn appends to the provided events
-// slice; on commit, withMutation publishes them in order.
+// withMutation runs fn in a transaction and, on commit, publishes the events
+// fn appended, in order.
 func (s *Store) withMutation(ctx context.Context, fn func(tx *sql.Tx, events *[]*gridwellv1.Event) error) error {
 	var events []*gridwellv1.Event
 	err := s.withTx(ctx, func(tx *sql.Tx) error { return fn(tx, &events) })

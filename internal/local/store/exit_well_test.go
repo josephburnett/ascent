@@ -19,12 +19,10 @@ func gridRowCount(t *testing.T, s *Store) int {
 	return n
 }
 
-// An exit well points at a grid owned by ANOTHER plugin via a qualified
-// "<uuid>/<local>" child_grid_id. The store must treat that child as a shared
-// reference, never a thing it owns: clone copies the reference (no new grid),
-// delete drops only the reference (no remote teardown), move preserves it.
-// These are the exit-well faces of the primary rule — the remote grid stays
-// exactly as it was because nothing the user did here touched it.
+// An exit well points at another plugin's grid through a qualified
+// child_grid_id, and the store treats that child as a shared reference, never
+// a thing it owns: clone copies the reference, delete drops only the
+// reference, move preserves it.
 const remoteChild = "remote-uuid/9"
 
 func TestCloneExitWellSharesReferenceNoNewGrid(t *testing.T) {

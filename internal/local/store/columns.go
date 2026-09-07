@@ -8,17 +8,12 @@ import (
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
-// A tiles or grids column is described once, here. Everything that would
-// otherwise spell a column list out again is derived from this table: the
-// CREATE TABLE text (schema.go), the SELECT list and the Scan argument order
-// (grids.go), the clone INSERT (clone.go), and every rebuild migration's copy
-// list (migrations.go). Adding a column is one entry here plus a migration. A
-// list that cannot be spelled twice cannot be spelled inconsistently.
-//
-// The per-kind CREATE statements — insert a well, a url, a plugin-memory row
-// — are not in this class. Each names only the columns that kind sets and
-// leaves the rest at their DDL defaults, so a new column does not touch
-// them.
+// A tiles or grids column is described once, here. The CREATE TABLE text, the
+// SELECT list and Scan order, the clone INSERT and every rebuild migration's
+// copy list are derived from this table, so a column list that cannot be
+// spelled twice cannot be spelled inconsistently. Adding a column is one entry
+// here plus a migration. The per-kind CREATE statements are not in this class:
+// each names only the columns that kind sets.
 type column[T any] struct {
 	// name is the SQL column name. For a column that is on the wire it is
 	// also the proto field name; TestDescriptorMatchesProto pins that.
@@ -26,15 +21,13 @@ type column[T any] struct {
 	// ddl is the SQL that follows the name in CREATE TABLE: type, NOT NULL,
 	// DEFAULT, REFERENCES, CHECK.
 	ddl string
-	// comment is the DDL comment written above the column. It is the
-	// column's documentation, so it lives with the column and not in a
-	// separate block of prose that can go stale.
+	// comment is the DDL comment written above the column, so the column's
+	// documentation lives with the column.
 	comment string
-	// since is the schema version whose data this column carries, which is
-	// what a rebuild migration needs to know: a rebuild copies every column
-	// the version it reads already had. It is usually the version that added
-	// the column; for view_cx and view_cy it is 1, because the data existed
-	// at v1 as view_x and view_y and rebuildSelect converts it in flight.
+	// since is the schema version whose data this column carries: a rebuild
+	// copies every column the version it reads already had. For view_cx and
+	// view_cy it is 1, because the data existed at v1 as view_x and view_y
+	// and rebuildSelect converts it in flight.
 	since int
 	// bind, when non-nil, makes this column part of the record on the wire:
 	// it returns the destination a row scan reads this column into. nil is
@@ -228,13 +221,9 @@ field, which is why it is storage-only here.`,
 }
 
 // connectionsColumns is the connections table, in DDL order: what the node
-// remembers about a connection beyond what server.yaml declares. It is
-// storage-only — no column is on the wire, and internal/connection owns the
-// queries that read and write these rows — but the SHAPE is the store's, so
-// the table evolves through the one migration chain like every other node
-// fact. It reached the chain at v13, which adopted the table
-// internal/connection used to create for itself; the rows in a live home are
-// older than that, and v13 takes them exactly as they stand.
+// remembers about a connection beyond what server.yaml declares. No column is
+// on the wire and internal/connection owns the queries, but the shape is the
+// store's, so the table evolves through the one migration chain.
 var connectionsColumns = []column[struct{}]{
 	{
 		name: "name", ddl: "TEXT PRIMARY KEY", since: 13,
@@ -258,10 +247,8 @@ its 0.`,
 	},
 }
 
-// createTable renders a CREATE TABLE from a column table: each column's
-// comment, then its name padded to the table's widest, then its DDL.
-// trailing is the table-level constraint text (the tiles CHECK), appended
-// after the columns.
+// createTable renders a CREATE TABLE from a column table. trailing is the
+// table-level constraint text, appended after the columns.
 func createTable[T any](name string, cols []column[T], trailing string) string {
 	width := 0
 	for _, c := range cols {
@@ -292,9 +279,8 @@ func createTable[T any](name string, cols []column[T], trailing string) string {
 	return b.String()
 }
 
-// wireColumns is the SELECT list for reading a record: every column that is
-// part of the row on the wire, in DDL order. scanDests produces destinations
-// in the same order from the same table, so the two cannot disagree.
+// wireColumns is the SELECT list for reading a record, in DDL order. scanDests
+// produces destinations from the same table, so the two cannot disagree.
 func wireColumns[T any](cols []column[T]) string {
 	var names []string
 	for _, c := range cols {
@@ -316,9 +302,8 @@ func scanDests[T any](cols []column[T], v *T) []any {
 	return out
 }
 
-// copyColumns is the clone INSERT's column list: every tiles column except
-// the ones a clone deliberately leaves behind (each with its reason on the
-// descriptor entry).
+// copyColumns is every tiles column except the ones a clone deliberately
+// leaves behind, each with its reason on the descriptor entry.
 func copyColumns() []string {
 	var out []string
 	for _, c := range tilesColumns {
@@ -329,11 +314,10 @@ func copyColumns() []string {
 	return out
 }
 
-// copyBinding renders the clone INSERT's column list and its arguments from
-// vals, in descriptor order. It refuses a vals map that is missing a copied
-// column or names one that is not copied, so adding a column and forgetting
-// the clone path is a named error at the one place the copy happens rather
-// than a silently incomplete copy.
+// copyBinding renders the clone INSERT's column list and arguments from vals,
+// in descriptor order. It refuses a map missing a copied column or naming an
+// uncopied one, so a forgotten clone path is a named error rather than a
+// silently incomplete copy.
 func copyBinding(vals map[string]any) (cols string, args []any, err error) {
 	names := copyColumns()
 	args = make([]any, 0, len(names))
@@ -359,11 +343,10 @@ func copyBinding(vals map[string]any) (cols string, args []any, err error) {
 	return strings.Join(names, ", "), args, nil
 }
 
-// rebuildColumns is a rebuild migration's copy list: every tiles column whose
-// data the schema version it reads already had. A rebuild always materializes
-// the current tilesTableDDL, so columns added later take their DDL defaults
-// and columns since dropped are not carried at all. That is the convergence
-// contract, derived rather than retyped per migration.
+// rebuildColumns is every tiles column whose data the schema version a rebuild
+// reads already had. The rebuild materializes the current tilesTableDDL, so
+// later columns take their DDL defaults and dropped ones are not carried. That
+// is the convergence contract, derived rather than retyped per migration.
 func rebuildColumns(reads int) string {
 	var names []string
 	for _, c := range tilesColumns {
@@ -374,12 +357,10 @@ func rebuildColumns(reads int) string {
 	return strings.Join(names, ", ")
 }
 
-// nullString, nullInt64, and intBool are the scan adapters for columns whose
-// SQL shape is not the Go shape: a NULL reads as the Go zero value, and
-// SQLite's 0 or 1 integer reads as a bool. One adapter per shape, named on
-// the descriptor entry, so a nullable column cannot be scanned as
-// non-nullable, which would fail only on the first NULL row in
-// production.
+// nullString, nullInt64 and intBool are the scan adapters for columns whose
+// SQL shape is not the Go shape. One per shape, named on the descriptor entry,
+// so a nullable column cannot be scanned as non-nullable, which would fail
+// only on the first NULL row in production.
 type nullString struct{ p *string }
 
 func (n nullString) Scan(v any) error {

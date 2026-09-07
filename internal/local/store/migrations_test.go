@@ -10,10 +10,9 @@ import (
 	"testing"
 )
 
-// TestVersionStampedOnFreshOpen confirms Open stamps the Gridwell
-// application_id and the current schemaVersion into the SQLite header on a
-// fresh DB. Without the stamp the next Open couldn't tell our file from a
-// foreign one, and would re-run migrations from version 0.
+// Open stamps application_id and schemaVersion on a fresh DB. Without the
+// stamp the next Open could not tell the file from a foreign one and would
+// re-run migrations from version 0.
 func TestVersionStampedOnFreshOpen(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -35,9 +34,8 @@ func TestVersionStampedOnFreshOpen(t *testing.T) {
 	}
 }
 
-// TestApplyMigrationsRejectsNewerStoredVersion confirms an Open against a DB
-// stamped with a higher user_version than this binary refuses to proceed —
-// an older binary against a future-schema DB would silently misread rows.
+// A DB stamped newer than this binary is refused: an older binary against a
+// future schema would silently misread rows.
 func TestApplyMigrationsRejectsNewerStoredVersion(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -49,9 +47,7 @@ func TestApplyMigrationsRejectsNewerStoredVersion(t *testing.T) {
 	}
 }
 
-// TestApplyMigrationsRejectsForeignDatabase confirms Open refuses a SQLite
-// file whose application_id isn't Gridwell's — protecting against pointing
-// the server at an unrelated database.
+// Open refuses a SQLite file whose application_id is not Gridwell's.
 func TestApplyMigrationsRejectsForeignDatabase(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -63,11 +59,9 @@ func TestApplyMigrationsRejectsForeignDatabase(t *testing.T) {
 	}
 }
 
-// TestMigrationsWellFormed enforces the bookkeeping that keeps the chain valid:
-// migrations sorted and contiguous from 2, the last one equal to schemaVersion
-// (empty ⟹ schemaVersion 1), and exactly one fixture per migration with aligned
-// versions — so a migration added without a fixture, or with a non-contiguous
-// version, fails the build.
+// The chain is sorted and contiguous from 2, ends at schemaVersion, and has
+// exactly one fixture per migration, so a migration added without a fixture
+// fails the build.
 func TestMigrationsWellFormed(t *testing.T) {
 	for i, m := range migrations {
 		if want := i + 2; m.to != want {
@@ -92,12 +86,9 @@ func TestMigrationsWellFormed(t *testing.T) {
 	}
 }
 
-// TestSchemaEquivalence is the no-drift binding: a DB built from the frozen
-// tablesV1 base and walked through every migration must end up schema-identical
-// to a fresh Open (tablesDDL(), rendered from the column descriptor). This is
-// what makes the fresh-DB stamp shortcut in migrateUp sound — forget the
-// descriptor entry and the
-// fresh side lacks the column; forget the migration and the migrated side does.
+// The no-drift binding: a DB built from frozen tablesV1 and walked through
+// every migration ends up schema-identical to a fresh Open. This is what makes
+// the fresh-DB stamp shortcut in migrateUp sound.
 func TestSchemaEquivalence(t *testing.T) {
 	db, _ := buildDBAtV1(t, filepath.Join(t.TempDir(), "migrated.db"))
 	applyMigrationsUpTo(t, db, schemaVersion)
@@ -107,9 +98,8 @@ func TestSchemaEquivalence(t *testing.T) {
 	compareFingerprints(t, schemaFingerprint(t, fresh.db), migrated)
 }
 
-// TestMigrationChain walks a single v1 DB through the whole chain in order,
-// asserting representative v1 data (text, url, well + child grid) reads back
-// unchanged after every step, and that the final schema equals a fresh DB.
+// A single v1 DB walked through the whole chain reads its data back unchanged
+// after every step, and ends equal to a fresh DB.
 func TestMigrationChain(t *testing.T) {
 	db, root := buildDBAtV1(t, filepath.Join(t.TempDir(), "chain.db"))
 	fx := seedV1(t, db, root)
@@ -124,10 +114,9 @@ func TestMigrationChain(t *testing.T) {
 	compareFingerprints(t, schemaFingerprint(t, fresh.db), schemaFingerprint(t, db))
 }
 
-// TestPerMigration tests each migration in isolation: build at the version just
-// before it, seed rows valid there, apply only that one migration, then verify
-// its schema change landed and the pre-existing rows survived. No-op until the
-// first post-v1 migration adds a fixture.
+// Each migration in isolation: build at the version before it, seed rows valid
+// there, apply only that step, and verify the change landed and the rows
+// survived.
 func TestPerMigration(t *testing.T) {
 	for _, f := range migrationFixtures {
 		f := f
@@ -145,11 +134,9 @@ func TestPerMigration(t *testing.T) {
 	}
 }
 
-// TestMigrateUpRunsRealMigrations exercises the production engine end-to-end
-// with a synthetic two-step chain against a frozen-v1 file: real ALTER TABLE
-// migrations through Store.migrateUp must add their columns, stamp user_version,
-// preserve all pre-existing data, and be idempotent on re-run. This proves the
-// upgrade machinery works today, before any real post-v1 migration exists.
+// The production engine end-to-end with a synthetic two-step chain against a
+// frozen-v1 file: columns added, user_version stamped, data preserved, and the
+// re-run idempotent.
 func TestMigrateUpRunsRealMigrations(t *testing.T) {
 	ctx := context.Background()
 	db, root := buildDBAtV1(t, filepath.Join(t.TempDir(), "engine.db"))
@@ -181,26 +168,21 @@ func TestMigrateUpRunsRealMigrations(t *testing.T) {
 	}
 }
 
-// TestMigrateV10OverAGenuineV9File covers what the per-migration fixture
-// cannot reach. A file written by a v9 binary carries tiles.object_id, its
-// index, tiles.configure_plugin_id, and a CHECK that admits a childless well.
-// A chain-built v9 file carries none of those, because the v5 rebuild already
-// materializes the current tiles shape, so there is nothing to plant a row
-// in. Here the genuine v9 shape is put back by hand and v10 is run over it.
-//
-// The invariant under test: a tile the user placed must still be there
-// afterwards, at the same id, and must work. Deleting it because its feature
-// retired would be a change the user did not make.
+// What the per-migration fixture cannot reach: a chain-built v9 file has none
+// of the v9 columns, the v5 rebuild having materialized the current tiles
+// shape, so the genuine v9 shape is put back by hand and v10 run over it. A
+// tile the user placed must still be there afterwards, at the same id, and
+// work; deleting it because its feature retired is a change the user did not
+// make.
 func TestMigrateV10OverAGenuineV9File(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "genuinev9.db")
 	db, root := buildDBAtV1(t, path)
 	applyMigrationsUpTo(t, db, 9)
 
-	// The v9 columns and index a chain-built file does not have. object_id
-	// was TEXT NOT NULL with no default on a real v9 file; the default added
-	// here only lets this test insert without naming it, and v10 never copies
-	// the column either way.
+	// The v9 columns and index a chain-built file does not have. object_id had
+	// no default on a real v9 file; the one here only lets this test insert
+	// without naming it, and v10 never copies the column.
 	for _, ddl := range []string{
 		`ALTER TABLE tiles ADD COLUMN object_id TEXT NOT NULL DEFAULT ''`,
 		`CREATE INDEX idx_tiles_object_id ON tiles(object_id)`,
@@ -272,11 +254,9 @@ func TestMigrateV10OverAGenuineV9File(t *testing.T) {
 	if nIdx != 0 {
 		t.Error("idx_tiles_object_id survived v10 on a genuine v9 file")
 	}
-	// And the file OPENS through the production door: Open re-runs the
-	// chain (a no-op now), passes verifySchema, and reads the adopted well
-	// back as an ordinary tile. This is the storage promise itself — a file
-	// a released binary wrote still opens and still holds what the user put
-	// in it.
+	// And the file opens through the production door, reading the adopted well
+	// back as an ordinary tile: a file a released binary wrote still opens and
+	// still holds what the user put in it.
 	if err := db.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -294,14 +274,11 @@ func TestMigrateV10OverAGenuineV9File(t *testing.T) {
 	}
 }
 
-// TestMigrateV11OverAGenuineV10File covers what the per-migration fixture
-// cannot reach: the framing CONVERSION itself. A chain-built v10 file
-// already carries view_cx/view_cy (the v5 rebuild materializes the
-// CURRENT tiles shape — the convergence contract), so there is no
-// view_x/view_y in it to convert. A file written by a v10 BINARY has the
-// integer window ORIGIN, and every well in it must come out of v11
-// showing EXACTLY the framing it showed before: the center the client
-// derived to display it, origin + footprint/2.
+// The framing conversion itself, which the fixture cannot reach: a chain-built
+// v10 file already carries view_cx and view_cy, so there is no view_x to
+// convert. A file written by a v10 binary has the integer origin, and every
+// well must come out of v11 showing exactly the framing it showed before,
+// origin + footprint/2.
 func TestMigrateV11OverAGenuineV10File(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "genuinev10.db")
@@ -325,9 +302,8 @@ func TestMigrateV11OverAGenuineV10File(t *testing.T) {
 		t.Fatal(err)
 	}
 	child := mustID(t, res)
-	// An even footprint (the center lands on a whole cell) and an odd one
-	// (the center is a HALF cell — the value the integer column could not
-	// hold, and the reason ViewOriginFromCenter had to exist).
+	// An even footprint centers on a whole cell; an odd one centers on a half
+	// cell, the value the integer column could not hold.
 	for _, w := range []struct {
 		alt    string
 		w, h   int64
@@ -393,8 +369,7 @@ func TestMigrateV11OverAGenuineV10File(t *testing.T) {
 		t.Errorf("home root framing = (%v, zoom %v), want (12.5, 0.5)", cx, zoom)
 	}
 
-	// And the file OPENS through the production door and reads the wells
-	// back at their preserved framing — the storage promise itself.
+	// And the file opens through the production door with the framing preserved.
 	if err := db.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
@@ -421,19 +396,12 @@ func TestMigrateV11OverAGenuineV10File(t *testing.T) {
 	}
 }
 
-// TestMigrateV13OverAGenuineV12File covers the arm the fixture cannot reach:
-// ADOPTION. Every home that has ever dialled a connection already has a
-// `connections` table, created by internal/connection's own CREATE TABLE
-// beside the chain, and v13 takes it as it stands. A chain-built v12 file has
-// no such table, so the genuine v12 shape is put back by hand here and v13 is
-// run over it.
-//
-// The invariant under test: the rows are node facts the user cannot retype —
-// a learned landing is how a dark remote still shows a room, and a tombstone
-// is a name reserved forever. Every one of them must come through unchanged,
-// the table's shape must equal the one a fresh Open renders, and the file must
-// still open through the production door, whose verifySchema now checks this
-// table too.
+// The adoption arm the fixture cannot reach: every home that has dialled a
+// connection already has a `connections` table created beside the chain, so
+// the genuine v12 shape is put back by hand and v13 run over it. The rows are
+// node facts the user cannot retype, so every one must come through unchanged,
+// the shape must equal a fresh Open's, and the file must still open through
+// the production door.
 func TestMigrateV13OverAGenuineV12File(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "genuinev12.db")
@@ -463,15 +431,14 @@ func TestMigrateV13OverAGenuineV12File(t *testing.T) {
 	if after := connectionRows(t, db); !reflect.DeepEqual(after, before) {
 		t.Errorf("v13 changed the connection rows:\n before = %+v\n after  = %+v", before, after)
 	}
-	// The adopted table's shape is the shape a fresh Open renders — that is
-	// what makes adoption legal without a rebuild.
+	// The adopted shape equals a fresh Open's, which is what makes adoption
+	// legal without a rebuild.
 	fresh, _ := newTestStoreFile(t)
 	if want, got := tableColumnsFP(t, fresh.db, "connections"), tableColumnsFP(t, db, "connections"); !reflect.DeepEqual(want, got) {
 		t.Errorf("the adopted connections shape differs from a fresh one:\n fresh   = %+v\n adopted = %+v", want, got)
 	}
 
-	// And the file OPENS through the production door: the chain re-runs as a
-	// no-op, verifySchema accepts the adopted table, and the rows read back.
+	// And the file opens through the production door with the rows intact.
 	if err := db.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}

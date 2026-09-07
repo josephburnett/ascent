@@ -10,12 +10,10 @@ import (
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
-// TestClonePreservesAllContentColumns — clone is an EAGER, COMPLETE copy
-// (CLAUDE.md identity semantics): everything the user set on the source must
-// be on the copy. A hand-listed INSERT that omits content_zoom, url_history,
-// or alt_user makes a clone silently lose its content zoom, its navigation
-// back-stack, or the "name is user-owned" latch, which lets the next
-// automatic title capture clobber a name the user chose.
+// Clone is an eager, complete copy, so everything the user set on the source
+// must be on the copy. An INSERT that omits content_zoom, url_history or
+// alt_user silently loses a content zoom, a back-stack, or the latch that
+// keeps the next title capture off a name the user chose.
 func TestClonePreservesAllContentColumns(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
@@ -75,11 +73,9 @@ func TestClonePreservesAllContentColumns(t *testing.T) {
 	}
 }
 
-// TestEveryTileColumnIsCopiedOrExcused: a clone is an EAGER, COMPLETE copy,
-// so every tiles column must be either copied or carry a written reason it is
-// not. Before the column descriptor this was a lint over a hand-listed
-// INSERT; now the list IS the descriptor, and what still needs holding is the
-// claim behind each exclusion.
+// Every tiles column is either copied or carries a written reason it is not.
+// The list is the descriptor, so what needs holding is the claim behind each
+// exclusion.
 func TestEveryTileColumnIsCopiedOrExcused(t *testing.T) {
 	excused := map[string]bool{}
 	for _, c := range tilesColumns {
@@ -95,10 +91,8 @@ func TestEveryTileColumnIsCopiedOrExcused(t *testing.T) {
 	}
 }
 
-// TestCopyBindingRefusesAnIncompleteCopy pins the mechanism that makes "add a
-// column, forget the clone path" loud: the copy is written BY NAME, and a
-// value map missing any copied column is an error at the copy, not a row with
-// a silently defaulted column.
+// The copy is written by name, so a value map missing a copied column is an
+// error at the copy, not a row with a silently defaulted column.
 func TestCopyBindingRefusesAnIncompleteCopy(t *testing.T) {
 	full := map[string]any{}
 	for _, c := range copyColumns() {
@@ -119,10 +113,9 @@ func TestCopyBindingRefusesAnIncompleteCopy(t *testing.T) {
 	}
 }
 
-// TestDescriptorMatchesLiveSchema: the descriptor renders the DDL, so the
-// columns SQLite actually has must be exactly the columns described. This is
-// what catches a typo in a name — which would otherwise fail only when a
-// query naming it runs.
+// The descriptor renders the DDL, so the columns SQLite has are exactly the
+// columns described. A typo in a name would otherwise fail only when a query
+// naming it runs.
 func TestDescriptorMatchesLiveSchema(t *testing.T) {
 	s := newTestStore(t)
 	for _, tc := range []struct {

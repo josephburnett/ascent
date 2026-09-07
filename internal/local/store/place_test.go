@@ -9,10 +9,9 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
-// The PlaceTile suite: placement is one verb owning one fact, id-addressed,
-// with no descent path anywhere, so the well-into-own-subtree refusal comes
-// from the store's own ancestor walk. It carries no version claim either: the
-// overlap refusal below, not a claim, is what protects the grid.
+// Placement is one verb owning one fact, id-addressed with no descent path, so
+// the well-into-own-subtree refusal comes from the store's own ancestor walk.
+// The overlap refusal, not a claim, is what protects the grid.
 
 func placeText(t *testing.T, s *Store, gridID string, x, y int64) *gridwellv1.Tile {
 	t.Helper()
@@ -112,11 +111,8 @@ func TestPlaceTileOverlapRefused(t *testing.T) {
 	}
 }
 
-// TestPlaceTileIgnoresStaleClaim: a drag is an explicit act on a tile the
-// user can see, so a version that moved under it (a title capture, a foreign
-// rename) must not cost the user the move. Placement carries no claim; the
-// overlap check below is what protects the grid, and it runs in the same
-// transaction either way.
+// A drag is an explicit act on a tile the user can see, so a version that
+// moved under it must not cost the user the move.
 func TestPlaceTileIgnoresStaleClaim(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -142,10 +138,8 @@ func TestPlaceTileIgnoresStaleClaim(t *testing.T) {
 	}
 }
 
-// TestPlaceTileCycleRefusedWithoutPath is the fails-before test for the
-// server-derived cycle check: the old MoveTile detected a well moving into
-// its own subtree ONLY via the client-supplied DestPath — with no path on
-// the wire, the store itself must refuse, at any depth.
+// With no path on the wire, the store itself must refuse a well moving into
+// its own subtree, at any depth.
 func TestPlaceTileCycleRefusedWithoutPath(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

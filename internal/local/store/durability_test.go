@@ -10,11 +10,9 @@ import (
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
-// TestSynchronousPinned confirms Open pins PRAGMA synchronous to NORMAL (1).
-// synchronous is connection-scoped and defaults to FULL regardless of journal
-// mode, so the value must be set on every Open; this guards against the pragma
-// being dropped or the WAL durability tradeoff silently changing. File-backed
-// because a ":memory:" DB does not honor synchronous.
+// Open pins PRAGMA synchronous to NORMAL. It is connection-scoped and defaults
+// to FULL, so it must be set on every Open. File-backed, because a ":memory:"
+// DB does not honor synchronous.
 func TestSynchronousPinned(t *testing.T) {
 	s, _ := newTestStoreFile(t)
 	v, err := readPragmaInt(context.Background(), s.db, "synchronous")
@@ -27,11 +25,9 @@ func TestSynchronousPinned(t *testing.T) {
 	}
 }
 
-// TestReopenRoundTrip is the core durability proof: data written by one Open
-// survives Close and a second Open of the same file byte-for-byte — same rows,
-// same ids, same versions, same content bytes, same header version. This is the
-// "lasts forever across a restart" guarantee, and the only store test that
-// exercises real on-disk WAL (newTestStore uses :memory:).
+// The core durability proof: data written by one Open survives Close and a
+// second Open of the same file byte-for-byte. The only store test that
+// exercises real on-disk WAL, newTestStore being :memory:.
 func TestReopenRoundTrip(t *testing.T) {
 	s, path := newTestStoreFile(t)
 	ctx := context.Background()

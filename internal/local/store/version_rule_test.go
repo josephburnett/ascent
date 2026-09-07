@@ -8,25 +8,17 @@ import (
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
-// This file is the one pin on what a tile row's `version` means:
+// The one pin on what a tile row's `version` means: the user's content bytes
+// changed. It is the optimistic-concurrency claim for those edits and nothing
+// else. Everything else the store writes to a tile row rides the same tile
+// event and is last-writer-wins, with no claim to lose and no bump to make:
 //
-//	version = "the USER'S CONTENT BYTES changed".
-//
-// It is the optimistic-concurrency claim for those edits and nothing else.
-// Everything else the store writes to a tile row rides the same tile event
-// and is LAST-WRITER-WINS, with no claim to lose and no bump to make:
-//
-//   - CAPTURES — a page title, a preview jpeg, a url history, a shell's
-//     foreground command, a frozen face. Facts the server OBSERVED, not
-//     edits the user made; a capture must never outrank (or be outranked
-//     by) the user's own claim.
-//   - FRAMING — where the viewport sat, a text tile's window and mode, the
-//     content zoom, a standing url freeze, a pane tile's layout.
-//   - LAYOUT — place / move / resize / clone / delete. An explicit user act
-//     on a tile the user can SEE; when two clients race, the physical-world
-//     answer is "whoever moved it last moved it", reconciled by the event.
-//     Overlap (the one thing a race could actually corrupt) is refused
-//     server-side inside the same transaction, claim or no claim.
+//   - captures, facts the server observed rather than edits the user made, so
+//     a capture must never outrank the user's own claim;
+//   - framing, from the viewport to a pane tile's layout;
+//   - layout: place, move, resize, clone, delete. When two clients race,
+//     whoever moved it last moved it, and overlap, the one thing a race could
+//     corrupt, is refused server-side in the same transaction.
 //
 // The table below is the whole rule. A new mutation adds a row here; a row
 // that cannot be written is a mutation that broke the rule.
@@ -46,16 +38,11 @@ func tileVersion(t *testing.T, s *Store, tileID string) int64 {
 }
 
 // versionCase is one store mutation and what the version rule says about it.
-// subject builds the fixture row the mutation runs against; mutate runs the
-// write truthfully.
-//
-// staleClaim is the same write with a version the world has moved past. It is
-// nil for every mutation whose request carries NO version at all — which is
-// most of them, because those wire fields are reserved. That is the
-// strongest form of the rule: for those writes a stale claim is not
-// ignored, it is unrepresentable, and the compiler is the pin. Where a
-// version is still on the signature (WriteContent's kind dispatch), claims
-// says whether that arm actually reads it.
+// staleClaim is the same write with a version the world has moved past, and is
+// nil for every mutation whose request carries no version at all: for those a
+// stale claim is unrepresentable rather than ignored, and the compiler is the
+// pin. Where a version is still on the signature, claims says whether that arm
+// reads it.
 type versionCase struct {
 	name       string
 	subject    func(t *testing.T, s *Store, ctx context.Context, root string) *gridwellv1.Tile
@@ -126,8 +113,7 @@ var versionCases = []versionCase{
 		},
 	},
 	{
-		// Byte-identical bytes are a true no-op: reading and no-op writes
-		// never mutate (the primary rule). The claim is still checked.
+		// A no-op write never mutates, and the claim is still checked.
 		name: "WriteContent/text body unchanged", subject: textSubject, bumps: false, claims: true,
 		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
 			_, err := s.WriteContent(ctx, tile.Id, tile.Version, []byte("# hi"))
@@ -150,8 +136,8 @@ var versionCases = []versionCase{
 		},
 	},
 	{
-		// alt_text IS content when the USER types it (it changes the
-		// markdown a drop produces), and the rename latches alt_user.
+		// alt_text is content when the user types it, and the rename latches
+		// alt_user.
 		name: "RenameTile/user rename", subject: urlSubject, bumps: true, claims: true,
 		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
 			_, err := s.RenameTile(ctx, tile.Id, tile.Version, "a name I typed")
@@ -219,9 +205,8 @@ var versionCases = []versionCase{
 		},
 	},
 	{
-		// The one framing write that still SEES a version: a pane layout
-		// rides WriteContent's kind dispatch, whose signature carries one
-		// for the text and url arms. This arm must ignore it.
+		// The one framing write that still sees a version, because a pane
+		// layout rides WriteContent's kind dispatch. This arm must ignore it.
 		name: "SetPaneLayout/workspace arrangement", subject: paneSubject, bumps: false, claims: false,
 		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
 			_, err := s.SetPaneLayout(ctx, mustParseID(t, tile.Id), tile.Version,
@@ -246,8 +231,8 @@ var versionCases = []versionCase{
 		},
 	},
 	{
-		// The SOURCE row is untouched by a clone; the copy carries its
-		// version so the two stay "the same content" until one diverges.
+		// The source row is untouched; the copy carries its version, so the
+		// two are the same content until one diverges.
 		name: "CloneTile/source row", subject: textSubject, bumps: false,
 		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
 			_, err := s.CloneTile(ctx, &gridwellv1.CloneTileRequest{
@@ -257,8 +242,8 @@ var versionCases = []versionCase{
 		},
 	},
 	{
-		// A delete on an ordinary grid MOVES the row into the trash (same
-		// id, same row) — layout, so the version is untouched there too.
+		// A delete on an ordinary grid moves the row into the trash, same id
+		// and same row, so it is layout and the version is untouched.
 		name: "DeleteTile/move to trash", subject: textSubject, bumps: false,
 		mutate: func(t *testing.T, s *Store, ctx context.Context, tile *gridwellv1.Tile) error {
 			return s.DeleteTile(ctx, &gridwellv1.DeleteTileRequest{TileId: tile.Id})
@@ -266,8 +251,7 @@ var versionCases = []versionCase{
 	},
 }
 
-// TestVersionRuleBump: a truthful write advances the row version iff it
-// changed the user's content bytes.
+// A truthful write advances the row version iff it changed content bytes.
 func TestVersionRuleBump(t *testing.T) {
 	for _, c := range versionCases {
 		t.Run(c.name, func(t *testing.T) {
@@ -290,14 +274,10 @@ func TestVersionRuleBump(t *testing.T) {
 	}
 }
 
-// TestVersionRuleClaim: a STALE version is refused only by the writes that
-// carry the user's content claim. Everything else is last-writer-wins — an
-// automatic capture, a framing settle, or a drag that raced someone else's
-// edit may not be turned into a conflict the user has to notice.
-//
-// Most cases have no staleClaim at all: their requests carry no version
-// field, so the claim is unrepresentable rather than ignored. Those are
-// counted here so a case can never quietly grow one back without saying so.
+// A stale version is refused only by the writes that carry the user's content
+// claim; a capture, a framing settle or a raced drag may not become a conflict
+// the user has to notice. Most cases have no staleClaim at all, and those are
+// counted here so a case cannot quietly grow one back.
 func TestVersionRuleClaim(t *testing.T) {
 	claimable := 0
 	for _, c := range versionCases {
@@ -321,16 +301,15 @@ func TestVersionRuleClaim(t *testing.T) {
 			}
 		})
 	}
-	// The four content arms plus the pane arm that must IGNORE its version.
-	// A change to this number is a change to the rule: say so in the commit.
+	// The four content arms plus the pane arm that must ignore its version. A
+	// change to this number is a change to the rule.
 	if claimable != 5 {
 		t.Errorf("%d writes can be handed a version, want 5 — a new one appeared, or one lost its claim", claimable)
 	}
 }
 
-// TestContentZoomRefusesWells: a well's view_zoom is the grid
-// viewport, a different fact with its own writer — SetContentZoom refuses it.
-// (The version half of this rule lives in the table above.)
+// A well's view_zoom is the grid viewport, a different fact with its own
+// writer, so SetContentZoom refuses it.
 func TestContentZoomRefusesWells(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

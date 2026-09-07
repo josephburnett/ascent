@@ -8,20 +8,12 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-// TestDescriptorMatchesProto binds the two remaining descriptions of a record
-// to each other: the PROTO (the owner of what a Tile is — api/rpc's Go types
-// are generated from it) and the store's COLUMN DESCRIPTOR (the owner of how
-// a row is stored, which renders the DDL, the SELECT, the scan, the clone
-// INSERT and every rebuild copy list).
-//
-// The claim is about the ON-WIRE set only, and it is exact in both
-// directions: a column marked as being on the wire must be a proto field of
-// the same name, and every proto field must be either such a column or on the
-// wireOnly list below — with a written reason, because a field that is
-// derived rather than stored is a design decision, not an oversight.
-//
-// The DDL is rendered from the descriptor, so what is pinned here is the
-// descriptor against the proto.
+// The two remaining descriptions of a record are bound to each other: the
+// proto, which owns what a Tile is, and the store's column descriptor, which
+// owns how a row is stored. The claim is about the on-wire set only and is
+// exact both ways: a column marked on the wire is a proto field of the same
+// name, and every proto field is either such a column or on the wireOnly list
+// with a written reason.
 func TestDescriptorMatchesProto(t *testing.T) {
 	cases := []struct {
 		table    string

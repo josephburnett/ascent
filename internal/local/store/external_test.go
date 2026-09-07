@@ -10,11 +10,9 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
-// The externals' memory engine (external.go): the read-only join writes
-// nothing, the user's placement wins, hints seed first sight only,
-// authoritative absence retires and recreation mints fresh, framing
-// persists, retire is the delete gesture, root views round-trip, and
-// everything survives reopen.
+// The externals' memory engine: the join writes nothing, the user's placement
+// wins, hints seed first sight only, authoritative absence retires and
+// recreation mints fresh, and everything survives reopen.
 
 func openExt(t *testing.T) (*Store, *Namespace) {
 	t.Helper()
@@ -34,12 +32,10 @@ func textEntries(keys ...string) []Entry {
 	return out
 }
 
-// mintAll is the OLD mint-on-list behavior, spelled out: sweep, join, and
-// mint every entry the join derived. Nothing in the product does this any
-// more — a row costs a durable touch now — but a test about placement,
-// framing, or retirement wants rows for every key, and this is the shortest
-// way to say "as if the user had touched all of them", at exactly the
-// placements the join derived.
+// mintAll sweeps, joins, and mints every entry the join derived. Nothing in
+// the product does this, a row costing a durable touch, but a test about
+// placement or retirement wants rows for every key, at exactly the placements
+// the join derived.
 func mintAll(t *testing.T, d *Namespace, gid int64, entries []Entry, authoritative bool) []ExtTile {
 	t.Helper()
 	if authoritative {
@@ -383,10 +379,9 @@ func TestExtOverlayWritesNothingAndMintKeepsThePlacement(t *testing.T) {
 	}
 }
 
-// Dragging one tile must not rearrange the room. A minted entry keeps its slot
-// in the derived flow and simply overrides it, so its neighbours' derived
-// cells are the same before and after — the hole it leaves behind is what a
-// tile dragged out of a row leaves behind.
+// Dragging one tile must not rearrange the room: a minted entry keeps its slot
+// in the derived flow and overrides it, so its neighbours' cells are the same
+// before and after.
 func TestMintingOneEntryLeavesItsNeighboursWhereTheyWere(t *testing.T) {
 	_, d := openExt(t)
 	gid, _ := d.ContextID("root")

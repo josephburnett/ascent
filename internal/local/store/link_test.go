@@ -9,12 +9,10 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
-// A leaf link (text/url/shell/pane with a link_target_id) is the leaf twin of
-// the exit well: the CONTENT lives in another plugin's tile, the local row is
-// only a reference plus local framing. The store must never treat the target
-// as something it owns — no blob, no content mutation, delete unlinks, clone
-// copies the reference. These tests are the leaf faces of the exit-well suite
-// above (exit_well_test.go).
+// A leaf link is the exit well's leaf twin: the content lives in another
+// tile, and the local row is a reference plus local framing. The store never
+// treats the target as something it owns, so there is no blob, no content
+// mutation, delete unlinks, and clone copies the reference.
 
 const remoteTarget = "remote-uuid/42"
 
@@ -129,10 +127,9 @@ func TestContentMutationOnLeafLinkRejected(t *testing.T) {
 	verifyRefcounts(t, s)
 }
 
-// Text framing on a link row persists x, y, w, and h but never text_mode: the
-// CHECK requires text_mode NULL on a link, because framing is per-link local
-// and the mode is not. An unconditional text_mode write fails the whole
-// ascent framing save with a CHECK violation.
+// Text framing on a link row persists x, y, w and h but never text_mode: the
+// CHECK requires it NULL on a link, and an unconditional write fails the whole
+// ascent framing save.
 func TestSetTextViewOnLinkKeepsModeNull(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)

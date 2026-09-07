@@ -98,10 +98,9 @@ func TestUpdateTextHappy(t *testing.T) {
 	}
 }
 
-// TestUpdateTextIdenticalContentNoOp: re-saving byte-identical content must not
-// bump the version (the edit-history spine) or change the blob — a debounced
-// auto-save that fires on a tile the user didn't actually edit is a true no-op,
-// per "things stay as you left them". The original version still validates after.
+// Re-saving byte-identical content must not bump the version or change the
+// blob: a debounced auto-save on a tile the user did not edit is a true no-op,
+// and the original version still validates after.
 func TestUpdateTextIdenticalContentNoOp(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
@@ -159,10 +158,8 @@ func TestUpdateTextVersionConflict(t *testing.T) {
 	}
 }
 
-// TestWriteContentAddressesNestedTileByID: the write is id-addressed — the
-// tile's row owns its location, so a save works no matter where the writer
-// "is". This is what lets the dirty-content sweep post an edit after the
-// editing pane moved elsewhere.
+// The write is id-addressed, so a save works wherever the writer is. That is
+// what lets the dirty-content sweep post an edit after the editing pane moved.
 func TestWriteContentAddressesNestedTileByID(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)

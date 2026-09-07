@@ -10,163 +10,114 @@ import (
 	"github.com/josephburnett/gridwell/internal/dbformat"
 )
 
-// applicationID marks a database file as a Gridwell DB. It is written into
-// the SQLite header via PRAGMA application_id (the bytes "GWeL", big-endian
-// ASCII) so file(1), archival tooling, and our own open path can recognize
-// the file without reading a single row. See internal/local/store/CLAUDE.md.
+// applicationID marks a database file as a Gridwell DB, written into the
+// SQLite header by PRAGMA application_id ("GWeL"), so file(1) and the open
+// path recognize the file without reading a row.
 const applicationID = 0x4757654C // "GWeL"
 
-// schemaVersion is the schema generation this binary materializes. It is
-// recorded in the SQLite header via PRAGMA user_version — the canonical,
-// table-free place for an application schema version. Open stamps it on a
-// fresh DB and refuses to open a DB stamped NEWER than this binary knows
-// about (an older binary against a future-schema DB would misread rows).
-//
-// v1 is frozen; see tablesV1 in schema.go. Data written by any released
-// binary stays readable, and the DB is never deleted to absorb a schema
-// change. A change bumps schemaVersion by exactly one and appends one entry
-// to migrations, plus one test fixture. The column descriptor in columns.go
-// stays the latest shape, and TestSchemaEquivalence proves a fresh Open
-// equals tablesV1 plus the full chain, which is what makes the fresh-DB
-// stamp shortcut in applyMigrations sound. The full contract is
-// internal/local/store/CLAUDE.md.
+// schemaVersion is the schema generation this binary materializes, recorded
+// in PRAGMA user_version. Open stamps it on a fresh DB and refuses one
+// stamped newer, which an older binary would misread. v1 is frozen (tablesV1
+// in schema.go); a change bumps this by one and appends one entry to
+// migrations plus one test fixture. TestSchemaEquivalence proves a fresh Open
+// equals tablesV1 plus the full chain, which is what makes the fresh-DB stamp
+// shortcut sound. The contract is CLAUDE.md in this directory.
 const schemaVersion = 13
 
-// migration is one step that brings a DB from version to-1 up to version to.
-// Additive — a column with a default, a table, an index — is the default and
-// covers almost every change. A drop is possible but must be recorded in the
-// chain entry's comment: only storage no released binary reads for any
-// user-visible meaning may go, and the step must preserve every surviving row
-// and the sqlite_sequence seeds. See internal/local/store/CLAUDE.md.
+// migration is one step from version to-1 up to version to. Additive is the
+// default. A drop must be recorded in the chain entry's comment: only storage
+// no released binary reads for a user-visible meaning may go, and the step
+// preserves every surviving row and the sqlite_sequence seeds.
 type migration struct {
 	to  int
 	run func(ctx context.Context, tx *sql.Tx) error
 }
 
-// migrations is the ordered list of post-v1 schema migrations; entry i brings
-// a DB from version i+1 to i+2. See the schemaVersion doc above and
-// internal/local/store/CLAUDE.md.
+// migrations is ordered; entry i brings a DB from version i+1 to i+2.
 var migrations = []migration{
-	// v2: alt_user marks alt_text as user-owned, so automatic captures never
-	// overwrite a user-set name.
+	// v2: alt_user marks alt_text as user-owned, so a capture never
+	// overwrites a user-set name.
 	{to: 2, run: addColumnDDL(`ALTER TABLE tiles ADD COLUMN alt_user INTEGER NOT NULL DEFAULT 0`)},
 	// v3: content_zoom, the per-tile content scale. Framing.
 	{to: 3, run: addColumnDDL(`ALTER TABLE tiles ADD COLUMN content_zoom REAL NOT NULL DEFAULT 0`)},
-	// v4: url_history, a url tile's navigation back-stack across freeze and
-	// revive.
+	// v4: url_history, a url tile's back-stack across freeze and revive.
 	{to: 4, run: addColumnDDL(`ALTER TABLE tiles ADD COLUMN url_history TEXT`)},
 	// v5: the 'pane' tile kind. A kind lives in the tiles table-level CHECK,
-	// which ALTER TABLE cannot touch, so this is a table rebuild. No column
-	// changes; only the CHECK.
+	// which ALTER TABLE cannot touch, so this is a table rebuild.
 	{to: 5, run: rebuildTilesForPaneKind},
-	// v6: link_target_id, the leaf-link variant — a text, url, shell, or pane
-	// tile whose content lives in another plugin's tile. The CHECK gains the
-	// link branch, and a url link row has url_string NULL, which the v5 url
-	// branch forbade, so this is a rebuild rather than an ADD COLUMN. Old
-	// rows get link_target_id NULL, which is exactly their old meaning.
+	// v6: link_target_id, the leaf-link variant. The CHECK gains the link
+	// branch, and a url link row has url_string NULL, which the v5 branch
+	// forbade, so this is a rebuild. Old rows get NULL, their old meaning.
 	{to: 6, run: rebuildTilesForLinkTarget},
 	// v7: url_frozen, the user's standing freeze on a url tile. If-missing
 	// because the v6 rebuild materializes the current template.
 	{to: 7, run: addColumnIfMissingDDL("tiles", "url_frozen",
 		`ALTER TABLE tiles ADD COLUMN url_frozen INTEGER NOT NULL DEFAULT 0`)},
-	// v8: configure_plugin_id, marking a childless well. The well CHECK
-	// branch gains the childless variant, so this is a rebuild. Old rows all
-	// have child grids and copy through unchanged; the new column fills with
-	// its '' default.
+	// v8: configure_plugin_id, marking a childless well. The well CHECK gains
+	// that variant, so this is a rebuild; old rows copy through unchanged.
 	{to: 8, run: rebuildTilesForConfigurePlugin},
-	// v9: every plugin's memory joins the home tables — ns, key, and
-	// tombstoned on tiles; ns, context_key, and a root viewport on grids;
-	// the listings table; and the two partial unique indexes. Every column
-	// carries a default, and home rows are the defaults. If-missing because
-	// a rebuild at an earlier version materializes the current template,
-	// columns included.
+	// v9: every plugin's memory joins the home tables — ns, key and
+	// tombstoned on tiles; ns, context_key and a root viewport on grids; the
+	// listings table; two partial unique indexes. Every column carries a
+	// default and home rows are the defaults.
 	{to: 9, run: migrateV9},
-	// v10 retires three pieces of dead storage. None carried a user-visible
-	// meaning any binary read:
-	//
-	//   - the `session` table: one Chromium session per DB. The session is
-	//     host-local now and nothing reads or writes the table.
-	//   - tiles.configure_plugin_id and the well CHECK's childless branch:
-	//     nothing can mint a childless well and no reader remains. Rows that
-	//     do exist are preserved as ordinary wells, each given a fresh empty
-	//     child grid, so the user's tile stays where they put it and opens.
-	//   - object_id on tiles and grids: a 128-bit provenance mint written on
-	//     every row and copied through every clone and link, with no reader
-	//     that decides anything on it.
-	//
+	// v10 retires three pieces of dead storage, none carrying a user-visible
+	// meaning any binary read: the `session` table, now that the Chromium
+	// session is host-local; tiles.configure_plugin_id and the well CHECK's
+	// childless branch, which nothing can mint any more, with existing rows
+	// preserved as ordinary wells each given a fresh empty child grid; and
+	// object_id on tiles and grids, a provenance mint no reader decided on.
 	// tiles is a rebuild, because the CHECK must change; grids is a DROP
-	// COLUMN, with no CHECK involved. Both preserve every row and the
-	// AUTOINCREMENT seeds.
+	// COLUMN. Both preserve every row and the AUTOINCREMENT seeds.
 	{to: 10, run: migrateV10},
-	// v11 folds three framing representations into one. It was stored as a
-	// well's integer window origin (tiles.view_x/view_y) plus an intrinsic
-	// ratio, as home's root in the `system` KV table, and as a plugin
-	// context's root on its grid row. Now it is one shape: a float center
-	// plus the intrinsic zoom, on the doorway tile
-	// (tiles.view_cx/view_cy/view_zoom) or, for a root with no doorway, on
-	// the grid row (grids.root_cx/cy/zoom), home's included, in the empty
-	// namespace.
-	//
-	// Nothing user-visible changes: every stored origin becomes the center
-	// the client already derived from it, origin + footprint/2, and a root's
-	// synthetic doorway is 1x1, so + 0.5. view_x and view_y retire, because
-	// the center they fed is stored directly. tiles is a rebuild, since a
-	// column pair retires and the values convert; grids and system are
-	// in-place updates.
+	// v11 folds three framing representations into one: a well's integer
+	// window origin (tiles.view_x/view_y) plus an intrinsic ratio, home's
+	// root in the `system` KV table, and a plugin context's root on its grid
+	// row. The one shape is a float center plus the intrinsic zoom, on the
+	// doorway tile (tiles.view_cx/cy/zoom) or, for a root with no doorway, on
+	// the grid row (grids.root_cx/cy/zoom). Nothing user-visible changes:
+	// every origin becomes the center the client already derived from it,
+	// origin + footprint/2, and a root's synthetic doorway is 1x1, so + 0.5.
+	// view_x and view_y retire. tiles is a rebuild; grids and system are
+	// updated in place.
 	{to: 11, run: migrateV11},
-	// v12 retires the `listings` table. It held one blob per plugin context,
-	// the last ListResponse the plugin gave, so a dark source could be served
-	// the remembered listing. That is cache, and cache lives in cache.db
-	// (internal/sourcecache), one engine for plugins and connections alike.
-	//
-	// Nothing user-visible is lost, which is why this is a plain drop and not
-	// a conversion: every fact a listing row carried that the user can see
-	// was already a durable row beside it — the ids the node minted, the
-	// placement the user made, the labels, the child grids — and the rest
-	// re-warms on the next successful List. The table stands alone, with no
-	// CHECK, no AUTOINCREMENT seed, and nothing referencing it, so tiles and
-	// grids are not touched and no sequence is disturbed.
+	// v12 retires the `listings` table, one blob per plugin context holding
+	// the last ListResponse so a dark source could be served the remembered
+	// listing. That is cache, and cache lives in cache.db. A plain drop, not
+	// a conversion: every user-visible fact a listing row carried was already
+	// a durable row beside it, and the rest re-warms on the next List. The
+	// table stands alone, so no CHECK, seed or other table is disturbed.
 	{to: 12, run: migrateV12},
-	// v13 adopts the `connections` table into the chain. It predates this
-	// discipline: internal/connection created it with a CREATE TABLE IF NOT
-	// EXISTS of its own on the node's shared handle, beside the chain rather
-	// than in it, so the first change to its shape would have had no
-	// migration lane and no fixture proving old rows survive. The shape is
-	// the store's from here; internal/connection keeps the queries.
-	//
-	// Adoption, not conversion: the descriptor renders exactly the columns
-	// the ad-hoc statement wrote — name TEXT PRIMARY KEY, remote_root TEXT
-	// NOT NULL DEFAULT '', deleted INTEGER NOT NULL DEFAULT 0 — so an
-	// existing table is taken as it stands, with no rebuild and nothing to
-	// convert. Every row keeps its meaning: a learned landing, and the
-	// tombstone that mirrors a retired name. A home that never dialled
-	// anything has no table and gets one. IF NOT EXISTS is both cases.
+	// v13 adopts the `connections` table into the chain. internal/connection
+	// created it with a CREATE TABLE IF NOT EXISTS of its own, beside the
+	// chain rather than in it, so the first change to its shape would have
+	// had no migration lane and no fixture. The shape is the store's from
+	// here; internal/connection keeps the queries. Adoption, not conversion:
+	// the descriptor renders exactly the columns the ad-hoc statement wrote,
+	// so an existing table is taken as it stands and every row keeps its
+	// meaning. A home that never dialled anything gets one.
 	{to: 13, run: migrateV13},
 }
 
-// migrateV12 drops the retired `listings` table. IfExists because a file may
-// arrive without it: v9's literal CREATE ran only on files that passed
-// through v9, and a fresh Open no longer materializes it.
+// migrateV12 drops the retired `listings` table. IfExists because v9's
+// literal CREATE ran only on files that passed through v9.
 func migrateV12(ctx context.Context, tx *sql.Tx) error {
 	_, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS listings`)
 	return err
 }
 
 // migrateV13 adopts or creates the connections table; see the chain entry. It
-// renders connectionsTableDDL rather than a literal, because the shape it
-// materializes is the same one a fresh Open does — that identity is what makes
-// adopting an existing table legal, and TestSchemaEquivalence pins it.
+// renders connectionsTableDDL rather than a literal, because that identity
+// with a fresh Open is what makes adopting an existing table legal.
 func migrateV13(ctx context.Context, tx *sql.Tx) error {
 	_, err := tx.ExecContext(ctx, connectionsTableDDL())
 	return err
 }
 
 // rebuildTilesForPaneKind is the v5 rebuild, adding the 'pane' kind to the
-// CHECK. The chain's convergence contract lives here: a rebuild always
-// creates tiles_new from the current tilesTableDDL text, so an old DB
-// replaying v5 lands directly on the latest shape and the later rebuild
-// steps are idempotent re-runs. TestSchemaEquivalence proves the chain and a
-// fresh Open converge either way.
+// CHECK. The chain's convergence contract lives here: a rebuild creates
+// tiles_new from the current tilesTableDDL, so an old DB replaying v5 lands
+// on the latest shape and the later rebuild steps are idempotent re-runs.
 func rebuildTilesForPaneKind(ctx context.Context, tx *sql.Tx) error {
 	return rebuildTiles(ctx, tx, 4)
 }
@@ -177,28 +128,22 @@ func rebuildTilesForLinkTarget(ctx context.Context, tx *sql.Tx) error {
 	return rebuildTiles(ctx, tx, 5)
 }
 
-// rebuildTilesForConfigurePlugin is the v8 rebuild, adding
-// configure_plugin_id and the well CHECK's childless variant. It reads a
-// v7-shaped table, so it copies the v7 column list.
+// rebuildTilesForConfigurePlugin is the v8 rebuild. It reads a v7-shaped
+// table, so it copies the v7 column list.
 func rebuildTilesForConfigurePlugin(ctx context.Context, tx *sql.Tx) error {
 	return rebuildTiles(ctx, tx, 7)
 }
 
 // rebuildTiles rebuilds the tiles table into the current shape: create
-// tiles_new from the same DDL text a fresh Open uses (tilesTableDDL, one
-// source, no drift), copy every row id-for-id, drop the old table, rename,
-// and recreate the indexes.
+// tiles_new from the same DDL a fresh Open uses, copy every row id-for-id,
+// drop, rename, recreate the indexes. It recreates only tilesIndexDDL's; a
+// rebuild at or after v9 must also recreate externalsIndexDDL's
+// idx_tiles_live_key, which DROP TABLE takes with it.
 //
-// It recreates only tilesIndexDDL's indexes. A rebuild running at or after v9
-// must also recreate externalsIndexDDL's idx_tiles_live_key, which DROP TABLE
-// takes with it.
-//
-// The sqlite_sequence save and restore is load-bearing: DROP TABLE tiles
-// deletes its sqlite_sequence row, and the copy re-seeds at the maximum
-// surviving id, so without the restore the ids of tiles deleted above that
-// maximum would be reused, violating "ids are never reused". Deep links and
-// client caches are keyed by id and would resolve to the wrong tile. The
-// fixture in migration_harness_test.go pins this trap.
+// The sqlite_sequence save and restore is load-bearing: DROP TABLE deletes
+// the sequence row and the copy re-seeds at the maximum surviving id, so
+// without the restore the ids of tiles deleted above that maximum would be
+// reused and deep links would resolve to the wrong tile.
 func rebuildTiles(ctx context.Context, tx *sql.Tx, reads int) error {
 	columns := rebuildColumns(reads)
 	src, err := rebuildSelect(ctx, tx, columns)
@@ -226,10 +171,9 @@ func rebuildTiles(ctx context.Context, tx *sql.Tx, reads int) error {
 		return fmt.Errorf("rebuild tiles indexes: %w", err)
 	}
 	if seq.Valid {
-		// The rename carried tiles_new's sequence row, seeded at the maximum
-		// surviving id, over to 'tiles'. Raise it back to the pre-rebuild
-		// high-water mark so deleted ids stay dead. The INSERT covers the
-		// empty-table edge, where the copy minted no row.
+		// Raise the sequence back to the pre-rebuild high-water mark so
+		// deleted ids stay dead. The INSERT covers the empty-table edge,
+		// where the copy minted no row.
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO sqlite_sequence (name, seq) SELECT 'tiles', 0
 			 WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'tiles')`); err != nil {
@@ -244,13 +188,11 @@ func rebuildTiles(ctx context.Context, tx *sql.Tx, reads int) error {
 	return nil
 }
 
-// rebuildSelect maps a rebuild's destination column list onto the SELECT
-// expressions that read those columns out of the table as it stands now.
-// Every column reads as itself but one pair: on a pre-v11 source the framing
-// is an integer window origin (view_x, view_y), and the center the v11 shape
-// stores is reconstructed with the same arithmetic the client uses to display
-// it, origin + footprint/2. A well therefore shows exactly the framing it
-// showed before, whichever rebuild step an old file converts through.
+// rebuildSelect maps a rebuild's destination columns onto the expressions
+// that read them out of the table as it stands. Every column reads as itself
+// but one pair: on a pre-v11 source the framing is an integer window origin,
+// and the center v11 stores is origin + footprint/2, the same arithmetic the
+// client used to display it, so a well shows the framing it showed before.
 func rebuildSelect(ctx context.Context, tx *sql.Tx, columns string) (string, error) {
 	has, err := hasColumn(ctx, tx, "tiles", "view_cx")
 	if err != nil || has {
@@ -263,17 +205,13 @@ func rebuildSelect(ctx context.Context, tx *sql.Tx, columns string) (string, err
 // migrateV11 folds the three framing representations into one; see the chain
 // entry. Order matters:
 //
-//  1. A plugin context's root (grids.root_cx/cy, a non-empty ns) was written
-//     as the origin of a 1x1 synthetic doorway and read back as origin + 1/2,
-//     so it converts by + 0.5. This runs first, while home's root row is
-//     still empty; otherwise step 2's already-converted value would be
-//     shifted a second time.
-//  2. Home's root moves out of the `system` KV table onto its root grid row,
-//     in the empty namespace, converted the same way, and the three keys are
-//     deleted. A never-visited home, with zoom 0, copies nothing and stays
-//     never visited in the one convention the new shape has.
-//  3. tiles rebuilds, converting view_x and view_y into view_cx and view_cy
-//     through rebuildSelect, and dropping the retired pair.
+//  1. A plugin context's root (grids.root_cx/cy, non-empty ns) converts by
+//     + 0.5. First, while home's root row is still empty; otherwise step 2's
+//     already-converted value would be shifted a second time.
+//  2. Home's root moves out of the `system` KV table onto its root grid row
+//     in the empty namespace, converted the same way, and the keys are
+//     deleted. Zoom 0 means never visited and copies nothing.
+//  3. tiles rebuilds, converting view_x and view_y through rebuildSelect.
 func migrateV11(ctx context.Context, tx *sql.Tx) error {
 	if _, err := tx.ExecContext(ctx,
 		`UPDATE grids SET root_cx = root_cx + 0.5, root_cy = root_cy + 0.5
@@ -293,9 +231,8 @@ func migrateV11(ctx context.Context, tx *sql.Tx) error {
 
 // moveHomeRootFraming copies home's root viewport from the system KV table
 // onto its root grid row and deletes the keys. The stored cx and cy were the
-// origin of the 1x1 synthetic doorway the client framed a root through, so
-// they convert by + 0.5, giving the same center the client showed. A missing
-// or zero zoom means never visited, so there is nothing to carry.
+// origin of a 1x1 synthetic doorway, so they convert by + 0.5; a missing or
+// zero zoom means never visited, with nothing to carry.
 func moveHomeRootFraming(ctx context.Context, tx *sql.Tx) error {
 	read := func(key string) (float64, error) {
 		var v sql.NullFloat64
@@ -338,21 +275,13 @@ func moveHomeRootFraming(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-// addColumnDDL builds a migration run-func executing one additive DDL
-// statement.
+// addColumnDDL builds a run-func executing one additive DDL statement.
 func addColumnDDL(ddl string) func(ctx context.Context, tx *sql.Tx) error {
 	return func(ctx context.Context, tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, ddl)
 		return err
 	}
 }
-
-// addColumnIfMissingDDL is addColumnDDL for a column added after a
-// table-rebuild migration. A rebuild materializes the current tilesTableDDL,
-// so a chain that passes through it already carries every later column and
-// the plain ALTER would fail with "duplicate column"; an older file whose
-// rebuild ran under an older binary still needs it. Both paths converge on
-// the same shape, which TestSchemaEquivalence proves.
 
 // migrateV9 adds the plugin-memory columns and tables; see the chain entry.
 func migrateV9(ctx context.Context, tx *sql.Tx) error {
@@ -372,11 +301,10 @@ func migrateV9(ctx context.Context, tx *sql.Tx) error {
 		}
 	}
 	// The listings table is spelled here because this step must produce v9's
-	// shape whatever a later template says. v12 retires it, so the chain
-	// creates it and drops it again, and the two routes still converge; see
-	// TestSchemaEquivalence. The two partial indexes name the columns just
-	// added, so they ride here too, and in Open's post-migration step for a
-	// fresh file, which never runs the chain: externalsIndexDDL, one text.
+	// shape whatever a later template says; v12 drops it again. The two
+	// partial indexes name the columns just added, so they ride here too, and
+	// in Open's post-migration step for a fresh file, which never runs the
+	// chain.
 	if _, err := tx.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS listings (
     grid_id       INTEGER PRIMARY KEY REFERENCES grids(id),
@@ -389,26 +317,20 @@ CREATE TABLE IF NOT EXISTS listings (
 	return err
 }
 
-// migrateV10 retires the dead storage listed in the chain entry above: the
-// `session` table, tiles.configure_plugin_id and the well CHECK's childless
-// branch, and object_id on both record tables.
-//
-// Order matters. grids.object_id goes first, by ALTER TABLE DROP COLUMN;
-// SQLite refuses while an index names the column, so that index goes first.
-// grids is never dropped, so its AUTOINCREMENT seed is untouched. Then the
-// stale childless wells are adopted — each gets a fresh empty child grid,
-// minted through the now-current grids shape — because the rebuilt tiles
-// CHECK no longer admits a well without one, and dropping the user's tile
-// would break the rule that things stay as you left them. tiles goes last,
-// through the shared rebuild, which saves and restores its seed.
+// migrateV10 retires the dead storage listed in the chain entry above. Order
+// matters. grids.object_id goes first, by DROP COLUMN, which SQLite refuses
+// while an index names the column, so that index goes first. Then the stale
+// childless wells are adopted, each given a fresh empty child grid, because
+// the rebuilt tiles CHECK no longer admits a well without one and dropping
+// the user's tile is not an option. tiles goes last, through the shared
+// rebuild, which saves and restores its seed.
 func migrateV10(ctx context.Context, tx *sql.Tx) error {
 	if _, err := tx.ExecContext(ctx, `DROP TABLE IF EXISTS session`); err != nil {
 		return fmt.Errorf("drop session table: %w", err)
 	}
-	// The column exists on every file that reaches v10 through the chain, but
-	// a file whose earlier rebuild already materialized the current template
-	// has neither the index nor the column: the same convergence case
-	// addColumnIfMissingDDL covers on the additive side.
+	// A file whose earlier rebuild materialized the current template has
+	// neither the index nor the column: addColumnIfMissingDDL's case, from
+	// the other side.
 	has, err := hasColumn(ctx, tx, "grids", "object_id")
 	if err != nil {
 		return err
@@ -426,28 +348,24 @@ func migrateV10(ctx context.Context, tx *sql.Tx) error {
 	if err := adoptStalePluginWells(ctx, tx); err != nil {
 		return err
 	}
-	// tilesIndexDDL does not create idx_tiles_object_id, but an old file
-	// still carries it. Drop it explicitly so the migrated and fresh index
-	// sets match exactly.
+	// An old file still carries idx_tiles_object_id, which tilesIndexDDL does
+	// not create. Drop it so the migrated and fresh index sets match.
 	if _, err := tx.ExecContext(ctx, `DROP INDEX IF EXISTS idx_tiles_object_id`); err != nil {
 		return fmt.Errorf("drop idx_tiles_object_id: %w", err)
 	}
 	if err := rebuildTiles(ctx, tx, 10); err != nil {
 		return err
 	}
-	// DROP TABLE tiles took idx_tiles_live_key with it. That index is created
-	// by externalsIndexDDL, not tilesIndexDDL, so the shared rebuild cannot
-	// know about it. Recreate it here; both statements are IF NOT EXISTS, so
-	// the grids half is a no-op. Any rebuild after v9 must do the same.
+	// DROP TABLE tiles took idx_tiles_live_key with it; externalsIndexDDL,
+	// not tilesIndexDDL, creates it. Any rebuild after v9 must do the same.
 	_, err = tx.ExecContext(ctx, externalsIndexDDL)
 	return err
 }
 
 // adoptStalePluginWells turns every childless well carrying
 // configure_plugin_id into an ordinary interior well by minting it a fresh
-// empty child grid. Nothing can fill such a well any more, so the alternative
-// to adoption is deleting a tile the user placed. After this the well CHECK's
-// childless branch has nothing left to admit.
+// empty child grid. Nothing can fill such a well any more, and the
+// alternative to adoption is deleting a tile the user placed.
 func adoptStalePluginWells(ctx context.Context, tx *sql.Tx) error {
 	has, err := hasColumn(ctx, tx, "tiles", "configure_plugin_id")
 	if err != nil || !has {
@@ -490,8 +408,7 @@ func adoptStalePluginWells(ctx context.Context, tx *sql.Tx) error {
 	return nil
 }
 
-// hasColumn reports whether table already has the named column: the one
-// PRAGMA table_info read the migration steps share.
+// hasColumn is the one PRAGMA table_info read the migration steps share.
 func hasColumn(ctx context.Context, tx *sql.Tx, table, column string) (bool, error) {
 	rows, err := tx.QueryContext(ctx, "PRAGMA table_info("+table+")")
 	if err != nil {
@@ -516,6 +433,11 @@ func hasColumn(ctx context.Context, tx *sql.Tx, table, column string) (bool, err
 	return false, rows.Err()
 }
 
+// addColumnIfMissingDDL is addColumnDDL for a column added after a rebuild
+// migration. A rebuild materializes the current tilesTableDDL, so a chain
+// passing through it already carries every later column and a plain ALTER
+// would fail; an older file whose rebuild ran under an older binary still
+// needs it. Both paths converge, which TestSchemaEquivalence proves.
 func addColumnIfMissingDDL(table, column, ddl string) func(ctx context.Context, tx *sql.Tx) error {
 	return func(ctx context.Context, tx *sql.Tx) error {
 		has, err := hasColumn(ctx, tx, table, column)
@@ -527,22 +449,15 @@ func addColumnIfMissingDDL(table, column, ddl string) func(ctx context.Context, 
 	}
 }
 
-// applyMigrations enforces the on-disk format contract at Open time, bringing
-// the DB up to this binary's schemaVersion using the canonical migration list.
+// applyMigrations brings the DB up to this binary's schemaVersion at Open.
 func (s *Store) applyMigrations(ctx context.Context) error {
 	return s.migrateUp(ctx, migrations, schemaVersion)
 }
 
-// migrateUp brings the DB from its stored user_version up to target by running
-// the pending entries of migs. The engine itself — the fresh stamp, the
-// foreign-file and newer-version refusals, the chain — lives in
-// internal/dbformat.EnsureVersion, one implementation of the format contract.
-// The fresh-DB stamp shortcut is sound here because a fresh Open materializes
-// tablesDDL(), and TestSchemaEquivalence proves that shape equals tablesV1
-// plus the full chain.
-//
-// migs and target are parameters rather than the globals so the engine can be
-// exercised by tests with a synthetic chain against a frozen-v1 DB.
+// migrateUp runs the pending entries of migs. The engine — the fresh stamp,
+// the foreign-file and newer-version refusals, the chain — is
+// internal/dbformat.EnsureVersion. migs and target are parameters rather than
+// the globals so tests can drive a synthetic chain against a frozen-v1 DB.
 func (s *Store) migrateUp(ctx context.Context, migs []migration, target int) error {
 	chain := make([]dbformat.Migration, 0, len(migs))
 	for _, m := range migs {

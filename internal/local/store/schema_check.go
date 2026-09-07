@@ -9,31 +9,21 @@ import (
 	"strings"
 )
 
-// This file is the startup schema guard. migrateUp trusts user_version as the
-// sole indicator of a DB's shape, but an unstamped file takes the fresh fast
-// path and is stamped at the current version without its columns ever being
-// checked: tablesDDL()'s CREATE TABLE IF NOT EXISTS no-ops on the
-// already-present tables and leaves their old shape intact. A column the
-// current writer no longer populates then lurks until the first insert fails
-// its constraint, which presents to the user as a tile that disappeared.
-//
-// verifySchema closes that gap: after migrations, it compares the DB's actual
-// columns against the shape this binary materializes and fails loudly, naming
-// the divergent column, instead of stamping and proceeding. The column
-// fingerprint it uses is the same one the migration equivalence tests
-// compare.
+// The startup schema guard. migrateUp trusts user_version alone, but an
+// unstamped file takes the fresh fast path and is stamped without its columns
+// being checked, because CREATE TABLE IF NOT EXISTS no-ops on an
+// already-present table and leaves its old shape intact. The stale shape then
+// lurks until an insert fails its constraint, which the user sees as a tile
+// that disappeared. verifySchema compares the DB's actual columns against the
+// shape this binary materializes and fails loudly instead.
 
-// ErrSchemaDivergence reports that an opened database's table shape does not
-// match the schema this binary materializes: an out-of-contract DB that must
-// be recreated, not silently used.
+// ErrSchemaDivergence reports a database whose table shape does not match the
+// schema this binary materializes.
 var ErrSchemaDivergence = gwerr.ErrSchemaDivergence
 
-// colFP is a column's identity for equivalence: the column name is the map
-// key, so only type, notnull, default, and pk distinguish two columns of the
-// same name. cid is deliberately excluded — ALTER TABLE ADD COLUMN always
-// appends, giving a higher cid, while inline DDL places columns mid-table, so
-// a migrated schema and a fresh one are equivalent with different column
-// orders. Shared by verifySchema and the migration equivalence tests.
+// colFP is a column's identity for equivalence. cid is deliberately excluded:
+// ADD COLUMN appends while inline DDL places columns mid-table, so a migrated
+// and a fresh schema are equivalent with different column orders.
 type colFP struct {
 	typ     string
 	notNull bool
@@ -41,9 +31,8 @@ type colFP struct {
 	pk      int
 }
 
-// normalizeDefault canonicalizes a column default so an inline default and the
-// identical ADD COLUMN default compare equal: NULL becomes "", spaces are
-// trimmed, and one layer of surrounding matching quotes is stripped.
+// normalizeDefault makes an inline default and the identical ADD COLUMN
+// default compare equal.
 func normalizeDefault(d sql.NullString) string {
 	if !d.Valid {
 		return ""
@@ -57,8 +46,8 @@ func normalizeDefault(d sql.NullString) string {
 	return v
 }
 
-// tableColumnFPs reads each column of `table` as a colFP via PRAGMA table_info.
-// A non-existent table yields an empty map (PRAGMA returns no rows, no error).
+// tableColumnFPs reads each column of `table` via PRAGMA table_info. A
+// non-existent table yields an empty map.
 func tableColumnFPs(ctx context.Context, q gridReader, table string) (map[string]colFP, error) {
 	// PRAGMA cannot bind params; table names come from sqlite_master or the
 	// canonical DDL, never user input.
@@ -90,8 +79,7 @@ func tableColumnFPs(ctx context.Context, q gridReader, table string) (map[string
 	return out, rows.Err()
 }
 
-// userTableNames lists the non-internal tables of a database (skipping the
-// sqlite_* bookkeeping tables), ordered by name.
+// userTableNames lists a database's tables, skipping sqlite_* bookkeeping.
 func userTableNames(ctx context.Context, q gridReader) ([]string, error) {
 	rows, err := q.QueryContext(ctx,
 		`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
@@ -110,10 +98,9 @@ func userTableNames(ctx context.Context, q gridReader) ([]string, error) {
 	return out, rows.Err()
 }
 
-// canonicalSchema is the column shape a fresh Open materializes: the current
-// DDL applied to a throwaway in-memory DB. It is the one description of what
-// every table's columns should be, read from the DDL and never hand-listed,
-// so the guard cannot drift from the schema it protects.
+// canonicalSchema is the current DDL applied to a throwaway in-memory DB, read
+// from the DDL and never hand-listed, so the guard cannot drift from the
+// schema it protects.
 func canonicalSchema(ctx context.Context) (map[string]map[string]colFP, error) {
 	ref, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -142,11 +129,8 @@ func canonicalSchema(ctx context.Context) (map[string]map[string]colFP, error) {
 }
 
 // verifySchema fails with ErrSchemaDivergence when the open DB's columns do
-// not match canonicalSchema: a missing column, a differing column by type,
-// notnull, default, or pk, or an extra column the current writer never
-// populates. The error lists every divergence so the cause is named rather
-// than guessed. Extra non-canonical tables are ignored, since no writes target
-// them; the guard is about the columns inserts and reads actually touch.
+// not match canonicalSchema, listing every divergence. Extra non-canonical
+// tables are ignored: the guard is about the columns inserts and reads touch.
 func (s *Store) verifySchema(ctx context.Context) error {
 	want, err := canonicalSchema(ctx)
 	if err != nil {

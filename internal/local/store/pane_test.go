@@ -10,10 +10,8 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
-// TestCreatePaneDefaultsAndGuards: a fresh pane tile has no layout blob
-// ("never arranged" — descent installs the default single pane), carries its
-// workspace name, and SetPaneLayout enforces the kind guard (and no version
-// guard — a layout write carries no claim).
+// A fresh pane tile has no layout blob, meaning never arranged, carries its
+// name, and SetPaneLayout enforces the kind guard and no version guard.
 func TestCreatePaneDefaultsAndGuards(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
@@ -86,9 +84,8 @@ func TestSetPaneLayoutStoresTypedBlob(t *testing.T) {
 	}
 }
 
-// TestPaneCloneSharesBlobThenDiverges: clone is an eager copy sharing the
-// layout blob by content address (refcount), and an edit to one copy can
-// never touch the other — the first SetPaneLayout moves the editor to a new
+// Clone shares the layout blob by content address, and an edit to one copy can
+// never touch the other: the first SetPaneLayout moves the editor to a new
 // blob while the sibling keeps the old one.
 func TestPaneCloneSharesBlobThenDiverges(t *testing.T) {
 	s := newTestStore(t)
@@ -139,13 +136,11 @@ func TestPaneCloneSharesBlobThenDiverges(t *testing.T) {
 	}
 }
 
-// TestWorkspaceRefsMatchTheInjectedIdentity pins the production shape: the
-// plugin identity is the config id injected by SetPluginID, not the
-// bootstrap-minted system.plugin_uuid. Layout blobs qualify their references
-// with the config id, so the ephemeral-refs matcher must speak it too, or the
-// boot scratch sweep reaps pane-tile-owned shells and kills their tmux
-// sessions. A test that builds the blob from PluginUUID cannot catch this: it
-// matches whatever PluginUUID returns.
+// The plugin identity is the config id injected by SetPluginID, not the
+// bootstrap mint. Layout blobs qualify their references with the config id, so
+// the ephemeral-refs matcher must speak it too, or the boot sweep reaps
+// pane-owned shells and kills their tmux sessions. A test that builds the blob
+// from PluginUUID cannot catch this: it matches whatever PluginUUID returns.
 func TestWorkspaceRefsMatchTheInjectedIdentity(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

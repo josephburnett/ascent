@@ -11,13 +11,10 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
-// TestPropertyRefcountAndOverlap exercises a long random sequence of
-// mutations and asserts:
-//   - Refcounts on grids and blobs always match the actual reference count.
-//   - No two tiles in the same grid overlap.
-//
-// Where mutations need a tile version, we reload the tile right before the
-// call so we don't have to track versions through the random walk.
+// A long random sequence of mutations, asserting that refcounts on grids and
+// blobs always match the actual reference count and that no two tiles in a
+// grid overlap. A mutation needing a version reloads the tile first, so the
+// walk does not have to track versions.
 func TestPropertyRefcountAndOverlap(t *testing.T) {
 	const iters = 300
 	rng := rand.New(rand.NewPCG(0xa5cea5ce, 0x42))
@@ -62,12 +59,9 @@ func TestPropertyRefcountAndOverlap(t *testing.T) {
 		op := rng.IntN(6)
 		switch op {
 		case 0:
-			// Create a tile at a random spot in some live well's child grid
-			// or root. Kind is drawn from well/text/url/shell so clone, fork,
-			// and delete get exercised across every refcounted reference a
-			// tile can hold: child grid, text blob, and url/shell preview
-			// blob. (Before this, the walk only made wells, which is exactly
-			// why the preview-blob refcount leaks went uncaught.)
+			// Kind is drawn from well/text/url/shell so clone and delete are
+			// exercised across every refcounted reference a tile can hold:
+			// child grid, text blob, and preview blob.
 			gridID := root
 			if len(tiles) > 0 && rng.IntN(2) == 0 {
 				ln := tiles[rng.IntN(len(tiles))]
@@ -207,10 +201,8 @@ func TestPropertyRefcountAndOverlap(t *testing.T) {
 				tiles[pickIdx].id = n.Id
 			}
 		case 5:
-			// Freeze a preview onto a shell tile so preview_blob_id
-			// refcounting gets exercised when that tile is later cloned or
-			// deleted. A tiny fixed byte alphabet makes previews dedupe
-			// across tiles, so a shared preview blob reaches refcount > 1.
+			// A tiny fixed byte alphabet makes previews dedupe across tiles,
+			// so a shared preview blob reaches refcount > 1.
 			if len(tiles) == 0 {
 				continue
 			}

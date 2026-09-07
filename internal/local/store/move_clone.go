@@ -10,16 +10,12 @@ import (
 	"github.com/josephburnett/gridwell/internal/doctype"
 )
 
-// CloneTile duplicates a tile into a destination grid at (x, y) as an eager,
-// independent copy. The new row carries the source's version, so the two are
-// the same content until one diverges, but gets a fresh row id. The source row
-// is untouched, so a clone is layout, not content: no claim, no bump. An
-// interior well's whole child subtree is deep-copied, with new grid and tile
-// rows and shared blobs; an exit well keeps its qualified cross-plugin
-// child_grid_id, since the child grid is owned by another plugin; a text, url,
-// or shell tile shares its content or preview blob with the refcount bumped.
-// Nothing else is shared between the two copies, so editing one can never
-// touch the other.
+// CloneTile duplicates a tile into a destination grid as an eager, independent
+// copy: a fresh row id, the source's version, and the source row untouched, so
+// a clone is layout, not content. An interior well's whole subtree is
+// deep-copied; an exit well keeps its qualified child_grid_id, another plugin
+// owning that grid; a leaf shares its blob with the refcount bumped. Nothing
+// else is shared, so editing one can never touch the other.
 func (s *Store) CloneTile(ctx context.Context, req *gridwellv1.CloneTileRequest) (*gridwellv1.Tile, error) {
 	tileID, err := parseID(req.TileId)
 	if err != nil {
@@ -36,8 +32,6 @@ func (s *Store) CloneTile(ctx context.Context, req *gridwellv1.CloneTileRequest)
 			return err
 		}
 
-		// The destination is id-addressed; refuse a grid that does not
-		// exist.
 		if _, err := s.loadGrid(ctx, tx, destGridID); err != nil {
 			return fmt.Errorf("%w: destination grid %d: %v", ErrInvalidArgument, destGridID, err)
 		}
@@ -52,10 +46,6 @@ func (s *Store) CloneTile(ctx context.Context, req *gridwellv1.CloneTileRequest)
 		}
 
 		now := s.now().Unix()
-		// child_grid_id: an interior well gets a deep copy of its subtree
-		// through cloneSubtree; an exit well keeps its qualified cross-plugin
-		// child reference, since the child grid lives in another plugin; and
-		// everything else has none.
 		child, err := s.childGridForClone(ctx, tx, n)
 		if err != nil {
 			return err
@@ -98,17 +88,13 @@ func (s *Store) writeTextContent(ctx context.Context, tileIDStr string, version 
 			return err
 		}
 		if !changed {
-			// Byte-identical content, so the same content-addressed blob.
-			// Re-saving unchanged bytes must not bump the version or fan a
-			// TileChanged: a no-op write never mutates. alt_text is a pure
-			// function of the content, so it is unchanged too. A debounced
-			// auto-save on a tile the user did not edit is therefore a true
-			// no-op.
+			// A no-op write never mutates: re-saving unchanged bytes must not
+			// bump the version or fan a TileChanged, and alt_text, a pure
+			// function of the content, is unchanged too.
 			out, err = s.loadTile(ctx, tx, tileID)
 			return err
 		}
-		// alt_text is a deterministic function of the content, written
-		// alongside in a separate statement from the blob kernel.
+		// alt_text is a deterministic function of the content.
 		alt := doctype.AltFromSource(string(data))
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE tiles SET alt_text = ?, updated_at = ? WHERE id = ?`,
