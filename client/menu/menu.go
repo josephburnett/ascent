@@ -1,27 +1,19 @@
-// Package menu owns the live UI state of the "+" creation menu: whether it is
+// Package menu owns the live state of the + creation menu: whether it is
 // open, which pane it is open on, which palette item is hovered, and whether
-// the plugin and connection section is unfolded.
+// the doorway section is unfolded. The menu is open on at most one pane, the
+// focused one, and every transition goes through a method here, so a new
+// gesture-ending path cannot leave it stranded open on an unfocused pane.
 //
-// This is the single owner. The menu is open on at most one pane at a time,
-// the focused one. Every transition goes through a method here and nothing
-// else assigns the fields, so a newly-added gesture-ending path cannot forget
-// to clear the menu and leave it stranded open on a stale, now-unfocused
-// pane.
-//
-// State is the live state only. The menu's persistence across a descent into
-// another namespace — so ascending returns you exactly as you left — rides on
-// the place frame you left (pane.Frame.MenuOpen): record it with OpenOn at
-// the descent and reopen with Open when the ascent lands on that frame.
-//
-// The package is plain Go (no js/wasm build tag) so the whole state machine
-// is unit-tested headlessly.
+// State is live state only. What survives a descent rides the place frame you
+// left (pane.Frame.MenuOpen): record it with OpenOn at the descent and reopen
+// with Open when the ascent lands on that frame.
 package menu
 
 // noHover is the hovered-item index when nothing is hovered.
 const noHover = -1
 
-// State is the single owner of the + menu's live state. The zero value is not
-// valid (hover would read as item 0); construct with New.
+// State is the + menu's live state. The zero value is invalid, because hover
+// would read as item 0; construct with New.
 type State struct {
 	open     bool
 	paneID   string
@@ -35,13 +27,12 @@ func New() State { return State{hover: noHover} }
 // IsOpen reports whether the menu is open on any pane.
 func (s *State) IsOpen() bool { return s.open }
 
-// OpenOn reports whether the menu is open on paneID specifically. This is the
-// guard every per-pane site uses (draw the palette, route a click into it), and
-// the snapshot recorded into a portal frame at descent.
+// OpenOn reports whether the menu is open on paneID. Every per-pane site
+// guards on it, and it is the snapshot a place frame records at a descent.
 func (s *State) OpenOn(paneID string) bool { return s.open && s.paneID == paneID }
 
-// PaneID returns the pane the menu is open on, or "" when the menu is closed.
-// Closed always reports "" so a stale id can never resolve to a pane.
+// PaneID is the pane the menu is open on. A closed menu reports "", so a
+// stale id can never resolve to a pane.
 func (s *State) PaneID() string {
 	if !s.open {
 		return ""
@@ -52,25 +43,22 @@ func (s *State) PaneID() string {
 // Hover returns the hovered palette-item index, or -1 when nothing is hovered.
 func (s *State) Hover() int { return s.hover }
 
-// PluginsExpanded reports whether the plugin and connection section is
-// unfolded. It is live state like the hover, not a preference: every opening
-// starts collapsed, so a menu opened after a session of expanding still shows
-// the primitives first.
+// PluginsExpanded reports whether the doorway section is unfolded. It is
+// live state rather than a preference, so every opening starts collapsed.
 func (s *State) PluginsExpanded() bool { return s.expanded }
 
-// TogglePlugins flips the plugin section open or shut and returns the new
-// state. It touches nothing else: the menu stays open on the same pane, and
-// the pane keeps its focus and selection. Hover is dropped, because the
-// swatch list under the pointer has just changed.
+// TogglePlugins flips the doorway section open or shut and returns the new
+// state. The menu stays open on the same pane and the pane keeps its focus
+// and selection. Hover is dropped, because the swatch list under the pointer
+// has changed.
 func (s *State) TogglePlugins() bool {
 	s.expanded = !s.expanded
 	s.hover = noHover
 	return s.expanded
 }
 
-// Open opens the menu on paneID. Idempotent on the target; always resets hover
-// and the plugin fold, since the pointer has not yet moved over the
-// freshly-shown palette and every opening starts collapsed.
+// Open opens the menu on paneID, resetting hover and the fold. Every opening
+// starts collapsed.
 func (s *State) Open(paneID string) {
 	s.open = true
 	s.paneID = paneID
@@ -78,8 +66,8 @@ func (s *State) Open(paneID string) {
 	s.expanded = false
 }
 
-// Close closes the menu and clears the remembered pane, hover and fold, so
-// nothing downstream can read a stale pane id off a closed menu.
+// Close clears the remembered pane, hover and fold, so nothing downstream
+// can read a stale pane id off a closed menu.
 func (s *State) Close() {
 	s.open = false
 	s.paneID = ""
@@ -87,9 +75,8 @@ func (s *State) Close() {
 	s.expanded = false
 }
 
-// Toggle is the corner "+" click: close if already open on paneID, otherwise
-// open on paneID (moving the menu there if it was open elsewhere). Returns the
-// resulting open state.
+// Toggle is the + click: close if already open on paneID, otherwise open
+// there. It returns the resulting open state.
 func (s *State) Toggle(paneID string) bool {
 	if s.OpenOn(paneID) {
 		s.Close()
@@ -99,9 +86,8 @@ func (s *State) Toggle(paneID string) bool {
 	return true
 }
 
-// SetHover sets the hovered palette-item index (-1 for none) and reports whether
-// it changed, so the caller can redraw only on a real change. A no-op while the
-// menu is closed.
+// SetHover sets the hovered palette-item index, -1 for none, and reports
+// whether it changed, so the caller redraws only on a real change.
 func (s *State) SetHover(i int) (changed bool) {
 	if !s.open || s.hover == i {
 		return false
@@ -110,22 +96,17 @@ func (s *State) SetHover(i int) (changed bool) {
 	return true
 }
 
-// SyncFocus enforces "the menu belongs only to the focused pane": if the menu
-// is open on a pane that is no longer the focused one, it closes. Call this
-// whenever focus moves. Expressing the rule this way means the menu never has
-// to be closed defensively from every focus path.
+// SyncFocus closes a menu open on a pane that is no longer focused. Call it
+// whenever focus moves, so no focus path has to close the menu itself.
 func (s *State) SyncFocus(focusedPaneID string) {
 	if s.open && s.paneID != focusedPaneID {
 		s.Close()
 	}
 }
 
-// TransferFocus is the canonical focus-change helper: it calls SyncFocus(newID)
-// when newID ≠ prevID and reports whether focus actually changed. Callers use
-// this instead of "if new != prev { SyncFocus(new) }" so the omission class is
-// unrepresentable. Every code path that moves wasm focus (canvas onMouseDown,
-// forwarded right-down, forwarded left-down) calls it, and calling it is
-// always safe even when focus has not moved.
+// TransferFocus reports whether focus changed and syncs the menu when it
+// did. Every path that moves wasm focus calls it, so no caller has to
+// remember the comparison, and calling it when focus has not moved is safe.
 func (s *State) TransferFocus(prevID, newID string) bool {
 	if prevID == newID {
 		return false
