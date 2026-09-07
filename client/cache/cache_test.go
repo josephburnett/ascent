@@ -274,6 +274,63 @@ func TestUpdateTile(t *testing.T) {
 	}
 }
 
+// TestUpdateTileTakesTheOneDoor: UpdateTile is the write-response and
+// out-of-band-patch door, and it obeys the same interlock an event does. The
+// rule belongs to the tile map, not to the path a row arrived on — before
+// this, an older response rolled the row back and nothing in the cache said
+// no. The seam version, with real rows off a real server, is
+// internal/server/outbox_seam_test.go:TestAResponseRowObeysTheInterlock.
+func TestUpdateTileTakesTheOneDoor(t *testing.T) {
+	c := New()
+	c.PutGrid(rpc.Grid{ID: "10"}, []rpc.Tile{
+		{ID: "100", GridID: "10", Kind: rpc.KindText, Version: 5, W: 1},
+	})
+
+	// An older response is refused, exactly as an older echo is.
+	c.UpdateTile("10", rpc.Tile{ID: "100", GridID: "10", Kind: rpc.KindText, Version: 4, W: 9})
+	g, _ := c.Grid("10")
+	if got := g.Tiles["100"]; got.Version != 5 || got.W != 1 {
+		t.Errorf("an older response rolled the row back to version %d (W %d)", got.Version, got.W)
+	}
+
+	// A same-version row still lands. This is what the URL stream's in-page
+	// nav patch and the content-zoom patch are: a read-modify-write of the
+	// cached row itself, carrying the version it read. An interlock that
+	// refused equality would silently drop every one of them.
+	c.UpdateTile("10", rpc.Tile{ID: "100", GridID: "10", Kind: rpc.KindText, Version: 5, W: 7})
+	g, _ = c.Grid("10")
+	if got := g.Tiles["100"].W; got != 7 {
+		t.Errorf("a same-version patch did not land; W = %d, want 7", got)
+	}
+}
+
+// TestUpdateTileAgesTheBodyToo: the response door reconciles cached content
+// the same way an event and a refetch do. A row whose version moved past the
+// cached body's basis means the bytes are behind — drop them so the next
+// render refetches, and so the entry's basis never trails the row a save will
+// claim against. Skipping this on one path is how a version silently advances
+// past the bytes it vouches for.
+func TestUpdateTileAgesTheBodyToo(t *testing.T) {
+	c := New()
+	c.PutGrid(rpc.Grid{ID: "10"}, []rpc.Tile{
+		{ID: "100", GridID: "10", Kind: rpc.KindText, Version: 5},
+	})
+	c.PutFetchedContent("100", []byte("body at 5"), 5)
+
+	// A response row at 6 — a rename, say, which is a content edit and bumps.
+	c.UpdateTile("10", rpc.Tile{ID: "100", GridID: "10", Kind: rpc.KindText, Version: 6, AltText: "named"})
+	if _, ok := c.TileContent("100"); ok {
+		t.Error("the response door left a body vouched for by a version the row has moved past")
+	}
+
+	// A dirty body is the user's unsaved typing and survives, as everywhere.
+	c.PutEditedContent("100", []byte("typing"))
+	c.UpdateTile("10", rpc.Tile{ID: "100", GridID: "10", Kind: rpc.KindText, Version: 7})
+	if got, ok := c.DirtyContent("100"); !ok || string(got) != "typing" {
+		t.Errorf("the response door discarded unsaved typing: %q %v", got, ok)
+	}
+}
+
 // TestRemoveTileFreesContent: a text tile's clean cached body is dropped when
 // the tile is removed, or it strands in the map forever. Only clean bodies —
 // a dirty buffer is the sole copy of unsaved typing and survives TileRemoved

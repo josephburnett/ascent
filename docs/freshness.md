@@ -259,7 +259,15 @@ The version interlock, the outbox park, and the drain.
    `n.Version < cur.Version` drops it: applying it would roll the tile back
    and then forward, a mutation the user never made. The response row at N
    stands.
-6. `reconcileContent` runs on whichever row does apply. Clean text entry with
+
+   There is one door into a grid's tile map, `Cache.putTileLocked`, and both
+   `Apply` and `UpdateTile` are it: the interlock and `reconcileContent`
+   belong to the map, not to the path a row arrived on. So a write RESPONSE
+   that is the older row is refused on the same rule as an older echo. (The
+   one difference is insertion: an event may add a tile the cache has not
+   seen; `UpdateTile` only updates a row already held.)
+6. `reconcileContent` runs on whichever row does apply, whichever door it
+   came in by. Clean text entry with
    `n.Version > e.base` → drop the body, so the next render refetches and the
    foreign edit becomes visible. Dirty entry → keep it; its save claims the
    old base, conflicts at the server, and reconciles visibly.
@@ -384,5 +392,5 @@ Each cross-layer behaviour in the three traces, and what pins it.
 | Live: typing survives a server outage and saves itself after restart; settled framing lands too; a swallowed grid read un-latches | `apps/desktop/e2e-web/web-outage.spec.ts` |
 | A foreign edit becomes visible, and opening/closing never stomps it | `apps/desktop/e2e/foreign-writer.spec.ts` |
 | The interlock across the seam: real responses and real echoes of two writes, in every order the two paths can produce, never regress the cached row | `outbox_seam_test.go:TestEchoInterlockAcrossTheSeam` |
-| `Cache.UpdateTile` — the response path — skips the interlock, and only `App.textSaves`' serialization keeps that unreachable | `outbox_seam_test.go:TestAResponseRowSkipsTheInterlock` |
+| An older write RESPONSE is refused by the same interlock an older echo is: one door into the tile map | `outbox_seam_test.go:TestAResponseRowObeysTheInterlock` (seam), `client/cache/cache_test.go:TestUpdateTileTakesTheOneDoor`, `TestUpdateTileAgesTheBodyToo` (unit) |
 | `syncContentOutbox`'s derivation: dirty→park, clean→ack, and the pre-drain sweep over the dirty set | `client/outbox/outbox_test.go:TestRecordContentIsTheDirtinessFork`, `TestSyncContentParksTheDirtySetInOrder` (`Outbox.RecordContent`/`SyncContent`; `mutate.go` is glue) |

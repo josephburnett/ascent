@@ -321,10 +321,46 @@ func (c *Cache) ResyncSet(source string) []string {
 // KnownGridIDs returns the set of grid ids the cache currently holds.
 func (c *Cache) KnownGridIDs() []string { return c.ResyncSet(EverySource) }
 
-// UpdateTile replaces a single tile row in the named grid. No-op if
-// the grid or tile is not cached. Used by URLStream nav events to
-// keep cached URL tiles in sync with in-page navigation without
-// going through the full Subscribe event path.
+// putTileLocked is the one door into a grid's tile map. Every row that lands
+// in the cache — a Subscribe echo, a write response, a fresh read, a
+// client-side patch of the row already here — comes through it, so the echo
+// interlock and reconcileContent are properties of the map rather than of
+// whichever caller remembered them. Reports whether the row was written.
+// Callers hold c.mu.
+//
+// The interlock: a row strictly older than the cached one is refused. The
+// canonical case is a stale echo — a Subscribe event that lost the race
+// against the mutation response that already landed (the response row is
+// version N; the echo of the previous state, N-1, may still be in flight) —
+// but the fact is about the map, not about which door the row arrived at. A
+// write RESPONSE can be the older row just as easily, and applying either
+// would visibly roll the tile back and then forward: a mutation the user
+// never made. Same-version rows still apply, because framing changes never
+// bump version but do change the framing columns, and a patch of the cached
+// row (a url tile's in-page navigation, a content zoom) carries the version
+// it read.
+func (c *Cache) putTileLocked(g *Grid, n rpc.Tile) bool {
+	cur, exists := g.Tiles[n.ID]
+	if exists && n.Version < cur.Version {
+		return false
+	}
+	if exists {
+		c.reconcileContent(cur, n)
+	}
+	g.Tiles[n.ID] = n
+	return true
+}
+
+// UpdateTile folds one row the client learned outside the Subscribe stream
+// into the named grid: a write response, a fresh GetTile, a URLStream nav
+// patch. No-op if the grid or the tile is not cached — this door updates a
+// row already held and never inserts, which is what keeps a response routed
+// through a leaf link from planting a foreign tile in a grid that has no
+// business holding it.
+//
+// It is putTileLocked, same as an event: a response and an echo are the same
+// fact arriving on two paths, and the map's rules cannot be a property of the
+// path. There is no unguarded door, so no caller can take one by accident.
 func (c *Cache) UpdateTile(gridID string, t rpc.Tile) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -335,7 +371,7 @@ func (c *Cache) UpdateTile(gridID string, t rpc.Tile) {
 	if _, ok := g.Tiles[t.ID]; !ok {
 		return
 	}
-	g.Tiles[t.ID] = t
+	c.putTileLocked(g, t)
 }
 
 // Apply consumes a Subscribe event and updates the cache. Returns true if
@@ -357,22 +393,10 @@ func (c *Cache) Apply(ev rpc.Event) bool {
 		if !ok {
 			return false
 		}
-		// The optimistic-echo interlock: an event strictly older than the
-		// cached row is a stale echo — a Subscribe event that lost the race
-		// against the mutation response that already landed here (the
-		// response row is version N; the echo of the previous state, N-1,
-		// may still be in flight). Applying it would visibly roll the tile
-		// back and then forward: mutation the user never made. Same-version
-		// events still apply, because framing changes never bump version but
-		// do change the framing columns.
-		if cur, exists := g.Tiles[n.ID]; exists && n.Version < cur.Version {
-			return false
-		}
-		if cur, exists := g.Tiles[n.ID]; exists {
-			c.reconcileContent(cur, n)
-		}
-		g.Tiles[n.ID] = n
-		return true
+		// Through the one door, interlock and all — see putTileLocked. An
+		// event may insert a tile the cache has not seen; that is the one way
+		// this path differs from UpdateTile.
+		return c.putTileLocked(g, n)
 	case rpc.EventTileRemoved:
 		if ev.TileRemoved == nil {
 			return false

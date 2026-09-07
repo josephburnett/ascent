@@ -372,19 +372,19 @@ func TestEchoInterlockAcrossTheSeam(t *testing.T) {
 	}
 }
 
-// TestAResponseRowSkipsTheInterlock pins what the case above deliberately does
-// not reach, and it is a real hole: Cache.UpdateTile — the door
-// App.postWriteContent puts a write RESPONSE through — writes the row with no
-// version comparison at all, so an older response landing after a newer row
-// DOES roll the tile back. It is unreachable today only because content saves
-// for one tile are serialized by App.textSaves, so response N-1 cannot follow
-// response N or the echo of N. That is a second row-writer holding the
-// interlock's invariant by an ordering guarantee made three layers away, and
-// it is owner-question 2 in docs/freshness.md ("Cache.UpdateTile is a second
-// row-writer") — NOT decided here. This test asserts the CURRENT behaviour, so
-// routing the response path through the interlock will fail it loudly and the
-// decision gets made on purpose.
-func TestAResponseRowSkipsTheInterlock(t *testing.T) {
+// TestAResponseRowObeysTheInterlock is the case the one above deliberately
+// does not reach: the older row arrives as a write RESPONSE rather than an
+// echo. It used to be a hole. `Cache.UpdateTile` was a second door into the
+// grid's tile map that wrote the row with no version comparison at all, so an
+// older response landing after a newer row rolled the tile back, and the only
+// thing keeping that unreachable was `App.textSaves` serializing content saves
+// per tile three layers away.
+//
+// The interlock is a property of the map now, not of the door: both paths go
+// through `putTileLocked`, so a response and an echo of the same fact are
+// refused on the same rule. This test drives the response path with the same
+// real rows the seam test uses and asserts the row only ever moves forward.
+func TestAResponseRowObeysTheInterlock(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
 
@@ -405,18 +405,18 @@ func TestAResponseRowSkipsTheInterlock(t *testing.T) {
 	// The newer write is settled, response and echo both.
 	c.UpdateTile(resp[1].GridID, resp[1])
 	c.Apply(rpc.Event{Kind: rpc.EventTileChanged, TileChanged: &rpc.TileChanged{Tile: echo[1]}})
-	// The older write's ECHO is refused, which is the interlock doing its job.
+	// The older write's ECHO is refused.
 	c.Apply(rpc.Event{Kind: rpc.EventTileChanged, TileChanged: &rpc.TileChanged{Tile: echo[0]}})
 	g, _ := c.Grid(root)
 	if got := g.Tiles[created.ID].Version; got != resp[1].Version {
 		t.Fatalf("a stale echo moved the row to %d, want %d", got, resp[1].Version)
 	}
-	// The older write's RESPONSE is not: same fact, other door, no interlock.
+	// And so is the older write's RESPONSE: same fact, same rule, one door.
 	c.UpdateTile(resp[0].GridID, resp[0])
 	g, _ = c.Grid(root)
-	if got := g.Tiles[created.ID].Version; got != resp[0].Version {
-		t.Fatalf("UpdateTile now guards the version (row at %d, the older response was %d) — "+
-			"if that is the decision, freshness.md's owner-question 2 is answered and this test is the one to rewrite", got, resp[0].Version)
+	if got := g.Tiles[created.ID].Version; got != resp[1].Version {
+		t.Fatalf("a stale RESPONSE rolled the row back to %d, want %d: "+
+			"Cache.UpdateTile is a second door into the tile map again (#274)", got, resp[1].Version)
 	}
 }
 
