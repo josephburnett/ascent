@@ -8,10 +8,8 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
-// The node as a client sees it: its own home, one local plugin, one
-// connection, and behind that connection the far node's home and one of the
-// far node's plugins. Health uuids gain one segment per hop exactly as ids
-// do, so every source below names a chain that its grids' ids start with.
+// The node as a client sees it. Health uuids gain one segment per hop exactly
+// as ids do, so every source below names a chain its grids' ids start with.
 const (
 	node    = "n1abcde"
 	fsPl    = "fs9xyzw"
@@ -20,8 +18,8 @@ const (
 	farPl   = conn + "/rp9plug"
 )
 
-// seedSources caches one grid per source, each id shaped as the wire
-// qualifies it.
+// seedSources caches one grid per source, ids shaped as the wire qualifies
+// them.
 func seedSources(t *testing.T) *Cache {
 	t.Helper()
 	c := New()
@@ -37,9 +35,7 @@ func seedSources(t *testing.T) *Cache {
 	return c
 }
 
-// The narrowing itself. One source flapping is news about that source's
-// grids and nothing else, so refetching another source's rooms spends round
-// trips on answers nobody had reason to doubt.
+// One source flapping is news about that source's grids and nothing else.
 func TestAFlapResyncsOnlyTheGridsItsSourceServes(t *testing.T) {
 	c := seedSources(t)
 
@@ -61,9 +57,8 @@ func TestAFlapResyncsOnlyTheGridsItsSourceServes(t *testing.T) {
 	}
 }
 
-// A source is a CHAIN, so a connection's flap owns everything reachable only
-// through it — the far node's home and the far node's plugins alike. String
-// equality on the owning namespace would resync neither.
+// A source is a chain, so a connection's flap owns everything reachable only
+// through it. String equality on the owning namespace would resync neither.
 func TestAConnectionsFlapOwnsEveryGridChainedThroughIt(t *testing.T) {
 	c := seedSources(t)
 
@@ -73,8 +68,8 @@ func TestAConnectionsFlapOwnsEveryGridChainedThroughIt(t *testing.T) {
 		t.Fatalf("ResyncSet(%q) = %v, want %v", conn, got, want)
 	}
 
-	// And one hop deeper: the far node's own home store flapping is news
-	// about its grids only, not about the far node's other plugins.
+	// One hop deeper: the far node's home flapping is news about its grids
+	// only.
 	got = c.ResyncSet(farHome)
 	want = []string{farHome + "/1"}
 	if !slices.Equal(got, want) {
@@ -82,8 +77,8 @@ func TestAConnectionsFlapOwnsEveryGridChainedThroughIt(t *testing.T) {
 	}
 }
 
-// The paths that are not a per-source flap keep their breadth: a stream gap
-// has no cursor and names no source, so the whole cache is the answer.
+// A stream gap has no cursor and names no source, so the whole cache is the
+// answer.
 func TestEverySourceIsTheWholeCache(t *testing.T) {
 	c := seedSources(t)
 
@@ -96,9 +91,8 @@ func TestEverySourceIsTheWholeCache(t *testing.T) {
 	}
 }
 
-// The predicate, on the boundaries a prefix test can get wrong. It answers
-// for tile ids too, because the latches and the in-flight claims a flap
-// clears are keyed by tile id.
+// The boundaries a prefix test can get wrong. It answers for tile ids too,
+// because the latches and in-flight claims a flap clears are keyed by tile id.
 func TestServedBy(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -128,12 +122,10 @@ func TestServedBy(t *testing.T) {
 	}
 }
 
-// Reaches is the predicate for a read keyed by a source NAME rather than by
-// something a source serves: the + menu's per-node context. A node's own menu
-// is that node's fact, which ServedBy would answer "no" to, and a connection's
-// flap covers every node behind it, which equality would answer "no" to. Both
-// halves matter, because both are how a menu read hung on a dead link gets
-// cancelled instead of waiting out its deadline.
+// Reaches keys on a source name rather than on something a source serves, as
+// the + menu's per-node context does. ServedBy would say no to a node's own
+// menu and equality would say no to a node behind a connection; both halves
+// are how a menu read hung on a dead link gets cancelled.
 func TestReachesCoversTheSourceItselfAndEveryNodeBehindIt(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -158,9 +150,8 @@ func TestReachesCoversTheSourceItselfAndEveryNodeBehindIt(t *testing.T) {
 			}
 		})
 	}
-	// The half that makes it a second question rather than a second copy:
-	// ServedBy, asked about a source's own name, says no — a namespace is
-	// not a thing it serves.
+	// ServedBy, asked about a source's own name, says no: a namespace is not
+	// a thing it serves.
 	if ServedBy(conn, conn) {
 		t.Errorf("ServedBy(%q, %q) = true; a namespace is not something it serves", conn, conn)
 	}

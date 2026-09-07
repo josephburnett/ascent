@@ -33,13 +33,10 @@ func TestPutAndGet(t *testing.T) {
 	}
 }
 
-// TestTileContentEditDoesNotLeakToClone: two cloned text tiles have distinct
-// ids, so an edit to one writes its body keyed by that id and the sibling's
-// body is untouched. Tile-id keying makes this hold by construction.
+// Tile-id keying makes this hold by construction: two clones have distinct
+// ids, so an edit to one leaves the sibling's body alone.
 func TestTileContentEditDoesNotLeakToClone(t *testing.T) {
 	c := New()
-	// Clones: distinct tile rows in distinct grids, both seeded with the same
-	// body — but each addressed by its own tile id.
 	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{&gridwellv1.Tile{Id: "10", GridId: "1", Kind: rpc.KindText}})
 	c.PutGrid(&gridwellv1.Grid{Id: "2"}, []*gridwellv1.Tile{&gridwellv1.Tile{Id: "20", GridId: "2", Kind: rpc.KindText}})
 	c.PutFetchedContent("10", []byte("Hello World"), 1)
@@ -55,10 +52,8 @@ func TestTileContentEditDoesNotLeakToClone(t *testing.T) {
 	}
 }
 
-// TestRenderedEditVisibleThroughRenderAccessor: the renderer reads a text
-// tile's body through TileContent, and an edit writes through
-// PutEditedContent. One store, so a keystroke is visible to the renderer at
-// once.
+// The renderer reads through TileContent and an edit writes through
+// PutEditedContent. One store, so a keystroke is visible at once.
 func TestRenderedEditVisibleThroughRenderAccessor(t *testing.T) {
 	c := New()
 	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{&gridwellv1.Tile{Id: "10", GridId: "1", Kind: rpc.KindText}})
@@ -84,12 +79,9 @@ func TestApplyTileChanged(t *testing.T) {
 	}
 }
 
-// TestApplyStaleEchoDropped: the optimistic-echo interlock. After a local
-// mutation's response lands in the cache (version N), a still-in-flight
-// Subscribe echo of the previous state (N-1) is dropped — applying it would
-// visibly roll the tile back and forward, mutation the user never made.
-// Same-version events (framing never bumps version) and newer events still
-// apply.
+// After a mutation's response lands at version N, an in-flight echo of N-1 is
+// dropped: applying it would roll the tile back and forward, a mutation the
+// user never made.
 func TestApplyStaleEchoDropped(t *testing.T) {
 	c := seedCache(t)
 	// The mutation response landed: version 5.
@@ -104,8 +96,8 @@ func TestApplyStaleEchoDropped(t *testing.T) {
 		t.Errorf("tile after stale echo = %+v, want the newer row untouched", g.Tiles["100"])
 	}
 
-	// A same-version event applies: framing writes change the framing
-	// columns without a version bump, and dropping them would freeze pans.
+	// Framing writes change columns without a version bump, so dropping a
+	// same-version event would freeze pans.
 	if !c.Apply(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{TileChanged: &gridwellv1.TileChanged{Tile: &gridwellv1.Tile{Id: "100", GridId: "1", Kind: rpc.KindText, Version: 5, X: 2}}}}) {
 		t.Error("same-version event dropped — framing echoes would freeze")
 	}
@@ -135,10 +127,8 @@ func TestApplyTileRemoved(t *testing.T) {
 	}
 }
 
-// TestTileRemovedSparesDirtyBuffer: a cross-grid move emits TileRemoved(src)
-// then TileChanged(dst) for the same tile, so a dirty entry must survive
-// TileRemoved — it is the only copy of the user's typing. A clean one is
-// still swept.
+// A cross-grid move emits TileRemoved then TileChanged for the same tile, so
+// a dirty entry, the only copy of the typing, must survive TileRemoved.
 func TestTileRemovedSparesDirtyBuffer(t *testing.T) {
 	c := seedCache(t)
 	c.PutFetchedContent("101", []byte("saved words"), 3)
@@ -150,7 +140,6 @@ func TestTileRemovedSparesDirtyBuffer(t *testing.T) {
 	if !dirty || string(b) != "saved words plus unsaved typing" {
 		t.Fatalf("dirty buffer after TileRemoved = (%q, %v), want the unsaved typing kept", b, dirty)
 	}
-	// The move's second half: the tile reappears in its destination grid.
 	// The surviving entry keeps its basis, so the next flush claims it.
 	c.PutGrid(&gridwellv1.Grid{Id: "2"}, nil)
 	c.Apply(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{TileChanged: &gridwellv1.TileChanged{Tile: &gridwellv1.Tile{Id: "101", GridId: "2", Kind: rpc.KindText, Version: 3}}}})
@@ -251,11 +240,8 @@ func TestUpdateTile(t *testing.T) {
 	}
 }
 
-// TestUpdateTileTakesTheOneDoor: UpdateTile is the write-response and
-// out-of-band-patch door, and it obeys the same interlock an event does. The
-// rule belongs to the tile map, not to the path a row arrived on — before
-// this, an older response rolled the row back and nothing in the cache said
-// no. The seam version, with real rows off a real server, is
+// The interlock belongs to the tile map, not to the path a row arrived on, so
+// the response door obeys it too. The seam version is
 // internal/server/outbox_seam_test.go:TestAResponseRowObeysTheInterlock.
 func TestUpdateTileTakesTheOneDoor(t *testing.T) {
 	c := New()
@@ -270,10 +256,9 @@ func TestUpdateTileTakesTheOneDoor(t *testing.T) {
 		t.Errorf("an older response rolled the row back to version %d (W %d)", got.Version, got.W)
 	}
 
-	// A same-version row still lands. This is what the URL stream's in-page
-	// nav patch and the content-zoom patch are: a read-modify-write of the
-	// cached row itself, carrying the version it read. An interlock that
-	// refused equality would silently drop every one of them.
+	// The nav patch and the content-zoom patch are read-modify-writes of the
+	// cached row carrying the version they read, so refusing equality would
+	// drop every one of them.
 	c.UpdateTile("10", &gridwellv1.Tile{Id: "100", GridId: "10", Kind: rpc.KindText, Version: 5, W: 7})
 	g, _ = c.Grid("10")
 	if got := g.Tiles["100"].W; got != 7 {
@@ -281,12 +266,9 @@ func TestUpdateTileTakesTheOneDoor(t *testing.T) {
 	}
 }
 
-// TestUpdateTileAgesTheBodyToo: the response door reconciles cached content
-// the same way an event and a refetch do. A row whose version moved past the
-// cached body's basis means the bytes are behind — drop them so the next
-// render refetches, and so the entry's basis never trails the row a save will
-// claim against. Skipping this on one path is how a version silently advances
-// past the bytes it vouches for.
+// The response door reconciles cached content the same way an event and a
+// refetch do. Skipping it on one path is how a version silently advances past
+// the bytes it vouches for.
 func TestUpdateTileAgesTheBodyToo(t *testing.T) {
 	c := New()
 	c.PutGrid(&gridwellv1.Grid{Id: "10"}, []*gridwellv1.Tile{
@@ -308,10 +290,8 @@ func TestUpdateTileAgesTheBodyToo(t *testing.T) {
 	}
 }
 
-// TestRemoveTileFreesContent: a text tile's clean cached body is dropped when
-// the tile is removed, or it strands in the map forever. Only clean bodies —
-// a dirty buffer is the sole copy of unsaved typing and survives TileRemoved
-// (TestTileRemovedSparesDirtyBuffer).
+// A clean body is dropped on removal or it strands in the map forever; a
+// dirty one survives, per TestTileRemovedSparesDirtyBuffer.
 func TestRemoveTileFreesContent(t *testing.T) {
 	c := New()
 	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{&gridwellv1.Tile{Id: "10", GridId: "1", Kind: rpc.KindText}})
@@ -326,10 +306,9 @@ func TestRemoveTileFreesContent(t *testing.T) {
 	}
 }
 
-// TestApplyBlobChangeDropsContent: a TileChanged carrying a new blob at the
-// same version (a pane tile's layout never bumps version) invalidates the
-// cached content bytes. Otherwise this client's preview serves the old layout
-// forever, because the content fetch short-circuits on a cache hit.
+// A pane tile's layout never bumps version, so a new blob at the same version
+// must invalidate the body; the content fetch short-circuits on a cache hit
+// and would serve the old layout forever.
 func TestApplyBlobChangeDropsContent(t *testing.T) {
 	c := New()
 	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{
@@ -356,13 +335,9 @@ func TestApplyBlobChangeDropsContent(t *testing.T) {
 	}
 }
 
-// TestApplyTextEventSparesDirtyContent: a text tile's dirty content entry is
-// the user's unsaved typing (keystrokes land there before the debounced
-// save), so no arriving row — save echo or foreign edit — may blow it away;
-// that would visibly revert typing. The dirty entry keeps its old save basis,
-// so its eventual save claims a version the server has moved past, is
-// rejected, and reconciles visibly through the conflict path. No silent
-// overwrite in either direction.
+// A dirty entry is the unsaved typing, so no arriving row may blow it away.
+// It keeps its old basis, so its save is rejected and reconciles visibly
+// rather than overwriting in either direction.
 func TestApplyTextEventSparesDirtyContent(t *testing.T) {
 	c := New()
 	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{
@@ -382,11 +357,9 @@ func TestApplyTextEventSparesDirtyContent(t *testing.T) {
 	}
 }
 
-// TestApplyForeignTextEventDropsCleanContent: a foreign writer's TileChanged
-// advances a text tile's row version, so a clean cached body from before that
-// version is provably stale and must drop. The next render refetches and the
-// foreign edit becomes visible; keeping the old bytes would leave the row
-// version advancing underneath them.
+// A foreign writer's advance makes a clean body provably stale, so it drops
+// and the next render refetches; keeping it would leave the row version
+// advancing underneath the bytes.
 func TestApplyForeignTextEventDropsCleanContent(t *testing.T) {
 	c := New()
 	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{
@@ -401,8 +374,8 @@ func TestApplyForeignTextEventDropsCleanContent(t *testing.T) {
 		t.Fatal("clean stale body survived a foreign edit's event — the remote change would never appear")
 	}
 
-	// A same-version event (pans and scrolls never bump version) must not
-	// evict the body; that would refetch content on every pan echo.
+	// Pans and scrolls never bump version, so a same-version event must not
+	// evict the body and refetch on every pan echo.
 	c.PutFetchedContent("10", []byte("# current"), 4)
 	c.Apply(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{TileChanged: &gridwellv1.TileChanged{
 		Tile: &gridwellv1.Tile{Id: "10", GridId: "1", Kind: rpc.KindText, Version: 4, BlobId: 8},
@@ -412,16 +385,10 @@ func TestApplyForeignTextEventDropsCleanContent(t *testing.T) {
 	}
 }
 
-// TestCaptureEventKeepsTheBodyAndStillRenders: an automatic capture — a page
-// title, a frozen jpeg, a shell's foreground command — does not bump the tile
-// version, so the event it rides carries the same version the cached body
-// derives from.
-//
-// Two things hold at once. The cached body survives, because a capture
-// changed nothing about the bytes and evicting a clean one would refetch
-// content on every freeze. And the capture still reaches the screen: the
-// event carries the whole tile, so the row — its new name, its new preview
-// blob — replaces the cached row and Apply reports a redraw.
+// A capture does not bump the version, so its event carries the version the
+// cached body derives from. Both must hold: the body survives, or every
+// freeze refetches content, and the row still replaces the cached one, so the
+// new name and preview reach the screen.
 func TestCaptureEventKeepsTheBodyAndStillRenders(t *testing.T) {
 	c := New()
 	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{
@@ -429,8 +396,6 @@ func TestCaptureEventKeepsTheBodyAndStillRenders(t *testing.T) {
 	})
 	c.PutFetchedContent("10", []byte("# the body"), 3)
 
-	// A capture on the very tile whose body is cached: same version, new
-	// name, new preview blob.
 	capture := &gridwellv1.Tile{
 		Id: "10", GridId: "1", Kind: rpc.KindText, Version: 3, BlobId: 7,
 		AltText: "captured name", PreviewBlobId: 42,
@@ -447,10 +412,8 @@ func TestCaptureEventKeepsTheBodyAndStillRenders(t *testing.T) {
 	}
 }
 
-// TestCaptureDuringAnEditKeepsTheKeystrokes is the same event arriving while
-// the user is typing. The dirty entry — the one copy of the unsaved words —
-// is untouched, and its save basis stays where it was, so the save that
-// follows still claims a version the server will accept.
+// The same event while typing: the dirty entry and its basis are untouched,
+// so the save that follows still claims a version the server accepts.
 func TestCaptureDuringAnEditKeepsTheKeystrokes(t *testing.T) {
 	c := New()
 	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{
@@ -472,10 +435,9 @@ func TestCaptureDuringAnEditKeepsTheKeystrokes(t *testing.T) {
 	}
 }
 
-// TestPutGridReconcilesContentLikeAnEvent: a grid refetch and a Subscribe
-// event are the same fact arriving on two paths, so both age cached bodies
-// identically. A PutGrid that replaced rows without touching content would
-// advance the version a save claims past the bytes it vouches for.
+// A refetch and an event are the same fact on two paths. A PutGrid that
+// replaced rows without touching content would advance the version a save
+// claims past the bytes it vouches for.
 func TestPutGridReconcilesContentLikeAnEvent(t *testing.T) {
 	c := New()
 	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{
@@ -498,12 +460,9 @@ func TestPutGridReconcilesContentLikeAnEvent(t *testing.T) {
 	}
 }
 
-// TestFetchNeverClobbersDirtyContent closes the enqueue-to-send race: a save
-// is queued with frozen bytes but claims its basis at send time. A content
-// fetch completing in that window would advance the basis under the queued
-// save — stale bytes going out under the current version — and overwrite
-// unsaved typing on screen. A fetch never replaces a dirty entry; the entry's
-// own save resolves it.
+// A save is queued with frozen bytes but claims its basis at send time, so a
+// fetch completing in that window would send stale bytes under the current
+// version. A fetch never replaces a dirty entry.
 func TestFetchNeverClobbersDirtyContent(t *testing.T) {
 	c := New()
 	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{&gridwellv1.Tile{Id: "10", GridId: "1", Kind: rpc.KindText, Version: 1}})
@@ -520,11 +479,9 @@ func TestFetchNeverClobbersDirtyContent(t *testing.T) {
 		t.Fatalf("basis = %d, want 1 — a floating basis under a queued save is the stomp re-forged", base)
 	}
 
-	// The typing's own save settles the entry clean: the response carries the
-	// entry's exact bytes, since saves post DirtyContent, so a response can
-	// only differ when newer typing landed mid-flight, which must survive. A
-	// clean entry is replaced by a fetch — that is how foreign content becomes
-	// visible.
+	// Saves post DirtyContent, so a response differs only when newer typing
+	// landed mid-flight. A clean entry is replaced by a fetch, which is how
+	// foreign content becomes visible.
 	c.PutSavedContent("10", []byte("# v1 body + local typing"), 3)
 	c.PutFetchedContent("10", []byte("# fresher"), 4)
 	if b, _ := c.TileContent("10"); string(b) != "# fresher" {
@@ -532,17 +489,12 @@ func TestFetchNeverClobbersDirtyContent(t *testing.T) {
 	}
 }
 
-// TestStaleFetchNeverRegressesContent: a content read that was in flight
-// while the user typed and an autosave completed lands last, carrying
-// pre-edit bytes read under an older version. The entry is clean the instant
-// the save response settles it, so the dirty guard does not apply. Without a
-// version guard the late reply rolls both the bytes and the basis backwards:
-// the overlay repaints the old text, the caret jumps, and the next save
-// claims a stale basis. A fetch moves the basis forward or not at all.
+// A read in flight while the user typed and an autosave completed lands last
+// with pre-edit bytes under an older version, and the entry is clean by then,
+// so the dirty guard does not apply. Without the version guard the reply
+// rolls bytes and basis backwards.
 func TestStaleFetchNeverRegressesContent(t *testing.T) {
 	c := New()
-	// The fetch goes out while no entry exists; before its reply lands the
-	// user types and the autosave confirms the bytes as version 3.
 	c.PutEditedContent("10", []byte("# draft"))
 	c.PutSavedContent("10", []byte("# draft"), 3)
 
@@ -556,8 +508,7 @@ func TestStaleFetchNeverRegressesContent(t *testing.T) {
 		t.Fatalf("basis = %d, want 3 — a regressed basis manufactures a 409 on the next save", base)
 	}
 
-	// Same-version and fresher replies still apply (idempotent refresh /
-	// foreign-writer visibility).
+	// Same-version and fresher replies still apply.
 	c.PutFetchedContent("10", []byte("# same version"), 3)
 	if b, _ := c.TileContent("10"); string(b) != "# same version" {
 		t.Fatalf("same-version fetch refused: %q", b)
@@ -568,11 +519,9 @@ func TestStaleFetchNeverRegressesContent(t *testing.T) {
 	}
 }
 
-// TestSaveBasisFollowsBytesNotRow is the interlock itself: the version a save
-// claims tracks the bytes the client has seen, never the row version foreign
-// events advance. Claiming the row version would send stale bytes under the
-// current version, straight through the server's concurrency check and over
-// the foreign edit.
+// The version a save claims tracks the bytes the client has seen, never the
+// row version foreign events advance, which would send stale bytes straight
+// through the server's concurrency check.
 func TestSaveBasisFollowsBytesNotRow(t *testing.T) {
 	c := New()
 	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{
@@ -590,8 +539,8 @@ func TestSaveBasisFollowsBytesNotRow(t *testing.T) {
 	if base, _ := c.SaveBasis("10"); base != 3 {
 		t.Fatalf("basis after local edit = %d, want 3", base)
 	}
-	// A foreign event advances the row to 7; the dirty entry's basis does not
-	// follow, because the client never saw version 7's bytes.
+	// The basis does not follow the row to 7: the client never saw those
+	// bytes.
 	c.Apply(&gridwellv1.Event{Payload: &gridwellv1.Event_TileChanged{TileChanged: &gridwellv1.TileChanged{
 		Tile: &gridwellv1.Tile{Id: "10", GridId: "1", Kind: rpc.KindText, Version: 7},
 	}}})
@@ -605,11 +554,8 @@ func TestSaveBasisFollowsBytesNotRow(t *testing.T) {
 	}
 }
 
-// TestSavedContentKeepsMidFlightTyping: the cache entry is the one owner of
-// unsaved typing, with no DOM buffer behind it, so a save response landing
-// after further keystrokes must not roll the entry back to the bytes it
-// confirmed. The newer bytes stay, still dirty; only the basis advances, so
-// the follow-up save chains.
+// The cache entry is the one owner of unsaved typing, so a response landing
+// after further keystrokes advances only the basis.
 func TestSavedContentKeepsMidFlightTyping(t *testing.T) {
 	c := New()
 	c.PutFetchedContent("10", []byte("draft"), 1)
@@ -636,9 +582,8 @@ func TestSavedContentKeepsMidFlightTyping(t *testing.T) {
 	}
 }
 
-// TestDirtyAccessors: DirtyContent answers only for entries carrying unsaved
-// edits, and DirtyTileIDs enumerates exactly those — the debounced sweep's
-// worklist, keyed by tile id rather than by whichever pane has focus.
+// The debounced sweep's worklist is keyed by tile id, not by whichever pane
+// has focus.
 func TestDirtyAccessors(t *testing.T) {
 	c := New()
 	c.PutFetchedContent("10", []byte("clean"), 1)
@@ -671,10 +616,8 @@ func TestDirtyAccessors(t *testing.T) {
 	}
 }
 
-// TestGridDeclarationsAreNilSafe pins the two declaration readers on Grid.
-// The nil receiver is the case the callers need: a renderer holding a grid it
-// has not fetched asks anyway, and "not known" answers no rather than
-// panicking or forcing every call site to spell the nil check.
+// A renderer holding an unfetched grid asks anyway, so "not known" answers no
+// rather than making every call site spell the nil check.
 func TestGridDeclarationsAreNilSafe(t *testing.T) {
 	c := New()
 	c.PutGrid(&gridwellv1.Grid{Id: "1", HostContent: true, Stale: true}, nil)
