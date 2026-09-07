@@ -5,10 +5,8 @@ import (
 	"testing"
 )
 
-// TestNewShortIDShape pins the id shape: 7 chars, lowercase base36,
-// leading letter. The leading letter is the load-bearing part — it
-// guarantees a plugin or node id can never parse as an integer, which is
-// how URL paths tell namespace segments from tile ids.
+// TestNewShortIDShape pins the id shape: 7 characters, lowercase base36,
+// leading letter, so an id never parses as an integer.
 func TestNewShortIDShape(t *testing.T) {
 	seen := map[string]bool{}
 	for i := 0; i < 1000; i++ {
@@ -35,9 +33,8 @@ func TestNewShortIDShape(t *testing.T) {
 	}
 }
 
-// TestNewUUIDStays128Bit pins that NewUUID keeps its full 128 bits: it
-// mints system.plugin_uuid, which claims global uniqueness across nodes,
-// and must not be shortened along with the plugin ids.
+// TestNewUUIDStays128Bit pins that NewUUID keeps its full 128 bits. It
+// mints system.plugin_uuid, which claims uniqueness across nodes.
 func TestNewUUIDStays128Bit(t *testing.T) {
 	id := NewUUID()
 	if len(id) != 32 {
@@ -45,12 +42,9 @@ func TestNewUUIDStays128Bit(t *testing.T) {
 	}
 }
 
-// The empty string is not a namespace segment. It is the one shape that
-// LOOKS harmless and is not: a nameless connection stanza would occupy the
-// empty segment, so "<node>//12" would peel to it and every id through it
-// would read as the node's own. Nothing legitimately validates an id it has
-// not already checked for presence, so the owner refuses it here rather than
-// leaving each caller to remember.
+// The empty string is not a namespace segment: a nameless connection stanza
+// would occupy it, so "<node>//12" would peel to it and every id through it
+// would read as the node's own.
 func TestValidateSegmentRefusesTheEmptySegment(t *testing.T) {
 	if err := ValidateSegment("connection name", ""); err == nil {
 		t.Fatal("an empty segment must be refused")

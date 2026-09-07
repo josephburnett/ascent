@@ -14,7 +14,7 @@ import (
 	"testing"
 )
 
-// TestClassifyError pins the sentinel→class mapping both transports read.
+// TestClassifyError pins the sentinel-to-class mapping both transports read.
 func TestClassifyError(t *testing.T) {
 	cases := []struct {
 		err  error
@@ -32,8 +32,7 @@ func TestClassifyError(t *testing.T) {
 		{ErrSchemaDivergence, ClassInternal},
 		{nil, ClassInternal},
 		{errors.New("anything else"), ClassInternal},
-		// Wrapped sentinels must classify like the sentinel itself — the
-		// store returns fmt.Errorf("...: %w", ErrX) shapes routinely.
+		// A wrapped sentinel classifies like the sentinel itself.
 		{fmt.Errorf("moving tile 7: %w", ErrOverlap), ClassConflict},
 		{fmt.Errorf("resolving path: %w", ErrNotFound), ClassNotFound},
 	}
@@ -44,10 +43,8 @@ func TestClassifyError(t *testing.T) {
 	}
 }
 
-// TestEverySentinelIsClassified is the drift lint: every exported Err*
-// sentinel declared in this package must appear in sentinelClasses. An
-// unclassified sentinel would silently degrade to Internal, so declaring
-// one requires classifying it or this test names the omission.
+// TestEverySentinelIsClassified pins that every exported Err* sentinel
+// appears in sentinelClasses. An unclassified one degrades to Internal.
 func TestEverySentinelIsClassified(t *testing.T) {
 	declared := declaredSentinelNames(t)
 	if len(declared) == 0 {
@@ -67,8 +64,8 @@ func TestEverySentinelIsClassified(t *testing.T) {
 	}
 }
 
-// declaredSentinelNames scans the package source for top-level
-// `ErrX = errors.New("msg")` declarations and returns name → message.
+// declaredSentinelNames returns each top-level ErrX declaration's name and
+// message, read from the package source.
 func declaredSentinelNames(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
@@ -121,8 +118,8 @@ func declaredSentinelNames(t *testing.T) map[string]string {
 	return out
 }
 
-// TestIsTransportPinsWireCodes: the three transport codes and nothing
-// else. A coded answer is never a transport failure.
+// TestIsTransportPinsWireCodes pins the three transport codes. A coded
+// answer is never a transport failure.
 func TestIsTransportPinsWireCodes(t *testing.T) {
 	for _, c := range []codes.Code{codes.Unavailable, codes.DeadlineExceeded, codes.Canceled} {
 		if !IsTransport(status.Error(c, "x")) {
