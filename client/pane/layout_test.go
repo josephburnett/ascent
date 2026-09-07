@@ -182,9 +182,7 @@ func TestClassifyRegionMinimumPaneSize(t *testing.T) {
 }
 
 func TestClassifyRegionRazorThin(t *testing.T) {
-	// A 20×100 pane has full-width resize-top + resize-bottom. The
-	// strip y∈[10,10] is degenerate (zero-width middle). Anywhere
-	// else → resize.
+	// A 20x100 pane is all resize zones: the middle strip is degenerate.
 	r := Rect{X: 0, Y: 0, W: 100, H: 20}
 	band := 10.0
 	for _, c := range []struct {
@@ -256,9 +254,8 @@ func TestDividersThicknessDefault(t *testing.T) {
 }
 
 func TestSplitClampedPosition(t *testing.T) {
-	// The clamp leaves MinPanePx (32) on each side — the same universal
-	// minimum every other sizing path enforces. A 1000x800 pane at the
-	// origin has valid Y range [32, 768] and valid X range [32, 968].
+	// The clamp leaves MinPanePx on each side, so a 1000x800 pane at the
+	// origin has valid ranges Y [32, 768] and X [32, 968].
 	pr := Rect{X: 0, Y: 0, W: 1000, H: 800}
 
 	pos, ok := SplitClampedPosition(SideTop, pr, 500, 400)
@@ -289,9 +286,7 @@ func TestSplitClampedPosition(t *testing.T) {
 	}
 }
 
-// TestMinPanePxValue pins the universal minimum: every sizing path —
-// left-drag clamp, right-drag crush threshold, split clamp, the programmatic
-// ephemeral split — reads this constant.
+// Every sizing path reads this one constant.
 func TestMinPanePxValue(t *testing.T) {
 	if MinPanePx != 32.0 {
 		t.Errorf("MinPanePx = %v, want 32", MinPanePx)
@@ -427,10 +422,8 @@ func TestDividerOnSide(t *testing.T) {
 	}
 }
 
-// A T-intersection: pane P is the bottom-right of a 200x200 root, with a
-// vertical divider on its left edge (x=100) and a horizontal one on its top
-// edge (y=100). The two belong to different tree nodes; the grab returns at
-// most one per axis.
+// A T-intersection, whose two dividers belong to different tree nodes: the
+// grab returns at most one per axis.
 func grabFixture() (Rect, []Divider) {
 	pr := Rect{X: 100, Y: 100, W: 100, H: 100}
 	vLeft := Divider{Dir: Vertical, Rect: Rect{X: 99, Y: 0, W: 2, H: 200}}
@@ -520,9 +513,8 @@ func TestGrabDividersEmptyRectAndNoDividers(t *testing.T) {
 	}
 }
 
-// The corner grab arms one resize per axis, and one axis's crush can close a
-// subtree containing the other's segment. HasSegment is what the release asks
-// before flushing a second time.
+// One axis's crush can close a subtree containing the other's segment, so the
+// release asks HasSegment before flushing a second time.
 func TestHasSegment(t *testing.T) {
 	tr := NewTree()
 	if _, err := tr.SplitOnSideAt(SideRight, 0.5); err != nil {

@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// Push/pop is the whole navigation model: a descent pushes, an ascent pops,
-// and the viewport you left a level at is simply the frame you left. There
-// is no second stack to keep in step.
+// A descent pushes and an ascent pops, and the viewport you left a level at is
+// the frame you left: no second stack to keep in step.
 func TestPushPopRestoresTheViewportYouLeft(t *testing.T) {
 	s := NewStack("home/1")
 	s.Cx, s.Cy, s.Zoom = 5, 6, 1.5
@@ -29,9 +28,8 @@ func TestPushPopRestoresTheViewportYouLeft(t *testing.T) {
 	}
 }
 
-// A frame that opens a namespace level carries its grid id; an ordinary
-// well frame does not (the grid is derived from the cache). Anchor/Path are
-// projections of that one slice.
+// A frame opening a namespace level carries its grid id; an ordinary well
+// frame derives one from the cache. Anchor and Path project that slice.
 func TestAnchorAndPathAreProjections(t *testing.T) {
 	s := NewStack("home/1")
 	s.Push(Frame{Door: "4"})
@@ -93,11 +91,9 @@ func TestAnchorPathAtEveryLevel(t *testing.T) {
 	}
 }
 
-// StackAt is the one decoder both encodings use — a URL after its id walk,
-// and a layout blob: a root grid, a path of doorways, an optional content
-// leaf. The frames it builds carry no viewport, because nothing encodes the
-// viewports a pane would ascend onto, so the ascent falls back to each grid's
-// persisted framing.
+// StackAt is the one decoder both encodings use. Its frames carry no viewport,
+// nothing encoding the ones a pane would ascend onto, so the ascent falls back
+// to each grid's persisted framing.
 func TestStackAtBuildsTheRestoredPlace(t *testing.T) {
 	s := StackAt("home/1", []string{"4", "9"}, "13")
 	if s.Depth() != 4 {
@@ -123,9 +119,8 @@ func TestHasViewMarksAnUnsavedFrame(t *testing.T) {
 	}
 }
 
-// Reset is the boot / history-restore door: the whole stack becomes one
-// frame, so a restore to a shallower place can never leave a deeper frame
-// behind to ascend into.
+// Reset makes the whole stack one frame, so a restore to a shallower place
+// leaves no deeper frame behind to ascend into.
 func TestResetClearsEveryFrame(t *testing.T) {
 	s := StackAt("home/1", []string{"4", "9"}, "13")
 	s.Reset(Frame{GridID: "other/1", Zoom: 1})

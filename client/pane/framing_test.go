@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// The framing writeback has one question: which row owns the framing of the
-// place this pane is at? The frame stack answers it — the doorway you came in
-// by, or the grid itself when you came in by nothing.
+// Which row owns the framing of the place this pane is at: the doorway you
+// came in by, or the grid itself when you came in by nothing.
 func TestFramingTargetPicksTheDoorway(t *testing.T) {
 	// A root grid: no doorway, the grid row owns it.
 	s := NewStack("home/1")
@@ -24,9 +23,8 @@ func TestFramingTargetPicksTheDoorway(t *testing.T) {
 		t.Fatalf("well = %+v", got)
 	}
 
-	// A namespace crossing: the link tile is the doorway, and it lives in
-	// the level below. The frame remembers it, so nothing has to search the
-	// parent grid for a well whose child matches the anchor.
+	// The link tile is the doorway and lives in the level below. The frame
+	// remembers it, so nothing searches the parent grid for it.
 	s.Push(Frame{GridID: "k3x9m2q/1", Door: "lnk"})
 	got = s.FramingTarget()
 	if got.TileID != "lnk" || got.DoorAnchor != "home/1" ||
@@ -67,9 +65,8 @@ func TestFramingWriters(t *testing.T) {
 	}
 }
 
-// One live surface per content tile: the opener takes over and every other
-// holder freezes, at any stack level. A pane already holding the tile is not
-// asked to close, so a keep-alive return is idempotent.
+// One live surface per content tile: the opener takes over at any stack level,
+// and is never asked to close itself, so a keep-alive return is idempotent.
 func TestTakeOverFreezesEveryOtherHolder(t *testing.T) {
 	holders := []Holder{
 		{PaneID: "p1", TileID: "u/7"},

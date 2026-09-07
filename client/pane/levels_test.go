@@ -31,10 +31,8 @@ func TestStackPushPopRestoresOuterTrees(t *testing.T) {
 	}
 }
 
-// TestPopCountTo pins the one-chain nav semantics: a crumb click goes there.
 // Level k means inside level k, so everything deeper pops and the current
-// boundary pops nothing; level 0 is the session. One verb everywhere, so the
-// bar never means two different things.
+// boundary pops nothing; level 0 is the session.
 func TestPopCountTo(t *testing.T) {
 	var s Levels
 	s.Push(Level{Name: "A"})
@@ -55,10 +53,8 @@ func TestPopCountTo(t *testing.T) {
 	}
 }
 
-// TestShouldPersistDiffsAndReadOnly: the single write decision — identical
-// bytes never write (a pure visit never mutates), a change writes once and
-// goes quiet after MarkSaved, and a read-only frame (undecodable blob) never
-// writes no matter what.
+// Identical bytes never write, a change writes once and goes quiet after
+// MarkSaved, and a read-only level never writes at all.
 func TestShouldPersistDiffsAndReadOnly(t *testing.T) {
 	f := &Level{}
 	base := []byte(`{"v":1,"a":1}`)

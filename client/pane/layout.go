@@ -1,33 +1,28 @@
 package pane
 
-// Rect is the screen-space rectangle in logical pixels — one shape, aliased
-// by client/palette.
+// Rect is the screen-space rectangle in logical pixels, one shape, aliased by
+// client/palette.
 type Rect struct {
 	X, Y, W, H float64
 }
 
-// CellPx is the renderer's base cell size at zoom 1.0 — the one copy, read
-// by the wasm renderer and palette.Default alike.
+// CellPx is the renderer's base cell size at zoom 1, the one copy.
 const CellPx = 64.0
 
-// Contains reports whether (x, y) lies inside the rectangle (half-open
-// on the right and bottom edges, like a typical raster region).
+// Contains is half-open on the right and bottom edges.
 func (r Rect) Contains(x, y float64) bool {
 	return x >= r.X && y >= r.Y && x < r.X+r.W && y < r.Y+r.H
 }
 
-// Layout walks the tree and assigns each leaf pane a screen rectangle,
-// recursively subdividing root by each Split's direction and ratio.
-//
-// The result is keyed by pane id; one entry per leaf.
+// Layout assigns each leaf pane a screen rectangle, keyed by pane id.
 func Layout(t *Tree, root Rect) map[string]Rect {
 	out := map[string]Rect{}
 	if t == nil {
 		return out
 	}
-	// A zoomed pane owns the whole rect; every other pane is absent from the
-	// layout (their overlays/views park via the missing-rect paths). A stale
-	// Zoomed id (the pane collapsed away) falls back to the normal layout.
+	// A zoomed pane owns the whole rect and every other pane is absent, so
+	// their surfaces park through the missing-rect paths. A stale Zoomed id
+	// falls back to the normal layout.
 	if t.Zoomed != "" && t.FindPane(t.Zoomed) != nil {
 		out[t.Zoomed] = root
 		return out
@@ -46,9 +41,7 @@ func layoutInto(n TreeNode, r Rect, out map[string]Rect) {
 	layoutInto(n.Split.B, b, out)
 }
 
-// SplitRect returns the two children rectangles for the given split. A
-// horizontal split divides r into top (A) / bottom (B); a vertical split
-// divides into left (A) / right (B).
+// SplitRect is the two child rectangles: A is the top or left one.
 func SplitRect(r Rect, dir Direction, ratio float64) (a, b Rect) {
 	if ratio < 0 {
 		ratio = 0
@@ -68,13 +61,9 @@ func SplitRect(r Rect, dir Direction, ratio float64) (a, b Rect) {
 	return
 }
 
-// Divider describes the band along the shared edge between the two
-// children of an internal Split. Used by the input layer to detect
-// "right-drag the divider" gestures.
-//
-// Split is the underlying split (so the caller can mutate Ratio).
-// ContainerRect is the parent split's full rectangle; the caller needs
-// it to translate cursor positions to ratios.
+// Divider is the band along the shared edge of a Split's two children. Split
+// is the underlying split, so the caller can mutate Ratio, and ContainerRect
+// is what turns a cursor position into one.
 type Divider struct {
 	Split         *Split
 	Dir           Direction
@@ -82,8 +71,7 @@ type Divider struct {
 	ContainerRect Rect
 }
 
-// Dividers returns one Divider per internal split in the tree, sized
-// `bandPx` thick. With 0 or negative bandPx, defaults to 4 px.
+// Dividers is one Divider per internal split, bandPx thick, defaulting to 4.
 func Dividers(t *Tree, root Rect, bandPx float64) []Divider {
 	if bandPx <= 0 {
 		bandPx = 4
@@ -92,7 +80,7 @@ func Dividers(t *Tree, root Rect, bandPx float64) []Divider {
 	if t == nil {
 		return out
 	}
-	// A zoomed layout has no visible boundaries: offering dividers would
+	// A zoomed layout has no visible boundaries, so offering dividers would
 	// arm resizes on invisible splits.
 	if t.Zoomed != "" && t.FindPane(t.Zoomed) != nil {
 		return out
@@ -101,13 +89,10 @@ func Dividers(t *Tree, root Rect, bandPx float64) []Divider {
 	return out
 }
 
-// DividerOnSide returns the index into divs of the divider directly adjacent
-// to paneRect on the given side, or -1 when the pane abuts the screen edge
-// with no sibling there. Adjacency: Top/Bottom needs a Horizontal divider
-// whose mid-line sits at the pane's top/bottom edge; Left/Right needs a
-// Vertical divider at the pane's left/right edge (within half a pixel).
-// Picking the wrong divider here makes a boundary resize grab an unrelated
-// split, so the match is exact and tested.
+// DividerOnSide indexes the divider adjacent to paneRect on side, or -1 when
+// the pane abuts the screen edge. Adjacency is a divider of the matching
+// orientation whose mid-line sits on that edge within half a pixel; a looser
+// match would let a boundary resize grab an unrelated split.
 func DividerOnSide(divs []Divider, paneRect Rect, side Side) int {
 	for i := range divs {
 		d := divs[i]
@@ -133,42 +118,34 @@ func DividerOnSide(divs []Divider, paneRect Rect, side Side) int {
 	return -1
 }
 
-// DividerGrab is the verdict of "which dividers does this press grab" — the
-// one decision behind arming a boundary resize. A press within the grab band
-// of a pane edge grabs the divider on that side; at a T-intersection the press
-// is inside the band of one horizontal-divider edge (top or bottom) AND one
-// vertical-divider edge (left or right), so it grabs both and the drag moves
-// both axes. There is at most one per axis: a pane has one edge per side, and
-// the two dividers meeting at a corner belong to different tree nodes.
-//
-// The zero value grabs nothing; GrabDividers is the only producer.
+// DividerGrab is which dividers a press grabs, the one decision behind arming
+// a boundary resize. At a corner the press is inside both a horizontal and a
+// vertical edge band, so it grabs both and the drag moves both axes. There is
+// at most one per axis, since a pane has one edge per side. The zero value
+// grabs nothing and GrabDividers is the only producer.
 type DividerGrab struct {
-	// HasHoriz reports that a horizontal divider — the one along the pane's
-	// top or bottom edge — is grabbed. Horiz indexes into the divs slice the
-	// grab was resolved against, and HorizSide names the edge.
+	// The horizontal divider along the pane's top or bottom edge. Horiz
+	// indexes the divs slice the grab was resolved against.
 	HasHoriz  bool
 	Horiz     int
 	HorizSide Side
-	// HasVert / Vert / VertSide are the same for the vertical divider along
-	// the pane's left or right edge.
+	// The vertical divider along the left or right edge.
 	HasVert  bool
 	Vert     int
 	VertSide Side
 }
 
-// Any reports whether the press grabs anything at all.
 func (g DividerGrab) Any() bool { return g.HasHoriz || g.HasVert }
 
-// Both reports a corner grab: one divider per axis, driven by one gesture.
+// Both is a corner grab: one divider per axis, driven by one gesture.
 func (g DividerGrab) Both() bool { return g.HasHoriz && g.HasVert }
 
-// GrabDividers decides which dividers a press at (sx, sy) inside pane rect r
-// grabs, resolved against the tree's dividers. Each axis is decided on its
-// own: the nearer of the pane's two edges on that axis wins (a tie goes to top
-// / left, matching ClassifyRegion's tiebreak), it must lie within bandPx, and a
-// divider must actually be adjacent there. One axis is the ordinary
-// single-divider resize; two is the corner, and the caller arms one resize per
-// axis rather than a gesture of its own.
+// GrabDividers decides which dividers a press at (sx, sy) in pane rect r
+// grabs. Each axis is decided on its own: the nearer of the pane's two edges
+// wins, ties going to top and left as in ClassifyRegion, it must lie within
+// bandPx, and a divider must be adjacent there. Two axes is the corner, and
+// the caller arms one ordinary resize per axis rather than a gesture of its
+// own.
 func GrabDividers(divs []Divider, r Rect, bandPx, sx, sy float64) DividerGrab {
 	var g DividerGrab
 	if r.W <= 0 || r.H <= 0 {
@@ -187,9 +164,8 @@ func GrabDividers(divs []Divider, r Rect, bandPx, sx, sy float64) DividerGrab {
 	return g
 }
 
-// nearerSide picks the closer of a pane's two edges along one axis — the near
-// one wins a tie, so the tiebreak is top over bottom and left over right — and
-// reports whether it is inside the grab band.
+// nearerSide picks the closer of a pane's two edges along one axis, the near
+// one winning a tie, and reports whether it is inside the grab band.
 func nearerSide(dNear, dFar float64, near, far Side, bandPx float64) (Side, bool) {
 	if dFar < dNear {
 		return far, dFar < bandPx
@@ -197,8 +173,8 @@ func nearerSide(dNear, dFar float64, near, far Side, bandPx float64) (Side, bool
 	return near, dNear < bandPx
 }
 
-// nearHalfPx reports whether two pixel coordinates are within half a pixel —
-// the same tolerance dragdrop.NearPx uses, inlined to keep pane dependency-free.
+// nearHalfPx is dragdrop.NearPx's tolerance, inlined to keep pane
+// dependency-free.
 func nearHalfPx(a, b float64) bool {
 	d := a - b
 	if d < 0 {
@@ -207,19 +183,11 @@ func nearHalfPx(a, b float64) bool {
 	return d < 0.5
 }
 
-// Region identifies which logical sub-area of a pane a (sx, sy) point
-// falls into. Used by the right-button input layer to dispatch swap,
-// split, and resize gestures purely from a hit test.
-//
-// The pane is conceptually divided as follows:
-//
-//   - A `bandPx`-thick frame near each edge: the four resize regions.
-//   - The inner 1/3 × 1/3 of the *whole pane*: the swap region.
-//   - The remaining annular middle, sectorized by closest edge: the
-//     four split regions.
-//
-// At small pane sizes the inner region collapses naturally: when
-// 2*bandPx ≥ W (or H), the entire pane is resize zones.
+// Region is which sub-area of a pane a point falls into, so the right-button
+// layer dispatches swap, split and resize from one hit test: a bandPx frame at
+// each edge resizes, the inner third of the whole pane swaps, and the annulus
+// between them splits by closest edge. The inner regions collapse naturally as
+// the pane shrinks.
 type Region int
 
 const (
@@ -235,7 +203,6 @@ const (
 	RegionSplitRight
 )
 
-// IsResize / IsSplit / IsSwap test the region category.
 func (r Region) IsResize() bool {
 	return r == RegionResizeTop || r == RegionResizeBottom ||
 		r == RegionResizeLeft || r == RegionResizeRight
@@ -246,9 +213,8 @@ func (r Region) IsSplit() bool {
 }
 func (r Region) IsSwap() bool { return r == RegionSwap }
 
-// Side returns the edge side of a resize/split region. Returns
-// SideTop for non-side regions (callers should test IsResize/IsSplit
-// first).
+// Side is the edge a resize or split region names, SideTop for anything else,
+// so callers test IsResize or IsSplit first.
 func (r Region) Side() Side {
 	switch r {
 	case RegionResizeTop, RegionSplitTop:
@@ -263,13 +229,8 @@ func (r Region) Side() Side {
 	return SideTop
 }
 
-// ClassifyRegion returns the region under (sx, sy) inside pane rect r.
-// Resize zones (within bandPx of any edge) take priority; then the
-// center swap zone (inner 1/3 × 1/3 of the whole pane); then the
-// outer split zone, sectorized by closest edge.
-//
-// Tiebreak when multiple edges are equidistant: top, then bottom,
-// then left, then right.
+// ClassifyRegion is the region under (sx, sy) in pane rect r, resize first,
+// then swap, then split. Equidistant edges break top, bottom, left, right.
 func ClassifyRegion(r Rect, bandPx, sx, sy float64) Region {
 	if r.W <= 0 || r.H <= 0 {
 		return RegionNone
@@ -278,7 +239,6 @@ func ClassifyRegion(r Rect, bandPx, sx, sy float64) Region {
 	db := (r.Y + r.H) - sy
 	dl := sx - r.X
 	dr := (r.X + r.W) - sx
-	// First-wins tiebreak across top/bottom/left/right.
 	minD := dt
 	side := SideTop
 	if db < minD {
@@ -305,9 +265,7 @@ func ClassifyRegion(r Rect, bandPx, sx, sy float64) Region {
 			return RegionResizeRight
 		}
 	}
-	// Center swap: inner 1/3 × 1/3 of the whole pane (not of the
-	// post-band area). Naturally collapses to nothing as the pane
-	// shrinks.
+	// The inner third of the whole pane, not of the post-band area.
 	if sx >= r.X+r.W/3 && sx < r.X+2*r.W/3 &&
 		sy >= r.Y+r.H/3 && sy < r.Y+2*r.H/3 {
 		return RegionSwap
@@ -325,24 +283,15 @@ func ClassifyRegion(r Rect, bandPx, sx, sy float64) Region {
 	return RegionNone
 }
 
-// MinPanePx is the minimum size of a pane side, universal across every way a
-// pane can acquire a size: the left-drag resize clamp, the right-drag
-// crush-to-collapse threshold, the drag-to-split clamp, and the programmatic
-// ephemeral split. One owner, so a pane below this cannot be produced by any
-// gesture. The resize band (resizeBandPx=10) is a different fact: how thick
-// the grab zone is, not how small a pane may be.
+// MinPanePx is the minimum size of a pane side, across every way a pane can
+// acquire one, so no gesture can produce a pane below it. The resize band,
+// wasm's resizeBandPx, is a different fact: how thick the grab zone is.
 const MinPanePx = 32.0
 
-// SplitClampedPosition projects the cursor onto the split's axis and
-// clamps it to the valid range. The valid range leaves at least
-// MinPanePx on each side — the universal pane minimum — so a split can
-// never produce a sub-minimum pane. The second return is false when the
-// cursor is outside the valid range (or the pane is too small to split at
-// all), letting the caller render the preview in a "won't commit" style.
-// CanSplit reports whether a pane of rect r can be split on side at all:
-// both halves need MinPanePx, so the axis must exceed twice the minimum. It
-// is the one sub-minimum rule, read by the gesture clamp
-// (SplitClampedPosition) and by programmatic splits alike.
+// CanSplit reports whether a pane of rect r can be split on side at all: both
+// halves need MinPanePx, so the axis must exceed twice it. It is the one
+// sub-minimum rule, read by SplitClampedPosition and by programmatic splits
+// alike.
 func CanSplit(side Side, r Rect) bool {
 	switch side {
 	case SideTop, SideBottom:
@@ -352,6 +301,10 @@ func CanSplit(side Side, r Rect) bool {
 	}
 }
 
+// SplitClampedPosition projects the cursor onto the split's axis and clamps it
+// to leave MinPanePx on each side. The second return is false when the cursor
+// was outside that range, or the pane is too small to split, so the caller can
+// render the preview as one that will not commit.
 func SplitClampedPosition(side Side, paneRect Rect, curX, curY float64) (float64, bool) {
 	if !CanSplit(side, paneRect) {
 		return 0, false
@@ -381,11 +334,9 @@ func SplitClampedPosition(side Side, paneRect Rect, curX, curY float64) (float64
 	return 0, false
 }
 
-// SplitRatioFromPos is the inverse of a clamped split position: given a
-// committed split on `side` of `paneRect`, it returns the ratio (in pane-
-// fraction terms) the NEW pane on that side should occupy. Top/Left put the
-// new pane in the A child measured from the near edge; Bottom/Right measure
-// from the far edge. Pairs with SplitClampedPosition (which produces `pos`).
+// SplitRatioFromPos is SplitClampedPosition's inverse: the pane fraction the
+// new pane on side occupies. Top and left measure from the near edge, bottom
+// and right from the far one.
 func SplitRatioFromPos(side Side, paneRect Rect, pos float64) float64 {
 	switch side {
 	case SideTop:
@@ -407,10 +358,8 @@ func collectDividers(n *TreeNode, r Rect, bandPx float64, out *[]Divider) {
 	a, b := SplitRect(r, n.Split.Dir, n.Split.Ratio)
 	var div Rect
 	if n.Split.Dir == Horizontal {
-		// Horizontal divider line at y = a.Y + a.H, full width.
 		div = Rect{X: r.X, Y: a.Y + a.H - bandPx/2, W: r.W, H: bandPx}
 	} else {
-		// Vertical divider at x = a.X + a.W, full height.
 		div = Rect{X: a.X + a.W - bandPx/2, Y: r.Y, W: bandPx, H: r.H}
 	}
 	*out = append(*out, Divider{

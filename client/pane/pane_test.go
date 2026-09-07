@@ -106,10 +106,8 @@ func TestCloneCarriesTextFields(t *testing.T) {
 	}
 }
 
-// TestPortalRoundTrip: crossing into another namespace pushes a frame, and
-// ascending pops it back, restoring the exact level — grid, path, viewport,
-// content descent, and the + menu. Ascending returns where you were, through
-// the one stack.
+// Crossing into another namespace pushes a frame and ascending pops it back,
+// restoring grid, path, viewport, content descent and the + menu.
 func TestPortalRoundTrip(t *testing.T) {
 	p := &Pane{ID: "p1", Stack: StackAt("db-uuid/1", []string{"3", "4"}, "9")}
 	p.Cx, p.Cy, p.Zoom = 5, 6, 1.5
@@ -154,9 +152,7 @@ func TestPortalRoundTrip(t *testing.T) {
 	}
 }
 
-// TestPoppedDoesNotTouchTheLiveStack: an animated ascent computes the place
-// it is heading for without moving the pane — the transition drives the
-// landing, then installs it.
+// An animated ascent computes where it is heading without moving the pane.
 func TestPoppedDoesNotTouchTheLiveStack(t *testing.T) {
 	p := &Pane{ID: "p1", Stack: StackAt("fs-uuid/1", []string{"3", "4"}, "")}
 	p.Cx, p.Cy, p.Zoom = 9, 9, 2
@@ -261,9 +257,8 @@ func TestSplitOnSideAtRatio(t *testing.T) {
 	cases := []struct {
 		side  Side
 		ratio float64
-		// What ratio should the resulting Split.Ratio be?
-		// SideTop/SideLeft: new pane in A, so split.Ratio = ratio.
-		// SideBottom/SideRight: new pane in B, so split.Ratio = 1 - ratio.
+		// The new pane is A for top and left, so the ratio passes through;
+		// for bottom and right it is B, so the split's ratio is 1 - ratio.
 		wantSplit float64
 	}{
 		{SideTop, 0.3, 0.3},
@@ -361,9 +356,7 @@ func TestSwapInDeepTree(t *testing.T) {
 	}
 }
 
-// TestPropertyAtLeastOnePane runs a random sequence of split/close operations
-// (close = RemoveSegment on the focused leaf, the live crush-close mechanism)
-// and asserts that the pane count never drops below 1.
+// A random sequence of splits and crush-closes never drops below one pane.
 func TestPropertyAtLeastOnePane(t *testing.T) {
 	tr := NewTree()
 	ops := []string{"split-h", "split-v", "close", "focus-other"}
@@ -418,9 +411,8 @@ func TestRelocateToFollowsTheDestination(t *testing.T) {
 	if p.ContentID() != "u2/44" || p.TextMode != "" || p.TextScrollY != 0 {
 		t.Fatalf("descent not reset onto the new tile: %+v", p.Frame)
 	}
-	// A promoted pane is a descended pane: the frame carries the viewport the
-	// descent path would have given it, so the next ascent has an overtake to
-	// compute from instead of zoom 0.
+	// A promoted pane is a descended pane, so the next ascent has an overtake
+	// to compute from instead of zoom 0.
 	if !p.HasView() || p.Cx != 5 || p.Cy != 7 || p.Zoom != 3 {
 		t.Fatalf("promoted frame carries no viewport: %+v", p.Frame)
 	}

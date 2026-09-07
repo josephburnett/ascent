@@ -1,26 +1,8 @@
 package pane
 
-// BorderColors holds the color strings BorderColor maps to. The wasm
-// renderer passes in its current palette; the function is pure and
-// entirely indifferent to which CSS colors they are.
-//
-// The grouping reflects Gridwell's color grammar:
-//
-//	Focused / FocusedFaded — any grid the user is navigating, at any depth
-//	  and in any plugin (every grid is blue). Saturated when this pane has
-//	  the keyboard / cursor focus, faded otherwise.
-//	Text / TextFaded — descent into a markdown text tile.
-//	URL / URLFaded — descent into a URL tile, frozen preview.
-//	URLLive / URLLiveFaded — descent into a URL tile with a live stream
-//	  open.
-//	Shell / ShellFaded — descent into a shell tile (bash runs outside
-//	  Gridwell's data world). Orange.
-//	Exit / ExitFaded — read-only host content (a text tile inside a source
-//	  grid). Brown, echoing the plugin well that led here.
-//	Ephemeral / EphemeralFaded — descent into an ephemeral (scratch-grid)
-//	  tile: gray, overriding the kind color, because ascending deletes the
-//	  tile, a shell's tmux session included. The border is the warning not
-//	  to start persistent work there.
+// BorderColors is the renderer's palette, one saturated and one faded string
+// per Family. The functions here are pure and indifferent to which CSS colors
+// they are.
 type BorderColors struct {
 	Focused, FocusedFaded     string
 	Text, TextFaded           string
@@ -31,71 +13,43 @@ type BorderColors struct {
 	Ephemeral, EphemeralFaded string
 }
 
-// BorderInput is everything BorderColor needs to know about a pane in
-// order to pick its outline color. Carrying a struct instead of *Pane +
-// loose flags keeps the function from depending on cache.Grid or
-// tile types — the caller resolves "is there a descended tile, and
-// what kind?" first.
+// BorderInput is what the classifier needs about a pane. It is a struct rather
+// than a *Pane so this package depends on no cache or tile types: the caller
+// resolves the descended tile and its kind first.
 type BorderInput struct {
-	// HasTextFocus mirrors "the pane's place is a content frame": this pane is
-	// descended into a content tile (text or url).
-	HasTextFocus bool
-	// DescentDepth is the pane's descent depth: greater than 0 means the
-	// pane is inside at least one well.
-	DescentDepth int
-	// TileKnown is true when the descended tile's row is in the
-	// client's cache (so TileKind is meaningful).
-	TileKnown bool
-	// TileKind is the tile kind string ("text", "url", "well", "shell",
-	// "pane"). Only consulted when TileKnown is true.
-	TileKind string
-	// Focused is true when this pane is the keyboard-focused pane in
-	// the split tree.
-	Focused bool
-	// URLLive is true when a live native view (WebContentsView) renders
-	// a Chromium tab into this pane. Only meaningful for a descent into
-	// a URL tile.
-	URLLive bool
-	// InHostGrid is true when the pane's currently-viewed grid DECLARES
-	// host_content — its rows project host state (a directory, the process
-	// table). It drives the brown Exit border for a read-only host text
-	// tile, echoing the plugin well that led here. The grid view itself is
-	// still blue: every grid is a grid.
+	HasTextFocus bool // the pane's place is a content frame
+	DescentDepth int  // greater than 0 means inside at least one well
+	TileKnown    bool // the descended row is cached, so TileKind is meaningful
+	TileKind     string
+	Focused      bool // the keyboard-focused pane in the split tree
+	URLLive      bool // a live native view renders into this pane
+	// InHostGrid is the viewed grid's declared host_content. It drives the
+	// Exit family for a read-only host text tile; the grid view itself stays
+	// FamilyGrid, because every grid is a grid.
 	InHostGrid bool
-	// Ephemeral is true when the descended tile lives in the plugin's
-	// scratch grid, so it is deleted on ascent. It overrides the kind color
-	// with gray, and is only meaningful when HasTextFocus and TileKnown.
+	// Ephemeral is the descended tile living in the scratch grid, so it is
+	// deleted on ascent. Only meaningful with HasTextFocus and TileKnown.
 	Ephemeral bool
 }
 
-// Family names the color family a pane belongs to — the one classification
-// behind Gridwell's color grammar. BorderColor picks the pane outline from
-// it, and the bottom bar picks its band and button shades from the same fact,
-// so the frame and the bar cannot disagree about what the pane is showing.
+// Family is the one classification behind the color grammar. The pane outline
+// and the bottom bar's band and buttons both derive from it, so the frame and
+// the bar cannot disagree about what the pane is showing.
 type Family int
 
 const (
-	// FamilyGrid is any grid the user is navigating, at any depth and in
-	// any plugin (every grid is blue).
-	FamilyGrid Family = iota
-	// FamilyText is a descent into a markdown text tile.
-	FamilyText
-	// FamilyURL is a descent into a URL tile, frozen preview.
-	FamilyURL
-	// FamilyURLLive is a descent into a URL tile with a live view open.
-	FamilyURLLive
-	// FamilyShell is a descent into a shell tile.
-	FamilyShell
-	// FamilyExit is a read-only host content descent (a text tile inside a
-	// host-content grid): brown, echoing the plugin well that led here.
-	FamilyExit
-	// FamilyEphemeral is a descent into an ephemeral (scratch-grid) tile:
-	// gray beats the kind color, because ascending deletes it.
+	FamilyGrid    Family = iota // any grid, at any depth, in any plugin
+	FamilyText                  // a descent into a text tile
+	FamilyURL                   // a descent into a url tile, frozen
+	FamilyURLLive               // a descent into a url tile with a live view
+	FamilyShell                 // a descent into a shell tile
+	FamilyExit                  // a read-only text tile in a host-content grid
+	// FamilyEphemeral is a descent into a scratch-grid tile. It beats the kind
+	// color, because ascending deletes the tile.
 	FamilyEphemeral
 )
 
-// FamilyOf classifies the pane by what's inside it. This is the single
-// classifier every color consumer derives from.
+// FamilyOf is the single classifier every color consumer derives from.
 func FamilyOf(s BorderInput) Family {
 	if s.HasTextFocus {
 		if s.TileKnown {
@@ -122,9 +76,7 @@ func FamilyOf(s BorderInput) Family {
 	return FamilyGrid
 }
 
-// BorderColor returns the CSS color string for the pane's outline: the
-// pane's Family, in the saturated variant when the pane has focus and the
-// faded one otherwise.
+// BorderColor is the pane's Family, saturated when the pane has focus.
 func BorderColor(s BorderInput, c BorderColors) string {
 	switch FamilyOf(s) {
 	case FamilyEphemeral:
@@ -143,7 +95,6 @@ func BorderColor(s BorderInput, c BorderColors) string {
 	return focused(s, c.Focused, c.FocusedFaded)
 }
 
-// focused returns the saturated color when the pane has focus, else the faded.
 func focused(s BorderInput, sat, faded string) string {
 	if s.Focused {
 		return sat

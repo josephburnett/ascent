@@ -119,9 +119,7 @@ func TestBorderColorUnknownKindFallback(t *testing.T) {
 }
 
 func TestBorderColorHostGridIsBlue(t *testing.T) {
-	// Viewing a host-content grid (not into a content tile) is still viewing
-	// a grid — blue like every other grid. (The read-only host *content* tiles
-	// inside it are brown; see TestBorderColorTextInHostGridIsExit.)
+	// Viewing a host-content grid is still viewing a grid.
 	in := BorderInput{
 		DescentDepth: 1,
 		InHostGrid:   true,
@@ -153,12 +151,8 @@ func TestBorderColorShellTile(t *testing.T) {
 }
 
 func TestBorderColorTextInHostGridIsExit(t *testing.T) {
-	// Descending into a text tile inside a host-content grid (e.g. the
-	// @info tile in a proc-well, or a file-metadata tile in an fs-well)
-	// keeps the red Exit color — the tile is a read-only window onto
-	// host state, not an editor, so green ("I can type here") would lie
-	// to the user. URL tiles still get the URL color because a URL
-	// inside a host grid is still a URL.
+	// A text tile inside a host-content grid is a read-only window onto host
+	// state, so the editable color would lie. A url tile in one is still a url.
 	in := BorderInput{
 		HasTextFocus: true,
 		DescentDepth: 1,
@@ -177,9 +171,7 @@ func TestBorderColorTextInHostGridIsExit(t *testing.T) {
 }
 
 func TestBorderColorURLLiveBeatsCacheMiss(t *testing.T) {
-	// Edge case: URLLive=true but TileKnown=false means we fall through
-	// to the descent blue branch (URLLive is only consulted when the
-	// kind is known to be URL). This documents and pins that behavior.
+	// URLLive is consulted only when the kind is known to be url.
 	in := BorderInput{
 		HasTextFocus: true,
 		DescentDepth: 1,
@@ -191,9 +183,8 @@ func TestBorderColorURLLiveBeatsCacheMiss(t *testing.T) {
 	}
 }
 
-// TestBorderColorEphemeralTile: an ephemeral (scratch-grid) descent is gray
-// whatever the tile kind — the border is the warning that ascent deletes the
-// tile, a shell's tmux session included.
+// An ephemeral descent is gray whatever the kind: the border is the warning
+// that ascent deletes the tile.
 func TestBorderColorEphemeralTile(t *testing.T) {
 	c := testColors()
 	for _, kind := range []string{"url", "shell"} {
@@ -214,9 +205,7 @@ func TestBorderColorEphemeralTile(t *testing.T) {
 	}
 }
 
-// TestFamilyOf pins the one classifier the border and the bottom bar both
-// derive from: kind to family, with ephemeral beating the kind and an unknown
-// tile falling back to the grid family.
+// The one classifier the border and the bottom bar both derive from.
 func TestFamilyOf(t *testing.T) {
 	cases := []struct {
 		name string

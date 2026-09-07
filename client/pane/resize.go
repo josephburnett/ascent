@@ -1,24 +1,20 @@
 package pane
 
-// Cascading ("resize-through") divider drags. Dragging a divider moves that
-// boundary line tmux-style: the pane adjacent to it compresses to its minimum
-// first, then the next pane along the axis, and so on — across same-axis
-// ancestor splits included — until the sum of minimums walls the drag.
+// Cascading divider drags. Dragging a divider compresses the pane adjacent to
+// it to its minimum first, then the next along the axis, across same-axis
+// ancestor splits included, until the sum of minimums walls the drag.
 //
-// The implementation flattens the corridor — the maximal run of same-axis
-// subtrees around the dragged boundary — into an ordered size list, moves the
-// boundary with sequential compression, and writes the sizes back as ratios.
-// Perpendicular subtrees ride along whole: their cross-size changes, their
-// internal ratios never do. Pure, and unit-tested without a canvas.
+// The corridor, the maximal run of same-axis subtrees around the boundary, is
+// flattened into an ordered size list, moved with sequential compression, and
+// written back as ratios. Perpendicular subtrees ride along whole: their
+// cross-size changes, their internal ratios never do.
 
-// CorridorWalls returns the [lo, hi] cursor bounds of target's boundary
-// drag: the positions where everything between the boundary and the
-// corridor's start (lo) or end (hi) sits at its minimum. This is the wall:
-// the same bounds ResizeThrough clamps the live drag to, and the bounds the
-// release compares the cursor against to decide a collapse, since crushing
-// past the wall is the close gesture. One owner — a release verdict that read
-// a different geometry, such as the grabbed split's own container, would
-// close panes on a legal mid-corridor release.
+// CorridorWalls is the [lo, hi] cursor bounds of target's boundary drag: where
+// everything between the boundary and each end of the corridor sits at its
+// minimum. ResizeThrough clamps to it and the release compares against it,
+// crushing past the wall being the close gesture. One owner: a release verdict
+// reading a different geometry would close panes on a legal mid-corridor
+// release.
 func CorridorWalls(root TreeNode, rootRect Rect, target *Split, minPx float64) (lo, hi float64, ok bool) {
 	top, topRect, ok := corridorTop(root, rootRect, target)
 	if !ok {
@@ -42,38 +38,26 @@ func CorridorWalls(root TreeNode, rootRect Rect, target *Split, minPx float64) (
 	return lo, hi, true
 }
 
-// crushEps absorbs float ratio noise in the pressed-past-the-bump compare
-// and widens each live threshold into a small sticky band (CrushPlan.Update):
-// a segment reds only when the cursor is strictly past the position where
-// it sits at its minimum, so a bare click (cursor at the bump of an
-// already-minimal neighbor) never closes anything.
+// crushEps widens each live threshold into a sticky band, so a segment reds
+// only strictly past its minimum position and a bare click at the bump of an
+// already-minimal neighbor closes nothing.
 const crushEps = 0.5
 
-// CrushPlan is the progressive close model: for each corridor segment outward
-// from the grabbed boundary, red state driven by a per-move threshold — the
-// position where that segment sits pressed to its minimum in the current
-// layout (its live edge plus its min). On the way in, segments beyond the
-// pressed one still hold their slack, so the bump is where the pane visibly
-// bottoms out: pressure builds as soon as you hit another border, and closing
-// a middle pane needs no travel to the screen edge. On the way out after a
-// deep multi-segment crush those outer segments sit at min, so the red clears
-// just past the wall — backing off about one minimum width leaves every
-// crushed pane at min and closes nothing.
-//
-// Thresholds read from grab-time sizes would behave differently: the adjacent
-// segment's bump would assume the outer segments still held their grab sizes,
-// so after a deep crush, clearing the red would mean retreating almost to the
-// grab point and regrowing the pane far past its min.
+// CrushPlan is the progressive close model: red state per corridor segment,
+// driven by a threshold recomputed each move as that segment's live edge plus
+// its minimum. Live thresholds mean the bump is where the pane visibly bottoms
+// out, so pressure builds at the next border and backing off about one minimum
+// width clears the red. Grab-time thresholds would instead make clearing a
+// deep crush mean retreating nearly to the grab point.
 type CrushPlan struct {
-	// ASegs: segments before the boundary, adjacent-first; BSegs mirror
-	// after the boundary. aRed/bRed is the sticky per-segment red state,
-	// folded by Update.
+	// ASegs is the segments before the boundary, adjacent-first, and BSegs
+	// mirrors it after. aRed and bRed are the sticky state Update folds.
 	ASegs, BSegs []TreeNode
 	aRed, bRed   []bool
 }
 
-// PlanCrush captures the corridor segments for target's boundary at arm. Red
-// state starts empty, so a bare click closes nothing.
+// PlanCrush captures the corridor segments at arm. Red state starts empty, so
+// a bare click closes nothing.
 func PlanCrush(root TreeNode, rootRect Rect, target *Split, minPx float64) (CrushPlan, bool) {
 	top, _, ok := corridorTop(root, rootRect, target)
 	if !ok {
@@ -96,12 +80,10 @@ func PlanCrush(root TreeNode, rootRect Rect, target *Split, minPx float64) (Crus
 }
 
 // Update folds one cursor move into the red state, reading thresholds off the
-// layout before the move is applied — call it before ResizeThrough. The
-// pre-move read is the point: while a crushed segment rides the drag at its
-// min, its live threshold tracks the boundary exactly, and only the pre-move
-// snapshot can tell "pressed deeper", which stays red, from "backed off",
-// which clears. crushEps makes each threshold a small sticky band, so
-// sub-pixel jitter never flickers the verdict.
+// layout before the move is applied, so call it before ResizeThrough. The
+// pre-move read is the point: a crushed segment at its min tracks the boundary
+// exactly, and only the pre-move snapshot separates pressed deeper from backed
+// off.
 func (cp *CrushPlan) Update(root TreeNode, rootRect Rect, target *Split, minPx, cursorPx float64) {
 	top, topRect, ok := corridorTop(root, rootRect, target)
 	if !ok {
@@ -142,9 +124,8 @@ func (cp *CrushPlan) Update(root TreeNode, rootRect Rect, target *Split, minPx, 
 	}
 }
 
-// Red returns the segments currently pressed to close — the contiguous
-// boundary-adjacent run on the pressed side. The preview and the release
-// both read this one state, so they cannot disagree.
+// Red is the contiguous boundary-adjacent run pressed to close. The preview
+// and the release read this one state, so they cannot disagree.
 func (cp *CrushPlan) Red() []TreeNode {
 	var out []TreeNode
 	for k, r := range cp.aRed {
@@ -165,9 +146,8 @@ func (cp *CrushPlan) Red() []TreeNode {
 	return out
 }
 
-// SegmentRects returns the live rects of the given corridor segments, for the
-// red close overlay. They are recomputed from current sizes, so the overlay
-// tracks the crush rather than a stale arm-time copy.
+// SegmentRects is the live rects of corridor segments, for the red overlay.
+// Recomputed from current sizes, so the overlay tracks the crush.
 func SegmentRects(root TreeNode, rootRect Rect, target *Split, want []TreeNode) []Rect {
 	top, topRect, ok := corridorTop(root, rootRect, target)
 	if !ok {
@@ -198,11 +178,9 @@ func SegmentRects(root TreeNode, rootRect Rect, target *Split, want []TreeNode) 
 	return out
 }
 
-// RemoveSegment removes a corridor segment (an arbitrary subtree) from the
-// tree, hoisting its sibling — the close half of the crush gesture. The
-// caller flushes the subtree's leaves first. Removing the whole tree is
-// refused; focus moves to a surviving leaf when it was inside the removed
-// subtree.
+// RemoveSegment removes a corridor segment and hoists its sibling: the close
+// half of the crush gesture. The caller flushes the subtree's leaves first.
+// Removing the whole tree is refused, and focus moves to a surviving leaf.
 func (t *Tree) RemoveSegment(seg TreeNode) bool {
 	if t.Root == seg {
 		return false
@@ -232,10 +210,9 @@ func (t *Tree) RemoveSegment(seg TreeNode) bool {
 	return true
 }
 
-// HasSegment reports whether a subtree is still part of the tree. A corner
-// grab arms one resize per axis, and one axis's crush verdict can close a
-// subtree that contains the other's, so the release asks before flushing:
-// a segment already gone must not be flushed or removed a second time.
+// HasSegment reports whether a subtree is still in the tree. A corner grab
+// arms one resize per axis and one axis's crush can close a subtree containing
+// the other's, so the release asks before flushing.
 func HasSegment(root TreeNode, seg TreeNode) bool {
 	if root == seg {
 		return true
@@ -246,9 +223,9 @@ func HasSegment(root TreeNode, seg TreeNode) bool {
 	return HasSegment(root.Split.A, seg) || HasSegment(root.Split.B, seg)
 }
 
-// LocateSplit returns target's current laid-out container rect within the
-// tree. It must be the live geometry: a rect captured at arm time goes stale
-// the moment a cascade moves an ancestor ratio.
+// LocateSplit is target's current laid-out container rect. It must be live: a
+// rect captured at arm time goes stale the moment a cascade moves an ancestor
+// ratio.
 func LocateSplit(root TreeNode, rootRect Rect, target *Split) (Rect, bool) {
 	var locate func(n TreeNode, r Rect) (Rect, bool)
 	locate = func(n TreeNode, r Rect) (Rect, bool) {
@@ -267,10 +244,10 @@ func LocateSplit(root TreeNode, rootRect Rect, target *Split) (Rect, bool) {
 	return locate(root, rootRect)
 }
 
-// ResizeThrough moves target's divider toward cursorPx (a coordinate along
-// target.Dir's axis), cascading compression through the corridor with each
-// leaf pane clamped to minPx. root/rootRect are the whole tree, so the
-// corridor can cross target's same-axis ancestors.
+// ResizeThrough moves target's divider toward cursorPx along target.Dir's
+// axis, cascading compression through the corridor with each leaf clamped to
+// minPx. root and rootRect are the whole tree, so the corridor can cross
+// target's same-axis ancestors.
 func ResizeThrough(root TreeNode, rootRect Rect, target *Split, cursorPx, minPx float64) {
 	lo, hi, ok := CorridorWalls(root, rootRect, target, minPx)
 	if !ok {
@@ -305,8 +282,8 @@ func ResizeThrough(root TreeNode, rootRect Rect, target *Split, cursorPx, minPx 
 		return
 	}
 
-	// Shrink one side sequentially from the boundary outward; the growth all
-	// goes to the segment adjacent to the boundary on the other side.
+	// One side shrinks outward from the boundary; all the growth goes to the
+	// adjacent segment on the other side.
 	if delta < 0 {
 		takeSequential(segs[:bIdx+1], sizes[:bIdx+1], -delta, target.Dir, minPx, true)
 		sizes[bIdx+1] += -delta
@@ -318,11 +295,10 @@ func ResizeThrough(root TreeNode, rootRect Rect, target *Split, cursorPx, minPx 
 	applySizes(topNode, target.Dir, segs, sizes)
 }
 
-// corridorTop returns target's topmost same-axis ancestor split (possibly
-// target itself) and its laid-out rect: the corridor the boundary drag can
-// reach. A perpendicular parent, or the root, ends the climb.
+// corridorTop is target's topmost same-axis ancestor split and its laid-out
+// rect: the corridor the drag can reach. A perpendicular parent, or the root,
+// ends the climb.
 func corridorTop(root TreeNode, rootRect Rect, target *Split) (*Split, Rect, bool) {
-	// Path from root to target, parents first.
 	var path []*Split
 	var find func(n TreeNode) bool
 	find = func(n TreeNode) bool {
@@ -343,16 +319,16 @@ func corridorTop(root TreeNode, rootRect Rect, target *Split) (*Split, Rect, boo
 			return nil, Rect{}, false
 		}
 	}
-	// Climb while the immediate parent splits along the same axis.
+	// path is appended on unwind, so it runs leaf to root: climb while the
+	// immediate parent splits along the same axis.
 	top := target
-	for _, parent := range path { // path is child-most last? appended on unwind → parents in leaf→root order
+	for _, parent := range path {
 		if parent.Dir == target.Dir && (parent.A.Split == top || parent.B.Split == top) {
 			top = parent
 			continue
 		}
 		break
 	}
-	// Lay out from the root to find top's rect.
 	var locate func(n TreeNode, r Rect) (Rect, bool)
 	locate = func(n TreeNode, r Rect) (Rect, bool) {
 		if n.Split == nil {
@@ -371,8 +347,8 @@ func corridorTop(root TreeNode, rootRect Rect, target *Split) (*Split, Rect, boo
 	return top, r, ok
 }
 
-// flattenCorridor lists, in axis order, the maximal subtrees of n that are
-// not same-axis splits — the corridor segments.
+// flattenCorridor lists, in axis order, the maximal subtrees of n that are not
+// same-axis splits: the corridor segments.
 func flattenCorridor(n TreeNode, dir Direction) []TreeNode {
 	if n.Split == nil || n.Split.Dir != dir {
 		return []TreeNode{n}
@@ -380,8 +356,8 @@ func flattenCorridor(n TreeNode, dir Direction) []TreeNode {
 	return append(flattenCorridor(n.Split.A, dir), flattenCorridor(n.Split.B, dir)...)
 }
 
-// segmentSizes computes each corridor segment's current size along the axis
-// by walking the same ratio tree flattenCorridor flattened.
+// segmentSizes is each corridor segment's current size along the axis, walking
+// the same ratio tree flattenCorridor flattened.
 func segmentSizes(n TreeNode, dir Direction, total float64) []float64 {
 	if n.Split == nil || n.Split.Dir != dir {
 		return []float64{total}
@@ -390,8 +366,8 @@ func segmentSizes(n TreeNode, dir Direction, total float64) []float64 {
 	return append(a, segmentSizes(n.Split.B, dir, total*(1-n.Split.Ratio))...)
 }
 
-// boundaryIndex finds the segment index the dragged boundary sits after: the
-// last segment of target.A's flattened run.
+// boundaryIndex is the segment the dragged boundary sits after: the last of
+// target.A's flattened run.
 func boundaryIndex(segs []TreeNode, target *Split) int {
 	aSegs := flattenCorridor(target.A, target.Dir)
 	last := aSegs[len(aSegs)-1]
@@ -403,10 +379,8 @@ func boundaryIndex(segs []TreeNode, target *Split) int {
 	return -1
 }
 
-// takeSequential removes `need` from the segment sizes, starting adjacent to
-// the boundary and walking outward (fromEnd walks the slice backward),
-// clamping each segment at its min. The caller guaranteed capacity via the
-// lo/hi walls.
+// takeSequential removes need from the segment sizes, outward from the
+// boundary, clamping each at its min. The lo/hi walls guaranteed the capacity.
 func takeSequential(segs []TreeNode, sizes []float64, need float64, dir Direction, minPx float64, fromEnd bool) {
 	for k := range segs {
 		if need <= 0 {
@@ -429,9 +403,8 @@ func takeSequential(segs []TreeNode, sizes []float64, need float64, dir Directio
 	}
 }
 
-// applySizes writes the segment sizes back as ratios over the same-axis tree.
 func applySizes(n TreeNode, dir Direction, segs []TreeNode, sizes []float64) {
-	var apply func(m TreeNode) float64 // returns subtree's new total extent
+	var apply func(m TreeNode) float64 // the subtree's new total extent
 	apply = func(m TreeNode) float64 {
 		if m.Split == nil || m.Split.Dir != dir {
 			for i, s := range segs {
@@ -451,9 +424,9 @@ func applySizes(n TreeNode, dir Direction, segs []TreeNode, sizes []float64) {
 	apply(n)
 }
 
-// minSize is the smallest extent a subtree can be squeezed to along dir:
-// minPx for a leaf, the sum of both children for a same-axis split, the max
-// for a perpendicular one, whose children share the extent.
+// minSize is the smallest extent a subtree can be squeezed to along dir: minPx
+// for a leaf, the sum of both children for a same-axis split, the max for a
+// perpendicular one, whose children share the extent.
 func minSize(n TreeNode, dir Direction, minPx float64) float64 {
 	if n.Split == nil {
 		return minPx
@@ -469,7 +442,6 @@ func minSize(n TreeNode, dir Direction, minPx float64) float64 {
 	return b
 }
 
-// axisSpan returns (start, extent) of r along dir's axis.
 func axisSpan(r Rect, dir Direction) (float64, float64) {
 	if dir == Horizontal {
 		return r.Y, r.H
