@@ -1,8 +1,6 @@
-// alttext.go derives alt-text for text tiles. It lives in doctype, the
-// neutral home for text-document semantics shared across the plugin seam,
-// so the store can auto-title a text tile without importing the client
-// tree. The parse dialect is GFM, matching the client renderer's parser, so
-// the derived title always agrees with what the rendered view shows.
+// alttext.go derives alt-text for text tiles, so the store can auto-title one
+// without importing the client tree. The parse dialect is GFM, matching the
+// client renderer's parser, so the derived title agrees with the rendered view.
 
 package doctype
 
@@ -15,19 +13,14 @@ import (
 	gmtext "github.com/yuin/goldmark/text"
 )
 
-// altParser parses with the same dialect the client renders, GFM. Renderer
-// options are irrelevant here; only the AST is read.
+// altParser parses with the same dialect the client renders, GFM.
 var altParser = goldmark.New(goldmark.WithExtensions(extension.GFM))
 
-// AltFromSource derives a short one-line alt-text from a markdown document:
-// the plain text of the first block, with markdown markers stripped so that
-// "# Heading" becomes "Heading", every whitespace run including newlines
-// collapsed to a single space, and the result clamped to altMaxLen runes.
-// Returns "" for empty or content-free input. The store uses it to
-// auto-title text tiles.
-//
-// Collapsing to one line matters: a code-block-first document would
-// otherwise yield a multi-line alt.
+// AltFromSource derives a short one-line alt-text from a markdown document: the
+// plain text of the first block, markers stripped so "# Heading" becomes
+// "Heading", whitespace runs collapsed to one space, clamped to altMaxLen runes.
+// It returns "" for content-free input. The single line matters, since a
+// code-block-first document would otherwise yield a multi-line alt.
 func AltFromSource(src string) string {
 	source := []byte(src)
 	root := altParser.Parser().Parse(gmtext.NewReader(source))
@@ -41,9 +34,8 @@ func AltFromSource(src string) string {
 	return ""
 }
 
-// blockPlainText is the concatenated plain text of one block-level AST node:
-// inline text and code-span text verbatim, code-block lines raw, and images
-// and everything inside them skipped.
+// blockPlainText is the concatenated plain text of one block-level AST node.
+// Images and everything inside them are skipped.
 func blockPlainText(n ast.Node, src []byte) string {
 	var b strings.Builder
 	_ = ast.Walk(n, func(c ast.Node, entering bool) (ast.WalkStatus, error) {
