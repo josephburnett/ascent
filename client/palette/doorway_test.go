@@ -16,10 +16,9 @@ func names(sw []door.Place) []string {
 	return out
 }
 
-// The whole composition, as a table. One swatch per declared doorway: a row
-// that names a grid of its own, plus every menu entry it declares. A plugin
-// names no grid of its own, so it has no row on the menu — only its
-// collections — and a plugin that declares nothing shows nothing.
+// One swatch per declared doorway: a row that names a grid of its own, plus
+// every menu entry it declares. A plugin names no grid of its own, so only
+// its collections appear, and a plugin that declares nothing shows nothing.
 func TestDoorwaysTable(t *testing.T) {
 	entry := func(id, label, grid string) rpc.MenuEntry {
 		return rpc.MenuEntry{ID: id, Label: label, GridID: grid}
@@ -93,10 +92,8 @@ func TestDoorwaysTable(t *testing.T) {
 	}
 }
 
-// Every swatch is enterable: it names a doorway, so a click has somewhere to
-// go. That is what makes "one swatch per declared doorway" the whole rule —
-// except a row the menu shows in order to report on it, which is exactly the
-// row that is not healthy.
+// Every swatch names a doorway, so a click has somewhere to go. The one
+// exception is a row the menu shows in order to report that it is unhealthy.
 func TestEverySwatchNamesADoorwayOrAFailure(t *testing.T) {
 	rows := []rpc.PluginInfo{
 		{UUID: "n1", Label: "home", RootGridID: "n1/1",
@@ -110,9 +107,8 @@ func TestEverySwatchNamesADoorwayOrAFailure(t *testing.T) {
 	}
 }
 
-// The pseudo-row of an entry carries no entries of its own: they belong to
-// the declaring row, and a second pass over them would show every collection
-// twice.
+// An entry's pseudo-row carries no entries of its own, so a second pass over
+// them cannot show every collection twice.
 func TestEntrySwatchDoesNotCarryTheRowsEntries(t *testing.T) {
 	rows := []rpc.PluginInfo{{UUID: "hey", Label: "hey", MenuEntries: []rpc.MenuEntry{
 		{ID: "imbox", Label: "Imbox", GridID: "hey/1"},

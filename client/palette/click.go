@@ -1,56 +1,41 @@
 package palette
 
-// What a BARE CLICK on a palette swatch means — press and release on the
-// swatch with no drag between them.
-//
-// A drag has an obvious destination: the cell under the cursor. A click has
-// none, so its meaning belongs to the swatch alone, and every swatch must
-// have one, including "nothing". The popover floats over a pane, and the
-// canvas underneath it is live: a click the palette does not claim reaches
-// the canvas gesture behind it and descends into, or selects, whatever tile
-// happens to sit at those coordinates. So the default is not "fall through",
-// it is ClickNothing — and the caller reads this table instead of a chain of
-// hand-written arms, where a kind added without one falls through again.
+// What a bare click on a palette swatch means: press and release on the
+// swatch with no drag between them. The popover floats over a live canvas, so
+// a click the palette does not claim reaches the gesture behind it and acts
+// on whatever tile sits at those coordinates. Every swatch therefore names a
+// behavior, and a table gives a new kind the ClickNothing default.
 
 // ClickTarget is the one behavior a bare click on a swatch runs.
 type ClickTarget int
 
 const (
-	// ClickNothing: this swatch does nothing on a click. The menu stays open
-	// and the pane is untouched. The default, and the reason this is a table:
-	// a swatch that only creates by being dragged must do NOTHING when
-	// clicked, never something the canvas behind the popover would have done.
+	// ClickNothing leaves the menu open and the pane untouched.
 	ClickNothing ClickTarget = iota
-	// ClickEnter: any doorway swatch — a node's home, a connection's far
-	// home, one of a plugin's collections — descend into the grid it names.
+	// ClickEnter descends into the grid a doorway swatch names.
 	ClickEnter
-	// ClickHere: the bar's promote crumb, which stands for the visit the pane
-	// is already showing. Clicking where you already are does nothing, but it
-	// is its own answer rather than the default, because the crumb is not a
-	// creation swatch at all.
+	// ClickHere is the bar's promote crumb, which stands for the visit the
+	// pane already shows, so a click does nothing.
 	ClickHere
-	// ClickVisit: a primitive that declares a click behavior of its own — the
-	// ephemeral visit a url or shell swatch opens without placing a tile.
+	// ClickVisit opens the ephemeral visit a url or shell swatch declares,
+	// without placing a tile.
 	ClickVisit
 )
 
-// Swatch is what a bare click reads off one palette item: which of the three
-// kinds of row it is, and — for a primitive — whether that kind declares a
-// click behavior at all. Nothing here is a coordinate: a click has no
-// destination, which is exactly why the swatch decides.
+// Swatch is what a bare click reads off one palette item. It carries no
+// coordinate, because a click has no destination.
 type Swatch struct {
-	// IsPlugin: a plugin, connection, or declared-root row.
+	// IsPlugin marks a plugin, connection or declared-root row.
 	IsPlugin bool
-	// Promote: the bar's current-visit crumb, dragged as a template.
+	// Promote marks the bar's current-visit crumb, dragged as a template.
 	Promote bool
-	// Visits: this primitive's table row declares a click behavior.
+	// Visits marks a primitive whose table row declares a click behavior.
 	Visits bool
 }
 
-// ClickOn maps a swatch to its click behavior. The order is the precedence a
-// row can carry more than one flag under: a plugin row's primitive field is
-// its zero value, and the promote crumb is spelled as a url template, so the
-// row's identity is asked for before its kind.
+// ClickOn maps a swatch to its click behavior. A row can carry more than one
+// flag, so identity is asked before kind: a plugin row's primitive fields are
+// zero, and the promote crumb is spelled as a url template.
 func ClickOn(s Swatch) ClickTarget {
 	switch {
 	case s.IsPlugin:
