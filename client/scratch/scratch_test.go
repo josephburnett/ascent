@@ -2,13 +2,10 @@ package scratch
 
 import "testing"
 
-// The regression this table exists for: an uncached grid answers UNKNOWN. The
-// deleted fallback guessed from the local plugin roster, keyed on a qualified
-// id's first segment — which for a mounted remote grid (n1/c1/…) is the local
-// node — so an uncached remote grid resolved to the LOCAL node's scratch
-// grid. Every reader then decided about the wrong node: ascent did not delete
-// the visit it should have, a visit's url state was persisted as durable, and
-// a pane could be re-anchored into the scratch grid.
+// An uncached grid answers unknown. Guessing from a qualified id's first
+// segment gives the local node for a mounted remote grid (n1/c1/…), so the
+// answer would be the local node's scratch grid and every reader would decide
+// about the wrong node.
 func TestFor(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -32,9 +29,9 @@ func TestFor(t *testing.T) {
 }
 
 func TestEphemeral(t *testing.T) {
-	// The pane stands on a mounted remote grid whose first segment is the
-	// local node id. Uncached, the only honest answer is "not known" — never
-	// the local node's scratch grid, which is what the id's shape invites.
+	// The pane stands on a mounted remote grid whose first segment is the local
+	// node id. While it is uncached the answer is not known, never the local
+	// node's scratch grid that the id's shape invites.
 	const localScratch = "n1/2"
 	remote := Grid{Cached: true, ScratchGridID: "n1/c1/2"}
 
