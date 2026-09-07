@@ -7,15 +7,15 @@ import (
 	"github.com/josephburnett/gridwell/client/pane"
 )
 
-// rig is a fake shim: it records every segment installed on a pane and every
+// rig is a fake shim recording every segment installed on a pane and every
 // landing that ran, in order.
 type rig struct {
 	set     *Set
 	entered []string
 	landed  []string
 	places  map[string]pane.Stack
-	// activeAtLanding records, per pane, what Active said while its landing
-	// ran — the question a framing write asks.
+	// activeAtLanding records what Active said for each pane while its landing
+	// ran, the question a framing write asks.
 	activeAtLanding map[string]bool
 }
 
@@ -39,8 +39,8 @@ func newRig() *rig {
 	return r
 }
 
-// descentInto is a one-leg descent whose landing is the frame push: done
-// records that the descent actually happened.
+// descentInto is a one-leg descent whose landing is the frame push. done
+// records that the descent happened.
 func descentInto(paneID, tileID string, done *bool) *Transition {
 	outer := pane.NewStack("g1")
 	return &Transition{
@@ -53,8 +53,8 @@ func descentInto(paneID, tileID string, done *bool) *Transition {
 	}
 }
 
-// A transition belongs to a pane. Starting one in pane B must not void pane
-// A's — A must still reach its own landing.
+// A transition belongs to a pane, so starting one in pane B leaves pane A's
+// alone and A still reaches its own landing.
 func TestOneTransitionPerPaneNotOnePerApp(t *testing.T) {
 	r := newRig()
 	var aDone, bDone bool
@@ -77,8 +77,8 @@ func TestOneTransitionPerPaneNotOnePerApp(t *testing.T) {
 	}
 }
 
-// A displaced transition lands: the pane arrives where it was going, and the
-// landing that pushes the frame runs, before the new one starts.
+// A displaced transition lands before the new one starts, so the pane arrives
+// where it was going and the landing that pushes the frame runs.
 func TestStartingAgainOnTheSamePaneLandsTheOutgoing(t *testing.T) {
 	r := newRig()
 	var firstDone, secondDone bool
@@ -99,13 +99,13 @@ func TestStartingAgainOnTheSamePaneLandsTheOutgoing(t *testing.T) {
 	}
 }
 
-// Cancel is the one clearing door: it installs the destination and runs the
-// landing, instead of dropping the pane on the animation's scratch state.
+// Cancel installs the destination and runs the landing instead of leaving the
+// pane on the animation's scratch state.
 func TestCancelInstallsTheDestinationAndRunsTheLanding(t *testing.T) {
 	r := newRig()
 	var done bool
 	tr := descentInto("A", "g1/7", &done)
-	// A second leg, so "the final segment" is not also the first.
+	// A second leg, so the final segment is not also the first.
 	final := pane.NewStack("g2")
 	tr.Segments = append(tr.Segments, Segment{
 		Place: &final, FromZoom: 0.5, ToZoom: 2, ToCx: 9, ToCy: 3, DurationMs: 350,
@@ -129,8 +129,8 @@ func TestCancelInstallsTheDestinationAndRunsTheLanding(t *testing.T) {
 	}
 }
 
-// Cancel installs the END of the final segment, not its start: a cancel is a
-// jump to the destination, not a snap back to where the leg began.
+// Cancel installs the end of the final segment, so it jumps to the destination
+// rather than snapping back to where the leg began.
 func TestCancelJumpsToTheEndOfTheMotion(t *testing.T) {
 	var got Segment
 	set := New(func(_ string, seg Segment) { got = seg }, func(*Transition) {})
@@ -166,8 +166,8 @@ func TestALandingSeesAPaneThatIsNoLongerAnimating(t *testing.T) {
 	}
 }
 
-// A landing that starts the next transition — a descent chained onto an
-// ascent — must not recurse into the one it came from.
+// A landing that starts the next transition, such as a descent chained onto an
+// ascent, does not recurse into the one it came from.
 func TestALandingMayStartTheNextTransition(t *testing.T) {
 	r := newRig()
 	var chained bool
@@ -188,7 +188,7 @@ func TestALandingMayStartTheNextTransition(t *testing.T) {
 	}
 }
 
-// CancelAll lands every pane; Drop lands none, because a pane that is going
+// CancelAll lands every pane. Drop lands none, because a pane that is going
 // away has nowhere to land.
 func TestCancelAllLandsEveryPaneAndDropLandsNone(t *testing.T) {
 	r := newRig()
