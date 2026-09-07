@@ -53,9 +53,7 @@ func TestDescentMidIsOvertakeAndContinuity(t *testing.T) {
 	if !near(mid.Zoom, 30) {
 		t.Errorf("mid zoom = %v, want 30", mid.Zoom)
 	}
-	// Swap has the new path with the well appended, the viewport on the
-	// well's view region, and zoom = mid.Zoom / PreviewFactor — the
-	// calibration for the unvisited fallback.
+	// Swap zoom is mid.Zoom / PreviewFactor, the unvisited calibration.
 	if len(swap.Path) != 1 || swap.Path[0] != "7" {
 		t.Errorf("swap path = %v", swap.Path)
 	}
@@ -72,12 +70,8 @@ func TestDescentMidIsOvertakeAndContinuity(t *testing.T) {
 }
 
 func TestDescentFinalReconstructsLiveZoom(t *testing.T) {
-	// The bug the round-trip fix addressed: startDescent was computing
-	// final.Zoom = ViewZoom literally, instead of ViewZoom × Overtake.
-	// Now Descent returns final itself so the caller can't get it wrong.
-	// Property: final.Zoom = ViewZoom × Overtake, for any from.Zoom
-	// (including past Overtake — final still reconstructs the saved live
-	// zoom, while swap.Zoom may differ for continuity).
+	// final.Zoom is ViewZoom × Overtake for any from.Zoom, including past
+	// Overtake, where swap.Zoom differs for continuity.
 	w := Well{ID: "1", W: 3, H: 2, ViewZoom: 0.671}
 	overtake := OvertakeZoom(w, standardPaneW, standardPaneH, cellPx)
 	wantLive := 0.671 * overtake
@@ -91,8 +85,7 @@ func TestDescentFinalReconstructsLiveZoom(t *testing.T) {
 }
 
 func TestDescentNeverZoomsOut(t *testing.T) {
-	// Caller already zoomed in past the overtake zoom: descent must not
-	// regress. mid.Zoom should be at least from.Zoom.
+	// From past the overtake zoom, mid.Zoom is at least from.Zoom.
 	from := Endpoints{Zoom: 50}
 	w := Well{W: 1, H: 1}
 	mid, _, _ := Descent(from, w, standardPaneW, standardPaneH, cellPx)
@@ -122,32 +115,24 @@ func TestAscentNeverZoomsIn(t *testing.T) {
 }
 
 func TestAscentSwitchContinuity(t *testing.T) {
-	// At the switch: child cell = cellPx * mid.Zoom; preview cell =
-	// cellPx * to.Zoom / PreviewFactor. Equal => to.Zoom = mid.Zoom *
-	// PreviewFactor.
+	// Child cell equals preview cell at the switch, so to.Zoom is
+	// mid.Zoom * PreviewFactor.
 	from := Endpoints{Path: []string{"42"}, Zoom: 5.0}
 	w := Well{ID: "42", X: 1, Y: 2, W: 2, H: 1, ViewCx: 1, ViewCy: 0.5}
 	mid, to := Ascent(from, w, nil, standardPaneW, standardPaneH, cellPx)
 	if !near(to.Zoom, mid.Zoom*PreviewFactor) {
 		t.Errorf("to.Zoom = %v, mid.Zoom*PreviewFactor = %v", to.Zoom, mid.Zoom*PreviewFactor)
 	}
-	// And the parent's viewport is centered on the well rect's center.
 	if !near(to.Cx, 2) || !near(to.Cy, 2.5) {
 		t.Errorf("to center = (%v, %v); want (2, 2.5)", to.Cx, to.Cy)
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Intrinsic-ratio helpers.
-//
-// The live zoom is ViewZoom × Overtake. Reconstructing it without the
-// Overtake factor shrinks the content by that factor on every
-// ascend-then-descend round trip.
+// Intrinsic-ratio helpers. The live zoom is ViewZoom × Overtake;
+// reconstructing it without the Overtake factor shrinks the content by that
+// factor on every round trip.
 
 func TestLiveIntrinsicAreInverses(t *testing.T) {
-	// LiveFromIntrinsic and IntrinsicFromLive must be exact inverses
-	// for any non-degenerate input. This is the single property that
-	// the whole intrinsic-ratio model relies on.
 	cases := []struct{ live, overtake float64 }{
 		{1.0, 1.0},
 		{2.98, 4.44}, // values from the original bug repro
@@ -178,8 +163,6 @@ func TestIntrinsicFromLiveGuards(t *testing.T) {
 }
 
 func TestOvertakeEquivalentWellAndDirect(t *testing.T) {
-	// The well-flavored OvertakeZoom convenience must produce the same
-	// number as a direct Overtake call.
 	w := Well{W: 3, H: 5}
 	if !near(OvertakeZoom(w, standardPaneW, standardPaneH, cellPx),
 		Overtake(3, 5, standardPaneW, standardPaneH, cellPx)) {
@@ -188,9 +171,6 @@ func TestOvertakeEquivalentWellAndDirect(t *testing.T) {
 }
 
 func TestOvertakeFillsAtLeastOneDim(t *testing.T) {
-	// At zoom = Overtake, the footprint's screen size in at least one
-	// dimension equals the reference rect (the other overflows). This
-	// is the geometric meaning of "max of dim ratios".
 	for _, c := range []struct {
 		fw, fh int64
 		rw, rh float64
@@ -203,7 +183,6 @@ func TestOvertakeFillsAtLeastOneDim(t *testing.T) {
 		z := Overtake(c.fw, c.fh, c.rw, c.rh, cellPx)
 		footW := float64(c.fw) * cellPx * z
 		footH := float64(c.fh) * cellPx * z
-		// One dimension equals the ref rect; the other ≥.
 		fillsW := near(footW, c.rw) && footH >= c.rh-1e-9
 		fillsH := near(footH, c.rh) && footW >= c.rw-1e-9
 		if !fillsW && !fillsH {
@@ -213,31 +192,19 @@ func TestOvertakeFillsAtLeastOneDim(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// Round-trip ascend→descend identity.
-//
-// This is the property that the user's bug violated. The scenario:
-// user is in a well at live zoom L0; ascends (we save ViewZoom); then
-// descends again into the same well; the reconstructed live zoom must
-// equal L0. Tested across pane sizes — preview/live state must be
-// stable across window resizes between ascent and descent.
+// Ascend at live zoom L0, descend again, and the reconstructed live zoom is
+// L0. Across pane sizes too: a window resize between ascent and descent must
+// not move the framing.
 
 func TestWellRoundTripSamePane(t *testing.T) {
-	// Same pane size at ascent and descent: live zoom must be restored
-	// exactly. Iterates a range of starting zooms to cover the case
-	// the bug fix landed on (`final.Zoom = ViewZoom × Overtake`) and
-	// edge cases (very small / very large live zoom).
 	for _, L0 := range []float64{0.5, 1.0, 2.98, 10.0, 50.0} {
 		w := Well{ID: "1", W: 3, H: 2}
 
-		// Ascend: save the intrinsic ratio that lives on the well.
 		overtake := OvertakeZoom(w, standardPaneW, standardPaneH, cellPx)
 		w.ViewZoom = IntrinsicFromLive(L0, overtake)
 
-		// Descend in the same pane: the reconstructed live zoom must
-		// equal L0. (The actual restored zoom in the application is
-		// computed as ViewZoom × overtake_now; this test guards that
-		// formula directly, independent of the Descent endpoints.)
+		// This guards the ViewZoom × overtake_now formula directly,
+		// independent of the Descent endpoints.
 		got := LiveFromIntrinsic(w.ViewZoom, OvertakeZoom(w, standardPaneW, standardPaneH, cellPx))
 		if !near(got, L0) {
 			t.Errorf("L0=%v: round trip got %v", L0, got)
@@ -246,23 +213,16 @@ func TestWellRoundTripSamePane(t *testing.T) {
 }
 
 func TestWellRoundTripAcrossPaneResize(t *testing.T) {
-	// Different pane size at descent than gridwell: live zoom necessarily
-	// changes (the well's footprint is a different number of pixels
-	// now), but the **visible child cells across the well width**
-	// must be invariant. That's the pane-independent property the
-	// intrinsic-ratio model exists to guarantee.
+	// A different pane size changes the live zoom, but the visible child
+	// cells across the well width stay invariant.
 	for _, L0 := range []float64{1.0, 2.98, 7.5} {
 		w := Well{ID: "1", W: 3, H: 2}
-		// Ascent in pane A.
 		ot1 := OvertakeZoom(w, standardPaneW, standardPaneH, cellPx)
 		w.ViewZoom = IntrinsicFromLive(L0, ot1)
-		// Visible child cells across the well width at gridwell:
-		// well footprint screen px / cellPx_screen = (W × cellPx × overtake) / (cellPx × live)
-		//                                          = W × overtake / live
-		// With live = vz × overtake, this is W / vz.
+		// Visible child cells across the well width are W × overtake /
+		// live, and with live = vz × overtake that is W / vz.
 		visibleA := float64(w.W) / w.ViewZoom
 
-		// Descent in pane B (different size).
 		ot2 := OvertakeZoom(w, 800, 1200, cellPx)
 		L1 := LiveFromIntrinsic(w.ViewZoom, ot2)
 		visibleB := float64(w.W) * ot2 / L1
@@ -274,24 +234,13 @@ func TestWellRoundTripAcrossPaneResize(t *testing.T) {
 }
 
 func TestPathSwapContinuityForIntrinsicRatio(t *testing.T) {
-	// At the path swap, the just-before previewCell (parent grid view
-	// of the well's contents) must equal the just-after liveCell
-	// (child grid native render). For ViewZoom > 0 the formulae are:
-	//   previewCell_just_before = cellPx × parentZoom × ViewZoom
-	//                            = cellPx × Overtake × ViewZoom
-	//   liveCell_just_after     = cellPx × childZoom
-	//                            = cellPx × LiveFromIntrinsic(ViewZoom, Overtake)
-	// These must be equal; that is what makes the descent feel continuous.
-	// TestDescentMidIsOvertakeAndContinuity covers the ViewZoom == 0 path,
-	// the PreviewFactor calibration; this one covers the populated-ratio
-	// path.
+	// The populated-ratio path of the swap continuity;
+	// TestDescentMidIsOvertakeAndContinuity covers ViewZoom == 0.
 	from := Endpoints{Zoom: 1}
 	for _, vz := range []float64{0.1, 0.25, 0.671, 1.0, 3.0} {
 		w := Well{ID: "1", W: 3, H: 2, ViewZoom: vz}
 		overtake := OvertakeZoom(w, standardPaneW, standardPaneH, cellPx)
 		_, swap, _ := Descent(from, w, standardPaneW, standardPaneH, cellPx)
-		// Just-before-swap parent zoom is the mid (= overtake when
-		// from.Zoom <= overtake, which holds for from.Zoom = 1 here).
 		previewCellPx := cellPx * overtake * vz
 		liveCellPx := cellPx * swap.Zoom
 		if !near(previewCellPx, liveCellPx) {
@@ -300,20 +249,13 @@ func TestPathSwapContinuityForIntrinsicRatio(t *testing.T) {
 	}
 }
 
-// ─────────────────────────────────────────────────────────────────────
-// File-side round-trip and continuity.
-//
-// Files use the same intrinsic-ratio model as wells; only the reference
-// rectangle differs (inner-box vs full pane). The tests below pin the
-// invariants at the math level so a future regression in fileLiveZoom
-// / fileEffectiveRatio (in the wasm package, not testable directly)
-// is caught by failures here when someone reaches for a shortcut.
+// Files use the same intrinsic-ratio model as wells, with the inner box as
+// the reference rect instead of the pane. These pin the invariants at the
+// math level, because fileLiveZoom and fileEffectiveRatio live in the wasm
+// package and are not testable directly.
 
 func TestFileRoundTripSamePane(t *testing.T) {
-	// Mirror of TestWellRoundTripSamePane: save & reconstruct a live
-	// TextZoom across the same pane. Uses Fit (not Overtake) because
-	// file fileOvertakeZoom calibrates against the *smaller* inner-box
-	// dim — see Fit's docstring.
+	// Fit, not Overtake: see Fit.
 	innerW, innerH := 1760.0, 920.0
 	fileOvertake := Fit(4, 3, innerW, innerH, cellPx)
 	for _, L0 := range []float64{0.5, 1.0, 1.4, 3.0} {
@@ -326,8 +268,6 @@ func TestFileRoundTripSamePane(t *testing.T) {
 }
 
 func TestFileRoundTripAcrossPaneResize(t *testing.T) {
-	// Saving at pane A and reconstructing at pane B preserves the
-	// ratio. Uses Fit for the file overtake.
 	for _, L0 := range []float64{1.0, 1.4} {
 		innerAW, innerAH := 1760.0, 920.0
 		ovA := Fit(4, 3, innerAW, innerAH, cellPx)
@@ -341,35 +281,23 @@ func TestFileRoundTripAcrossPaneResize(t *testing.T) {
 	}
 }
 
-// TestFilePreviewMatchesLiveOnAspectMismatch: a 1×1 text tile in a landscape
-// pane (innerW > innerH). In the preview, an h1 fills the tile's height at
-// the same fraction it fills the inner-box height when live — relative sizes
-// stay as the user left them, for whichever inner-box dimension the content
-// fills.
-//
-// A tile whose aspect differs from the inner box cannot preserve both width
-// and height ratios through the live-to-preview transform. Calibrating
-// against the smaller inner-box dimension (Fit, not Overtake) preserves the
-// height ratio in the landscape-pane case below, and that is the dimension
-// that bounds the user's content: a title fills the available vertical room
-// before it overflows the wider horizontal room. Width may overflow the tile
-// on the right, which the user accepts, reading from the left.
+// A tile whose aspect differs from the inner box cannot preserve both ratios
+// through the live-to-preview transform. Fit calibrates against the smaller
+// dimension, which is the one that bounds the user's content; width may
+// overflow on the right, which the user reading from the left accepts.
 func TestFilePreviewMatchesLiveOnAspectMismatch(t *testing.T) {
 	innerW, innerH := 2400.0, 1204.0
 	fileW, fileH := int64(1), int64(1)
 	const h1Px = 24.0 // logical px for h1 in markdown style
 
-	// User has TextZoom that gives a readable h1 — value doesn't
-	// matter as long as we measure fill fractions from it consistently.
 	const liveFileZoom = 23.0
 	liveHeightFill := liveFileZoom * h1Px / innerH
 
-	// Save the intrinsic ratio via the file overtake.
 	fileOvertake := Fit(fileW, fileH, innerW, innerH, cellPx)
 	stored := IntrinsicFromLive(liveFileZoom, fileOvertake)
 
-	// At any preview parent zoom, the rendered h1's fraction-of-cell-
-	// height must equal the live fraction-of-innerH.
+	// At any preview parent zoom the h1's fraction of cell height equals
+	// its live fraction of innerH.
 	for _, parentZoom := range []float64{0.5, 1.0, 2.5, 5.0} {
 		previewScale := LiveFromIntrinsic(stored, parentZoom)
 		previewH1Height := previewScale * h1Px
@@ -384,18 +312,9 @@ func TestFilePreviewMatchesLiveOnAspectMismatch(t *testing.T) {
 }
 
 func TestFileFallbackUnifiesPreviewAndLive(t *testing.T) {
-	// The file-side fallback rule (wasm-side helper fileEffectiveRatio)
-	// is: substitute IntrinsicFromLive(fileInitialZoom, fileOvertake)
-	// when stored is 0. Property under test: at the moment of descent
-	// (parent zoom = fileOvertake), the preview scale and the live
-	// TextZoom must agree — that's the path-swap continuity for
-	// unvisited files, fixed in Phase 3.
-	//
-	// Math: preview_at_overtake = overtake × ratio
-	//       live_first_descent = overtake × ratio  (when ratio =
-	//         IntrinsicFromLive(fileInitialZoom, overtake))
-	//                          = fileInitialZoom
-	// So preview at descent should literally equal fileInitialZoom.
+	// Swap continuity for an unvisited file: with the wasm-side fallback
+	// ratio IntrinsicFromLive(fileInitialZoom, overtake), the preview at
+	// descent equals fileInitialZoom.
 	for _, initialZoom := range []float64{0.5, 1.0, 1.4} {
 		for _, overtake := range []float64{2.5, 5.0, 6.875, 10.0} {
 			ratio := IntrinsicFromLive(initialZoom, overtake)
@@ -409,16 +328,14 @@ func TestFileFallbackUnifiesPreviewAndLive(t *testing.T) {
 }
 
 func TestAscentMidContinuityForIntrinsicRatio(t *testing.T) {
-	// Mirror of TestPathSwapContinuityForIntrinsicRatio for gridwell:
-	// at the switch, the just-before child cell equals the just-after
-	// preview cell. Equivalent: mid.Zoom = ViewZoom × overtake.
+	// At the switch the child cell equals the preview cell, so mid.Zoom is
+	// ViewZoom × overtake.
 	for _, vz := range []float64{0.25, 0.671, 1.0, 3.0} {
 		w := Well{ID: "1", W: 3, H: 2, ViewZoom: vz}
 		overtake := OvertakeZoom(w, standardPaneW, standardPaneH, cellPx)
 		from := Endpoints{Path: []string{"1"}, Zoom: vz * overtake}
 		mid, _ := Ascent(from, w, nil, standardPaneW, standardPaneH, cellPx)
 		want := vz * overtake
-		// Note: Ascent caps mid.Zoom at from.Zoom, so we expect equality.
 		if !near(mid.Zoom, want) {
 			t.Errorf("vz=%v: mid.Zoom=%v want %v", vz, mid.Zoom, want)
 		}
@@ -426,40 +343,32 @@ func TestAscentMidContinuityForIntrinsicRatio(t *testing.T) {
 }
 
 func TestPanDist(t *testing.T) {
-	// (3, 4) is a 3-4-5 triangle: hypot = 5. At cellPx=64, zoom=1.0,
-	// distance should be 5*64*1 = 320.
 	got := PanDist(3, 4, 1, 64)
 	if !near(got, 320) {
 		t.Errorf("3-4 at zoom 1: got %v, want 320", got)
 	}
-	// Same delta, doubled zoom: distance doubles.
 	got = PanDist(3, 4, 2, 64)
 	if !near(got, 640) {
 		t.Errorf("3-4 at zoom 2: got %v, want 640", got)
 	}
-	// Zero delta.
 	if got := PanDist(0, 0, 1.5, 64); !near(got, 0) {
 		t.Errorf("(0,0): got %v, want 0", got)
 	}
 }
 
 func TestZoomDist(t *testing.T) {
-	// log(e/1) = 1; with factor=1, cellPx=1, distance=1.
 	if got := ZoomDist(1, math.E, 1, 1); !near(got, 1) {
 		t.Errorf("1→e at unit weight: got %v, want 1", got)
 	}
-	// Symmetric: doubling vs halving the zoom should produce the same
-	// magnitude.
 	a := ZoomDist(1, 2, 64, 4)
 	b := ZoomDist(2, 1, 64, 4)
 	if !near(a, b) {
 		t.Errorf("symmetry: 1→2 = %v, 2→1 = %v", a, b)
 	}
-	// Same start and end: zero motion.
 	if got := ZoomDist(1.5, 1.5, 64, 4); !near(got, 0) {
 		t.Errorf("identity: got %v, want 0", got)
 	}
-	// Degenerate (non-positive) inputs: zero, not NaN/-Inf.
+	// Degenerate inputs give zero, not NaN or -Inf.
 	if got := ZoomDist(0, 1, 64, 4); got != 0 {
 		t.Errorf("z1=0: got %v, want 0", got)
 	}
@@ -474,8 +383,6 @@ func TestZoomDist(t *testing.T) {
 func TestWheelZoom(t *testing.T) {
 	const base, zmin, zmax = 1.1, 0.25, 8.0
 
-	// Zoom in (deltaY<0) toward the cursor: zoom grows, center moves toward
-	// the cursor world point.
 	z, cx, cy := WheelZoom(-100, 1.0, 0, 0, 10, 10, base, zmin, zmax)
 	if z <= 1.0 {
 		t.Errorf("scroll up should zoom in: z=%v", z)
@@ -484,36 +391,29 @@ func TestWheelZoom(t *testing.T) {
 		t.Errorf("center should move toward cursor (0<c<10): cx=%v cy=%v", cx, cy)
 	}
 
-	// Zoom out (deltaY>0): zoom shrinks.
 	z, _, _ = WheelZoom(100, 1.0, 0, 0, 10, 10, base, zmin, zmax)
 	if z >= 1.0 {
 		t.Errorf("scroll down should zoom out: z=%v", z)
 	}
 
-	// Step cap: a huge delta is capped at ±0.5 step, so the factor equals
-	// base^(-0.5*4) = base^-2 regardless of how big the delta is.
+	// A huge delta caps at ±0.5 step, so the factor is base^-2.
 	zCapped, _, _ := WheelZoom(1e9, 1.0, 0, 0, 0, 0, base, zmin, zmax)
 	if !near(zCapped, math.Pow(base, -2)) {
 		t.Errorf("step cap: z=%v want %v", zCapped, math.Pow(base, -2))
 	}
 
-	// Clamp at max: zoom can't exceed zmax and the center doesn't drift when
-	// the clamp pins zoom unchanged.
+	// A pinned zoom leaves the center where it was.
 	z, cx, cy = WheelZoom(-1e9, zmax, 3, 4, 10, 10, base, zmin, zmax)
 	if z != zmax || cx != 3 || cy != 4 {
 		t.Errorf("clamped at max: z=%v c=(%v,%v), want %v (3,4)", z, cx, cy, zmax)
 	}
-	// Clamp at min.
 	z, _, _ = WheelZoom(1e9, zmin, 0, 0, 0, 0, base, zmin, zmax)
 	if z != zmin {
 		t.Errorf("clamped at min: z=%v want %v", z, zmin)
 	}
 }
 
-// TestFramingRoundTripIsByteIdentical: leaving a grid and coming back stores
-// exactly what was stored before. A descent reads the stored framing
-// (StoredView), the user touches nothing, and the ascent recomputes what to
-// store from the live viewport; the two agree bit for bit at any center,
+// A descent and an untouched ascent agree bit for bit at any center,
 // sub-cell centers included. Quantizing the center to whole cells would drift
 // a full cell per odd-sized round trip.
 func TestFramingRoundTripIsByteIdentical(t *testing.T) {
@@ -523,34 +423,27 @@ func TestFramingRoundTripIsByteIdentical(t *testing.T) {
 		{X: 0, Y: 0, W: 1, H: 1, ViewCx: 0.5, ViewCy: 0.5, ViewZoom: 1.0 / PreviewFactor},
 		{X: 9, Y: 9, W: 3, H: 5, ViewCx: -0.0001, ViewCy: 1e6 + 0.5, ViewZoom: 0.9},
 	} {
-		// Descend: this is the live viewport the pane lands on.
 		cx, cy, live := StoredView(w, paneW, paneH, cell)
-		// Ascend without touching anything: the persister converts the
-		// live zoom back to the stored intrinsic ratio and keeps the
-		// center as-is.
 		gotZoom := IntrinsicFromLive(live, OvertakeZoom(w, paneW, paneH, cell))
 		if cx != w.ViewCx || cy != w.ViewCy {
 			t.Errorf("round trip moved the center: %+v → (%v, %v)", w, cx, cy)
 		}
-		// The zoom goes through one multiply and one divide, so it can
-		// come back a single ulp off (0.9 → 0.8999999999999999). That is
-		// far inside the persister's no-op guard (rpc.Framing.SameAs,
-		// 1e-3), so an untouched round trip still writes NOTHING — the
-		// stored bytes are the ones the user left.
+		// One multiply and one divide can return a single ulp off, far
+		// inside the persister's no-op guard (rpc.Framing.SameAs, 1e-3),
+		// so an untouched round trip writes nothing.
 		if math.Abs(gotZoom-w.ViewZoom) > 1e-12 {
 			t.Errorf("round trip changed the zoom: %v → %v", w.ViewZoom, gotZoom)
 		}
 	}
 }
 
-// WellWheelView: the hover-wheel zoom on a well's preview.
 func TestWellWheelViewAnchorsAtCursor(t *testing.T) {
 	w := Well{X: 0, Y: 0, W: 2, H: 2, ViewCx: 5, ViewCy: 7, ViewZoom: 0.25}
 	const parentCell = 64.0
 	cx0, cy0 := w.ViewCx, w.ViewCy
 
-	// Cursor at the well center: zoom in; the view center must not move
-	// (the anchor is the point under the cursor).
+	// The anchor is the point under the cursor, so a cursor at the well
+	// center moves nothing.
 	cx1, cy1, r1, changed := WellWheelView(-120, w, parentCell, 0, 0, cx0, cy0, 1.1, 1.0/64, 1.0)
 	if !changed || r1 <= 0.25 {
 		t.Fatalf("wheel-in: ratio = %v changed=%v, want a larger ratio", r1, changed)
@@ -559,9 +452,7 @@ func TestWellWheelViewAnchorsAtCursor(t *testing.T) {
 		t.Errorf("center-anchored zoom moved the center: (%v, %v) -> (%v, %v)", cx0, cy0, cx1, cy1)
 	}
 
-	// Cursor off-center: the child point under the cursor stays exactly
-	// under the cursor — float in, float out, with no per-notch
-	// quantization to eat the drift.
+	// Float in, float out: no per-notch quantization eats the drift.
 	const dx = 40.0
 	cx1, cy1, r1, changed = WellWheelView(-120, w, parentCell, dx, 0, cx0, cy0, 1.1, 1.0/64, 1.0)
 	if !changed {
@@ -580,10 +471,8 @@ func TestWellWheelViewAnchorsAtCursor(t *testing.T) {
 		t.Errorf("no vertical cursor offset, but the center moved: %v -> %v", cy0, cy1)
 	}
 
-	// Drift compounds across a burst: each notch feeds the previous float
-	// center back in, so N notches toward a corner keep moving the center.
-	// Per-notch integer quantization would round every step back to the
-	// start.
+	// Each notch feeds the previous float center back in, so a burst keeps
+	// moving; integer quantization would round every step back to the start.
 	ww := w
 	ccx, ccy := cx0, cy0
 	for i := 0; i < 4; i++ {
@@ -599,10 +488,8 @@ func TestWellWheelViewAnchorsAtCursor(t *testing.T) {
 	}
 }
 
-// StoredView must be exactly the framing Descent's final lands on — one
-// conversion, two readers (the descent transition and the reload-safe
-// ascent/boot fallbacks); a drift between them would make "come back
-// later" land differently than "descend now".
+// One conversion, two readers: a drift between StoredView and Descent's final
+// would make coming back later land differently than descending now.
 func TestStoredViewMatchesDescentFinal(t *testing.T) {
 	wells := []Well{
 		{X: 2, Y: 3, W: 2, H: 2, ViewCx: 6, ViewCy: 8, ViewZoom: 0.4},
@@ -620,13 +507,10 @@ func TestStoredViewMatchesDescentFinal(t *testing.T) {
 	}
 }
 
-// A never-visited doorway frames the middle of its child's origin cell, not
-// the corner. Reading ViewCx and ViewCy raw would drop that half-footprint
-// and slide every unvisited grid up and left: cell (0,0)'s corner would land
-// at the pane center, half a screen-cell off, and cells would fall out of the
-// pane.
+// A never-visited doorway frames the middle of its child's origin cell.
+// Reading ViewCx and ViewCy raw would slide every unvisited grid up and left
+// by half a footprint.
 func TestNeverVisitedFramingCentersTheFootprint(t *testing.T) {
-	// Footprint 3x2, nothing stored (ViewZoom 0 = never visited).
 	w := Well{ID: "1", X: 4, Y: 2, W: 3, H: 2}
 	if cx, cy := EffectiveCenter(w); !near(cx, 1.5) || !near(cy, 1) {
 		t.Errorf("EffectiveCenter = (%v, %v), want (1.5, 1)", cx, cy)
@@ -648,15 +532,13 @@ func TestNeverVisitedFramingCentersTheFootprint(t *testing.T) {
 		t.Errorf("Ascent mid center = (%v, %v), want (1.5, 1)", mid.Cx, mid.Cy)
 	}
 
-	// The plugin/connection root case: a 1x1 synthetic doorway
-	// (rpc.PluginWellTile) frames the middle of child cell (0,0).
+	// A 1x1 synthetic doorway frames the middle of child cell (0,0).
 	if cx, cy := EffectiveCenter(Well{W: 1, H: 1}); !near(cx, 0.5) || !near(cy, 0.5) {
 		t.Errorf("root doorway center = (%v, %v), want (0.5, 0.5)", cx, cy)
 	}
 
-	// A VISITED doorway keeps exactly what it stored — including a center
-	// of literally (0,0), which the sentinel must not mistake for unvisited
-	// (the guiding rule: a framing the user set never moves).
+	// A visited doorway keeps a stored center of (0,0), which the sentinel
+	// must not mistake for unvisited.
 	v := Well{W: 3, H: 2, ViewZoom: 0.4}
 	if cx, cy := EffectiveCenter(v); cx != 0 || cy != 0 {
 		t.Errorf("visited center = (%v, %v), want (0, 0)", cx, cy)
