@@ -1,9 +1,31 @@
 .PHONY: build bin plugins wasm fmt-check proto-check check check-electron check-e2e check-web check-connections serve clean launch vendor dist node-modules
 
-BIN := ./gridwell
-# Built plugin binaries — the plugins target below and clean
-# must agree; this is the one list.
-ALL_PLUGIN_BIN := ./gridwell-plugin-fs ./gridwell-plugin-proc ./gridwell-plugin-gitlab ./gridwell-plugin-pages ./gridwell-plugin-hey ./gridwell-plugin-gmail
+# Every plugin kind with a binary in $(PLUGINS_DIR). This is the one list:
+# `plugins` builds from it and `clean` removes from it.
+ALL_PLUGIN_KINDS := fs proc gitlab pages hey gmail
+
+# HOST_GOOS is what this machine builds for. It is a question, not a switch:
+# the release builds run on native runners, one per OS, so nothing here
+# cross-compiles a distribution.
+HOST_GOOS := $(shell go env GOOS)
+
+ifeq ($(HOST_GOOS),windows)
+# Windows names a built binary <name>.exe; internal/cli/serve.go's
+# exeSuffixFor and apps/desktop/src/main/paths.ts are the loader's side of
+# the same fact.
+EXE := .exe
+# proc reads /proc. It is a unix plugin by design, so the Windows build
+# ships without it rather than shipping one that can never answer.
+PLUGIN_KINDS := $(filter-out proc,$(ALL_PLUGIN_KINDS))
+else
+EXE :=
+PLUGIN_KINDS := $(ALL_PLUGIN_KINDS)
+endif
+
+BIN := ./gridwell$(EXE)
+# clean removes every kind, whatever this host builds, so switching hosts in
+# one checkout leaves nothing behind.
+ALL_PLUGIN_BIN := $(addsuffix $(EXE),$(addprefix ./gridwell-plugin-,$(ALL_PLUGIN_KINDS)))
 
 # The plugins live in their own repository — gridwell owns the door, the
 # plugins repo owns the plugins. PLUGINS_DIR is the one place that says where
@@ -39,7 +61,7 @@ build: bin plugins wasm
 # copy them anywhere and the browser client serves from the binary itself.
 # bin depends on wasm so the embed always carries the current client.
 bin: wasm
-	cd apps/gridwell && CGO_ENABLED=0 go build -o ../../gridwell .
+	cd apps/gridwell && CGO_ENABLED=0 go build -o ../../gridwell$(EXE) .
 
 # Phony so a source change always rebuilds (Go's build cache keeps it fast);
 # file-target rules would skip the build whenever the binary already existed.
@@ -52,12 +74,10 @@ plugins:
 		echo "(or point PLUGINS_DIR at an existing checkout)"; \
 		exit 1; \
 	}
-	cd $(PLUGINS_DIR)/fs && CGO_ENABLED=0 go build -o $(CURDIR)/gridwell-plugin-fs ./cmd/gridwell-plugin-fs
-	cd $(PLUGINS_DIR)/proc && CGO_ENABLED=0 go build -o $(CURDIR)/gridwell-plugin-proc ./cmd/gridwell-plugin-proc
-	cd $(PLUGINS_DIR)/gitlab && CGO_ENABLED=0 go build -o $(CURDIR)/gridwell-plugin-gitlab ./cmd/gridwell-plugin-gitlab
-	cd $(PLUGINS_DIR)/pages && CGO_ENABLED=0 go build -o $(CURDIR)/gridwell-plugin-pages ./cmd/gridwell-plugin-pages
-	cd $(PLUGINS_DIR)/hey && CGO_ENABLED=0 go build -o $(CURDIR)/gridwell-plugin-hey ./cmd/gridwell-plugin-hey
-	cd $(PLUGINS_DIR)/gmail && CGO_ENABLED=0 go build -o $(CURDIR)/gridwell-plugin-gmail ./cmd/gridwell-plugin-gmail
+	@set -e; for k in $(PLUGIN_KINDS); do \
+		echo "cd $(PLUGINS_DIR)/$$k && go build -o $(CURDIR)/gridwell-plugin-$$k$(EXE)"; \
+		(cd $(PLUGINS_DIR)/$$k && CGO_ENABLED=0 go build -o $(CURDIR)/gridwell-plugin-$$k$(EXE) ./cmd/gridwell-plugin-$$k); \
+	done
 
 # The .gz sidecar rides along: the server serves it with
 # Content-Encoding: gzip when the client accepts it (staticOrSPA's

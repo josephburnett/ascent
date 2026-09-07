@@ -22,10 +22,15 @@ export function sidecarBinary(): string {
   const env = process.env.GRIDWELL_SIDECAR;
   if (env && fs.existsSync(env)) return env;
 
-  const packaged = path.join(process.resourcesPath ?? '', 'gridwell');
+  // Windows names a built binary gridwell.exe. The Go side owns the same
+  // fact in internal/cli/serve.go (exeSuffixFor), where it resolves the
+  // plugin binaries, and the Makefile lays the files out to match.
+  // GRIDWELL_SIDECAR is a full path, so no suffix applies to it.
+  const name = process.platform === 'win32' ? 'gridwell.exe' : 'gridwell';
+  const packaged = path.join(process.resourcesPath ?? '', name);
   if (fs.existsSync(packaged)) return packaged;
 
-  const dev = path.join(repoRoot(), 'gridwell');
+  const dev = path.join(repoRoot(), name);
   return dev;
 }
 

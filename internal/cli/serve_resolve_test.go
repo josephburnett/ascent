@@ -36,3 +36,27 @@ func TestKindsResolvePluginBinaries(t *testing.T) {
 		t.Fatalf("a missing plugin binary must be named: %v", err)
 	}
 }
+
+// What a built binary looks like on disk is two platform facts, and both are
+// pure functions of GOOS so the Windows answers are checkable from a Linux
+// dev box — the release builds for Windows and nobody runs the suite there.
+// Get either wrong and every plugin is unresolvable on the Windows artifact,
+// which no test on this host would otherwise see.
+func TestBinaryShapePerPlatform(t *testing.T) {
+	for _, tc := range []struct {
+		goos   string
+		suffix string
+		bit    bool
+	}{
+		{"windows", ".exe", false},
+		{"linux", "", true},
+		{"darwin", "", true},
+	} {
+		if got := exeSuffixFor(tc.goos); got != tc.suffix {
+			t.Errorf("exeSuffixFor(%q) = %q, want %q", tc.goos, got, tc.suffix)
+		}
+		if got := execBitRequiredOn(tc.goos); got != tc.bit {
+			t.Errorf("execBitRequiredOn(%q) = %v, want %v", tc.goos, got, tc.bit)
+		}
+	}
+}

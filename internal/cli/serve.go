@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -111,10 +112,32 @@ func buildServeConfig(home, cfgPath string) (*config.ServerConfig, error) {
 	return node.BuildConfig(home, cfgPath)
 }
 
+// exeSuffixFor and execBitRequiredOn are the two platform facts about what a
+// built binary looks like on disk, taken as pure functions of GOOS so they
+// can be tested from any host — the release builds for Windows, and nobody
+// runs the suite there.
+//
+// exeSuffixFor is also what the Makefile's plugins target lays the files out
+// with, so the loader and the build agree without either consulting the
+// other.
+func exeSuffixFor(goos string) string {
+	if goos == "windows" {
+		return ".exe"
+	}
+	return ""
+}
+
+// Windows has no execute bit — os.Stat reports 0666 or 0444 for every
+// regular file — so the .exe extension is the whole fact there. Testing the
+// unix bits would reject every plugin binary that exists.
+func execBitRequiredOn(goos string) bool { return goos != "windows" }
+
 // resolveBinary finds a plugin binary, gridwell-plugin-<kind>: through
 // GRIDWELL_PLUGIN_DIR, then beside the running gridwell executable, which
-// is how make lays them out, then on PATH.
+// is how make lays them out, then on PATH. On Windows the file on disk is
+// gridwell-plugin-<kind>.exe.
 func resolveBinary(name string) (string, error) {
+	name += exeSuffixFor(runtime.GOOS)
 	var tried []string
 	if dir := os.Getenv("GRIDWELL_PLUGIN_DIR"); dir != "" {
 		p := filepath.Join(dir, name)
@@ -138,7 +161,13 @@ func resolveBinary(name string) (string, error) {
 
 func isExecutable(path string) bool {
 	info, err := os.Stat(path)
-	return err == nil && !info.IsDir() && info.Mode()&0o111 != 0
+	if err != nil || info.IsDir() {
+		return false
+	}
+	if !execBitRequiredOn(runtime.GOOS) {
+		return true
+	}
+	return info.Mode()&0o111 != 0
 }
 
 // resolvePluginBinaries fills each entry's binary: every kind spawns
