@@ -355,3 +355,71 @@ func TestFSPluginSweepRemovesOnlyTheDead(t *testing.T) {
 		t.Fatalf("the arranged survivor drifted: %+v", s)
 	}
 }
+
+// TestFSPluginTextViewPersists: a read-only host file's scroll position and
+// mode are node facts, and the fs stack keeps them. The client used to skip
+// posting SetTextView for a plugin-owned text tile because the pre-plugin fs
+// refused the write (#236); this pins the answer the client now relies on, at
+// the seam where it would change — the real binary, the adapter, the store.
+//
+// Framing carries no version claim, so the write must not bump the tile's
+// version: what the user's bytes are has not changed.
+func TestFSPluginTextViewPersists(t *testing.T) {
+	root := seedTree(t)
+	v2 := pluginNode(t, root)
+	ctx := context.Background()
+	pl, err := v2.Handshake(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootGrid := pl.Plugins[0].RootGridID
+	g, err := v2.GetGrid(ctx, rootGrid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g.Grid.Writable {
+		t.Fatal("the fs root grid answered writable: this test is about a READ-ONLY host tile")
+	}
+	var notes rpc.Tile
+	for _, tile := range g.Tiles {
+		if tile.AltText == "notes.md" {
+			notes = tile
+		}
+	}
+	if notes.ID == "" || notes.Kind != rpc.KindText {
+		t.Fatalf("no read-only notes.md text tile: %+v", notes)
+	}
+	if _, err := v2.SetTextView(ctx, &rpc.SetTextViewRequest{
+		TileID: notes.ID, TextX: 12, TextY: 340, TextW: 600, TextH: 400,
+		TextMode: rpc.TextModeRendered,
+	}); err != nil {
+		t.Fatalf("the fs stack refused text framing for a read-only file: %v", err)
+	}
+	held, err := v2.GetTile(ctx, notes.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if held.TextX != 12 || held.TextY != 340 || held.TextW != 600 || held.TextH != 400 ||
+		held.TextMode != rpc.TextModeRendered {
+		t.Fatalf("text framing did not persist: %+v", held)
+	}
+	if held.Version != notes.Version {
+		t.Fatalf("framing bumped the version %d -> %d: framing claims no content bytes",
+			notes.Version, held.Version)
+	}
+	// And it survives a fresh listing, which is the read a re-descent makes.
+	g, err = v2.GetGrid(ctx, rootGrid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tile := range g.Tiles {
+		if tile.AltText != "notes.md" {
+			continue
+		}
+		if tile.TextY != 340 || tile.TextMode != rpc.TextModeRendered {
+			t.Fatalf("the listing lost the framing: %+v", tile)
+		}
+		return
+	}
+	t.Fatal("notes.md vanished from the listing")
+}
