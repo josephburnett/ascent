@@ -17,31 +17,24 @@ import (
 	"github.com/creack/pty"
 )
 
-// Session is one live PTY. Output reads bytes from the PTY, what the user
-// sees on screen; Write sends keystrokes into the process's stdin; Resize
-// updates the PTY window size when the pane resizes; Close terminates the
-// process group cleanly.
-//
-// All methods are safe to call concurrently. Methods that need the PTY after
-// Close has run return an error rather than panicking on a torn-down file
-// descriptor.
-
-// outputBufferFrames is the depth of the internal PTY-output channel. It is
-// set high enough that a short gap between detach and re-attach during a
-// takeover does not drop output. When full, the pump goroutine blocks on the
-// PTY read, which back-pressures the process; that is correct over silently
-// dropping bytes that may form part of an ANSI escape sequence.
+// outputBufferFrames is the depth of the internal PTY-output channel, deep
+// enough that the detach-to-reattach gap of a takeover drops no output. When
+// it is full the pump goroutine blocks on the PTY read, which back-pressures
+// the process; dropping bytes could truncate an ANSI escape sequence.
 const outputBufferFrames = 64
 
+// Session is one live PTY. All methods are safe to call concurrently, and one
+// that needs the PTY after Close has run returns an error rather than
+// panicking on a torn-down file descriptor.
 type Session struct {
 	cmd  *exec.Cmd
 	ptmx *os.File
 	pid  int
 
-	// outCh is the single drain point for PTY bytes. Exactly one internal
-	// pump goroutine writes to it, and one subscriber at a time reads from
-	// it. The takeover protocol needs a cancel-safe select on this channel,
-	// which a blocking PTY Read could not satisfy.
+	// outCh is the single drain point for PTY bytes: one internal pump
+	// goroutine writes to it and one subscriber at a time reads from it. The
+	// takeover protocol needs a cancel-safe select on this channel, which a
+	// blocking PTY Read could not satisfy.
 	outCh chan []byte
 
 	closeOnce sync.Once
@@ -50,9 +43,8 @@ type Session struct {
 	exitErr   error
 }
 
-// Start launches a bash session under the given Config. Returns
-// immediately once exec succeeds and the PTY is ready; the caller then
-// reads/writes against the returned Session.
+// Start launches a bash session under the given Config. It returns as soon as
+// exec succeeds and the PTY is ready.
 func Start(cfg Config) (*Session, error) {
 	if cfg.Cols == 0 || cfg.Rows == 0 {
 		return nil, fmt.Errorf("shelldriver: cols and rows must be > 0 (got %dx%d)", cfg.Cols, cfg.Rows)
@@ -71,17 +63,16 @@ func Start(cfg Config) (*Session, error) {
 	if cfg.Env != nil {
 		cmd.Env = cfg.Env
 	} else {
-		// Make sure TERM is something sensible so bash's prompt
-		// rendering isn't completely flat. xterm-256color is what
-		// xterm.js claims on the client.
+		// Default TERM to what xterm.js claims on the client, so bash's
+		// prompt rendering is not flat.
 		env := append([]string{}, os.Environ()...)
 		if os.Getenv("TERM") == "" {
 			env = append(env, "TERM=xterm-256color")
 		}
 		cmd.Env = env
 	}
-	// Detach into a fresh process group so SIGINT/SIGTSTP from the
-	// parent terminal aren't forwarded; we manage signals ourselves.
+	// Detach into a fresh process group so the parent terminal's SIGINT and
+	// SIGTSTP are not forwarded. Close does the signalling instead.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true}
 	ptmx, err := pty.StartWithSize(cmd, &pty.Winsize{
 		Cols: cfg.Cols,
@@ -102,23 +93,19 @@ func Start(cfg Config) (*Session, error) {
 	return s, nil
 }
 
-// Output returns the channel of PTY-output byte chunks. Each chunk is
-// a fresh slice owned by the receiver — no aliasing of an internal
-// buffer. The channel is closed when the bash process has exited or
-// Close has run, so a `for chunk := range s.Output() {}` loop
-// terminates naturally.
+// Output returns the channel of PTY-output byte chunks. Each chunk is a fresh
+// slice owned by the receiver, aliasing no internal buffer. The channel is
+// closed once the bash process has exited or Close has run, so a range loop
+// over it terminates.
 //
-// After Close, chunks the PTY produced before the fd closed — a startup
-// prompt, say — may still be delivered before the channel closes: the pump's
-// cancellable send races the consumer's receive, and dropping or delivering
-// an already-produced chunk are both correct. Consumers must therefore drain
-// to close and never assume the next receive after Close is the close
-// itself.
+// After Close, chunks the PTY produced before the fd closed, a startup prompt
+// for instance, may still arrive before the channel closes, because the pump's
+// cancellable send races the consumer's receive. Consumers must drain to close
+// and never assume the next receive after Close is the close itself.
 func (s *Session) Output() <-chan []byte { return s.outCh }
 
-// pump is the single PTY reader. Runs until the master fd reports EOF
-// (i.e., bash has exited or Close has closed the fd), at which point
-// the output channel is closed so range loops exit.
+// pump is the single PTY reader. It runs until the master fd reports EOF,
+// meaning bash exited or Close closed the fd, then closes the output channel.
 func (s *Session) pump() {
 	defer close(s.outCh)
 	buf := make([]byte, 4096)
@@ -128,14 +115,14 @@ func (s *Session) pump() {
 			chunk := make([]byte, n)
 			copy(chunk, buf[:n])
 			// Cancellable send. A plain `outCh <- chunk` would wedge this
-			// goroutine forever if outCh is full and nobody is draining it —
-			// a takeover gap, or a deleted tile — when the process exits:
-			// closing the PTY unblocks a blocked Read, not a blocked channel
-			// send. doneCh closes when the process exits, which Close
-			// guarantees through SIGTERM then SIGKILL, so fall through and
-			// drop the final chunk rather than leaking the goroutine and the
-			// fd. While the process lives, doneCh is open, so a full channel
-			// still back-pressures the PTY read.
+			// goroutine forever when outCh is full and nobody drains it,
+			// during a takeover gap or after a tile is deleted, because
+			// closing the PTY unblocks a blocked Read and leaves a blocked
+			// channel send alone. doneCh closes when the process exits, which
+			// Close guarantees through SIGTERM then SIGKILL, so the final
+			// chunk is dropped instead of leaking the goroutine and the fd.
+			// While the process lives doneCh is open, so a full channel still
+			// back-pressures the PTY read.
 			select {
 			case s.outCh <- chunk:
 			case <-s.doneCh:
@@ -148,8 +135,8 @@ func (s *Session) pump() {
 	}
 }
 
-// Write forwards bytes to bash's stdin. Returns the number of bytes
-// written. After Close, returns 0 + io.ErrClosedPipe.
+// Write forwards bytes to bash's stdin. After Close it returns 0 and
+// io.ErrClosedPipe.
 func (s *Session) Write(p []byte) (int, error) {
 	if s.closed.Load() {
 		return 0, io.ErrClosedPipe
@@ -157,8 +144,8 @@ func (s *Session) Write(p []byte) (int, error) {
 	return s.ptmx.Write(p)
 }
 
-// Resize updates the PTY's window size. Safe to call repeatedly as the
-// pane is dragged. Both dimensions must be > 0.
+// Resize updates the PTY's window size. Both dimensions must be > 0. It is
+// safe to call repeatedly as the pane is dragged.
 func (s *Session) Resize(cols, rows uint16) error {
 	if cols == 0 || rows == 0 {
 		return fmt.Errorf("shelldriver: cols and rows must be > 0 (got %dx%d)", cols, rows)
@@ -169,20 +156,17 @@ func (s *Session) Resize(cols, rows uint16) error {
 	return pty.Setsize(s.ptmx, &pty.Winsize{Cols: cols, Rows: rows})
 }
 
-// Done returns a channel closed when the spawned process has fully
-// exited. Tests rely on this for deterministic teardown.
+// Done returns a channel closed when the spawned process has fully exited.
 func (s *Session) Done() <-chan struct{} { return s.doneCh }
 
-// Close terminates the bash process group: SIGTERM first, then SIGKILL
-// after a short grace period if it hasn't exited. Idempotent — repeat
-// calls are no-ops. Returns the bash process's exit error, if any (a
-// non-zero exit from bash isn't itself an error; only a startup-time
-// or signaling error is reported).
+// Close terminates the bash process group with SIGTERM, then SIGKILL after a
+// short grace period. Repeat calls are no-ops. It returns bash's own exit
+// error, which is the process's exit status and not a teardown failure.
 func (s *Session) Close() error {
 	s.closeOnce.Do(func() {
 		s.closed.Store(true)
-		// Signal the process group so a child the user spawned
-		// (vim, htop) goes down with bash.
+		// Signal the process group so a child the user spawned, vim or
+		// htop, goes down with bash.
 		if s.cmd != nil && s.cmd.Process != nil {
 			pgid, err := syscall.Getpgid(s.pid)
 			if err == nil {
@@ -194,8 +178,8 @@ func (s *Session) Close() error {
 		select {
 		case <-s.doneCh:
 		case <-time.After(500 * time.Millisecond):
-			// Escalate. The bash process should respect SIGTERM
-			// promptly; this guards against a hung subprocess.
+			// Escalate, guarding against a subprocess that hangs
+			// instead of respecting SIGTERM.
 			if s.cmd != nil && s.cmd.Process != nil {
 				pgid, err := syscall.Getpgid(s.pid)
 				if err == nil {
@@ -213,8 +197,8 @@ func (s *Session) Close() error {
 	return s.exitErr
 }
 
-// reap waits for the bash process to exit and closes doneCh. Runs in
-// its own goroutine so Close can race against it on the timeout.
+// reap waits for the bash process to exit and closes doneCh. It runs in its
+// own goroutine so Close can race against it on the timeout.
 func (s *Session) reap() {
 	if s.cmd != nil {
 		s.exitErr = s.cmd.Wait()
@@ -222,10 +206,10 @@ func (s *Session) reap() {
 	close(s.doneCh)
 }
 
-// resolveCwd picks the bash starting directory in priority order:
-// caller's choice (if a valid absolute dir), $HOME, then the gridwell
-// process's own cwd. A non-existent path is rejected so bash doesn't
-// die at exec with a misleading "no such file or directory".
+// resolveCwd picks the bash starting directory in priority order: the
+// caller's choice if it is an existing dir, then $HOME, then the gridwell
+// process's own cwd. A path that does not exist is rejected here so bash does
+// not die at exec with a misleading "no such file or directory".
 func resolveCwd(want string) string {
 	if want != "" && dirExists(want) {
 		return want
