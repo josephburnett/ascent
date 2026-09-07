@@ -41,9 +41,8 @@ type Decoder interface {
 type Cache struct {
 	dec Decoder
 
-	mu       sync.Mutex
-	entries  map[string]*entry
-	fetching map[string]bool
+	mu      sync.Mutex
+	entries map[string]*entry
 }
 
 // entry holds one tile's cached preview state.
@@ -76,9 +75,8 @@ const wildcardBlobID int64 = -1
 // must be non-nil.
 func NewCache(dec Decoder) *Cache {
 	return &Cache{
-		dec:      dec,
-		entries:  map[string]*entry{},
-		fetching: map[string]bool{},
+		dec:     dec,
+		entries: map[string]*entry{},
 	}
 }
 
@@ -212,25 +210,4 @@ func (c *Cache) Drop(tileID string) {
 	if ok && e.image != nil && e.image.Truthy() {
 		e.image.Revoke()
 	}
-}
-
-// MarkFetching atomically claims an in-flight fetch slot for tileID.
-// Returns false if a fetch was already in flight — callers must skip
-// the duplicate request. Pair with ClearFetching once the fetch
-// finishes (success or failure).
-func (c *Cache) MarkFetching(tileID string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.fetching[tileID] {
-		return false
-	}
-	c.fetching[tileID] = true
-	return true
-}
-
-// ClearFetching releases the in-flight slot for tileID. Idempotent.
-func (c *Cache) ClearFetching(tileID string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.fetching, tileID)
 }

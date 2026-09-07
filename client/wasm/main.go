@@ -352,11 +352,14 @@ func newViewCaches() viewCaches {
 	}
 }
 
-// fetchState owns whether a read is outstanding or has failed: the three
-// dedupe claim sets and the two failure latches that go with them. Nothing
-// else in the client answers "is this already being fetched?" or "did this
-// last fail?", so a reach from an unrelated file reads as a.fetch.… Every
-// claim's life is client/inflight's; this struct only holds the sets.
+// fetchState owns whether a read is outstanding or has failed: every dedupe
+// claim set the client has, and the two failure latches that go with them.
+// Nothing else in the client answers "is this already being fetched?" or "did
+// this last fail?", so a reach from an unrelated file reads as a.fetch.… Every
+// claim's life is client/inflight's; this struct only holds the sets. A
+// deduped read that kept its own claim somewhere else is exactly how a request
+// the network swallowed could hold a key for the life of the page, so there is
+// one claim mechanism and every deduped read is in here.
 type fetchState struct {
 	// gridLoadFailed records grids whose last GetGrid failed (loadGrid is
 	// the one writer), so the renderer can say so and the URL walk does
@@ -389,6 +392,18 @@ type fetchState struct {
 	// re-fires GetTile every frame forever — the same dogpile
 	// gridLoadFailed prevents for grids. Cleared only by a reload.
 	tileLoadFailed map[string]bool
+
+	// previewFetch holds the tile ids with a pending GetTilePreview.
+	// fetchURLPreview fires on every draw of a url tile whose blob isn't
+	// decoded yet, so the claim is what keeps one absent preview from
+	// spawning a fetch per frame. Keyed by tile id, like tileFetch.
+	previewFetch *inflight.Set
+
+	// menuFetch holds the node namespaces with a pending Handshake — the
+	// remote + menu's per-node context, asked for on every draw of an open
+	// menu in a remote pane until it lands. The key is a source NAME, not
+	// something a source serves, so cache.Reaches is what scopes it.
+	menuFetch *inflight.Set
 }
 
 // newFetchState builds the fetch group — the one place it is constructed.
@@ -399,6 +414,8 @@ func newFetchState() fetchState {
 		contentFetch:   inflight.New(inflight.Deadline),
 		tileFetch:      inflight.New(inflight.Deadline),
 		tileLoadFailed: map[string]bool{},
+		previewFetch:   inflight.New(inflight.Deadline),
+		menuFetch:      inflight.New(inflight.Deadline),
 	}
 }
 
@@ -1338,13 +1355,20 @@ func (a *App) retryKick(resync bool, source string) {
 		// away forever. Cancel this source's, and re-ask for the grids by
 		// name — a pane waiting on a grid it never received is not in the
 		// cache, so the served-grid sweep below cannot speak for it. The
-		// cancelled tile and content reads are re-asked by the draw the
-		// refetches schedule, off the same cache misses that asked the first
-		// time. A fetch through a source that did not flap keeps its claim:
+		// cancelled tile, content and preview reads are re-asked by the draw
+		// the refetches schedule, off the same cache misses that asked the
+		// first time, and so is the menu context by the next draw of an open
+		// menu. A fetch through a source that did not flap keeps its claim:
 		// its link is still there and its answer is still coming.
 		stuck := a.fetch.gridFetch.CancelIf(served)
 		a.fetch.tileFetch.CancelIf(served)
 		a.fetch.contentFetch.CancelIf(served)
+		a.fetch.previewFetch.CancelIf(served)
+		// The menu set is keyed by a source NAME rather than by something a
+		// source serves, so its predicate is cache.Reaches: a node's own menu
+		// is that node's fact, and a connection's flap covers the nodes
+		// behind it.
+		a.fetch.menuFetch.CancelIf(func(ns string) bool { return cache.Reaches(ns, source) })
 		for _, gid := range append(stuck, a.c.ResyncSet(source)...) {
 			a.fetchGrid(gid)
 		}

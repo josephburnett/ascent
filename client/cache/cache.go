@@ -300,6 +300,17 @@ func ServedBy(id, source string) bool {
 	return source == EverySource || rpc.ChainedThrough(id, source)
 }
 
+// Reaches reports whether the NAMESPACE ns is source itself or lies behind
+// it. ServedBy answers for a thing a source serves — a grid, a tile, whose id
+// gains a segment per hop; this answers for a source name, which is what a
+// read ABOUT a node rather than about its contents is keyed by: the + menu's
+// per-node context. A node's own menu is that node's fact, so a flap of that
+// node covers it, and so does a flap of any connection it sits behind, by the
+// same chain rule.
+func Reaches(ns, source string) bool {
+	return source == EverySource || ns == source || rpc.ChainedThrough(ns, source)
+}
+
 // ResyncSet answers "which grids does this source's flap refetch": every
 // cached grid served through source, sorted. One owner, so the down
 // direction and the up direction of a health transition cannot disagree —

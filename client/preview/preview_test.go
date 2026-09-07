@@ -302,34 +302,6 @@ func TestDropRemovesEntry(t *testing.T) {
 	c.Drop("42") // must not panic
 }
 
-// TestMarkFetchingExcludesDuplicateCallers: the cache is also the
-// in-flight set for GetTilePreview round-trips. Two concurrent
-// fetchers must collapse into one network request.
-func TestMarkFetchingExcludesDuplicateCallers(t *testing.T) {
-	c := NewCache(&fakeDecoder{})
-	if !c.MarkFetching("42") {
-		t.Errorf("first MarkFetching returned false")
-	}
-	if c.MarkFetching("42") {
-		t.Errorf("second MarkFetching for same tile returned true; want false")
-	}
-	c.ClearFetching("42")
-	if !c.MarkFetching("42") {
-		t.Errorf("MarkFetching after ClearFetching returned false")
-	}
-	c.ClearFetching("42")
-	c.ClearFetching("42") // must not panic
-}
-
-// TestMarkFetchingIsPerTile: different tiles must not block each
-// other's fetches.
-func TestMarkFetchingIsPerTile(t *testing.T) {
-	c := NewCache(&fakeDecoder{})
-	if !c.MarkFetching("1") || !c.MarkFetching("2") {
-		t.Errorf("MarkFetching on distinct tiles refused the second")
-	}
-}
-
 // TestGetWhileDecodingReturnsNotOK: between Put and the decoder's
 // onReady, Get must not return a stale or zero image. The cache
 // only flips to ok once decode is installed.

@@ -21,9 +21,13 @@ import (
 type menuContext struct {
 	plugins        []rpc.PluginInfo
 	shellsDisabled bool
-	// fetched marks a completed load; inflight dedups concurrent opens.
-	fetched  bool
-	inflight bool
+	// fetched marks a completed load. What keeps concurrent opens to one
+	// read is NOT here: it is a.fetch.menuFetch, the client's one claim
+	// mechanism, so this read is bounded and cancellable like every other. A
+	// bare flag here was neither, and a Handshake the network swallowed held
+	// it for the life of the page — the remote pane's menu then had no
+	// plugin section at all, ever, and nothing was ever said about it.
+	fetched bool
 }
 
 // paneNodeNS returns the namespace chain of the node serving pane p's current
@@ -54,32 +58,38 @@ func (a *App) menuCtx(p *pane.Pane) *menuContext {
 	if ns == "" {
 		return &menuContext{plugins: a.plugins, shellsDisabled: !a.caps.Shells, fetched: true}
 	}
-	ctx, ok := a.views.menuCtxs[ns]
+	mc, ok := a.views.menuCtxs[ns]
 	if !ok {
-		ctx = &menuContext{}
-		a.views.menuCtxs[ns] = ctx
+		mc = &menuContext{}
+		a.views.menuCtxs[ns] = mc
 	}
-	if !ctx.fetched && !ctx.inflight {
-		ctx.inflight = true
-		go a.fetchMenuCtx(ns)
+	if !mc.fetched {
+		if ctx, done, ok := a.fetch.menuFetch.Begin(ns); ok {
+			go a.fetchMenuCtx(ctx, done, ns)
+		}
 	}
-	return ctx
+	return mc
 }
 
-// fetchMenuCtx loads one remote node's menu through the routed
-// Handshake. A transport failure leaves the context unfetched so the
-// next open retries (and surfaces once); the mount's health notice is
-// already the ambient signal.
-func (a *App) fetchMenuCtx(ns string) {
-	lp, err := a.cl.HandshakeNS(context.Background(), ns)
-	ctx := a.views.menuCtxs[ns]
-	ctx.inflight = false
+// fetchMenuCtx loads one remote node's menu through the routed Handshake, on
+// the claim menuCtx opened for it. A failure leaves the context unfetched and
+// surfaces, and the claim ends with the read — bounded, so a read the network
+// swallows gives up and says so, and the next draw of the menu asks again.
+// Nothing else retries it: an unfetched context is asked for by every draw of
+// the open menu, which is the retry.
+func (a *App) fetchMenuCtx(ctx context.Context, done func(), ns string) {
+	defer done()
+	lp, err := a.cl.HandshakeNS(ctx, ns)
 	if err != nil {
+		// reportErr schedules a frame, so the failure is both said and
+		// re-asked: the next draw of the menu finds no claim and no context
+		// and starts a fresh read over whatever link there now is.
 		a.surfaceRPCError("Handshake", err)
 		return
 	}
-	ctx.plugins = rpc.MenuRows(lp)
-	ctx.shellsDisabled = lp.ShellsDisabled
-	ctx.fetched = true
+	mc := a.views.menuCtxs[ns]
+	mc.plugins = rpc.MenuRows(lp)
+	mc.shellsDisabled = lp.ShellsDisabled
+	mc.fetched = true
 	a.draw()
 }

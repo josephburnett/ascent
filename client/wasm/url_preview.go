@@ -3,7 +3,6 @@
 package main
 
 import (
-	"context"
 	"syscall/js"
 
 	"github.com/josephburnett/gridwell/api/rpc"
@@ -246,12 +245,18 @@ func (a *App) fetchURLPreview(tileID string, blobID int64) {
 	if a.deadNamespace(tileID) {
 		return
 	}
-	if !a.views.urlPreview.MarkFetching(tileID) {
+	// The dedupe claim is client/inflight's, like every other deduped read:
+	// bounded and cancellable, so a request the network swallows gives up
+	// instead of holding this tile's id — and its face — for the life of the
+	// page. The preview cache remembers decoded images; it does not remember
+	// who is asking.
+	ctx, done, ok := a.fetch.previewFetch.Begin(tileID)
+	if !ok {
 		return
 	}
 	go func() {
-		jpeg, err := a.cl.GetTilePreview(context.Background(), tileID)
-		a.views.urlPreview.ClearFetching(tileID)
+		defer done()
+		jpeg, err := a.cl.GetTilePreview(ctx, tileID)
 		if err != nil {
 			// A plugin that serves no previews answers Unimplemented: a
 			// capability property, so the tile shows its label. Anything

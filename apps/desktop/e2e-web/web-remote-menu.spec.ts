@@ -368,3 +368,68 @@ test('a revived mount clears its chip and its notice with nobody touching anythi
     })
     .toBe(false);
 });
+
+// The remote menu is a deduped read like any other, and #272's class is the
+// claim that outlives the fetch it guards. The client asks the far node for
+// its menu once per node namespace and holds a claim on that namespace while
+// the read is out; a request the network swallows — never fulfilled, never
+// aborted — held it for the life of the page. The remote pane's + menu then
+// had no plugin section at all, forever, with nothing on the error strip: the
+// same silent permanent "loading" the grid path had, one read over.
+//
+// Nothing here kills anything, and nothing restarts: the fix is that the read
+// is bounded, so the menu fills itself in off its own clock with the link in
+// exactly the state that broke it. The claim is also cancelled by a health
+// flap on the node it names, which is faster when one happens — client/inflight
+// and client/cache's unit tests own that half.
+test('a menu read the network swallows does not latch the remote menu empty', async ({
+  gw,
+  window,
+  world,
+}) => {
+  test.setTimeout(150_000);
+  await enterFarRoom(gw, world);
+
+  // The black hole: the next Handshake that names the connection is swallowed.
+  // The boot handshake (no namespace) and the retry both keep a live link, so
+  // the only thing between the pane and the far node's menu is the client's own
+  // claim on that namespace.
+  let blackhole = true;
+  await window.route(`**/${SERVICE}/Handshake`, async (route) => {
+    if (blackhole && (route.request().postData() ?? '').includes('farconn1')) {
+      blackhole = false; // one read into the hole; the retry gets a live link
+      return;
+    }
+    await route.continue();
+  });
+
+  await gw.openPalette();
+  const pal = await window.evaluate(() => (window as any).__gridwellTest.palette());
+  expect(pal.open, 'the remote pane has its menu open').toBe(true);
+  expect(pal.toggle.present, 'the swallowed read leaves no plugin section to unfold').toBe(false);
+
+  // No user action beyond keeping the menu open: the bounded read gives up,
+  // says so on the strip, and the next draw of the menu asks again over a link
+  // that works. Unfolding the section is part of reading it, and it cannot be
+  // unfolded until there is something to unfold.
+  let sawNotice = false;
+  await expect
+    .poll(
+      async () => {
+        const errs = await window.evaluate(() => (window as any).__gridwellTest.errors());
+        if (errs.notices.some((n: any) => n.source === 'rpc:Handshake')) sawNotice = true;
+        const p = await window.evaluate(() => (window as any).__gridwellTest.palette());
+        if (p.toggle?.present && !p.toggle.expanded) {
+          await window.mouse.click(p.toggle.x + p.toggle.w / 2, p.toggle.y + p.toggle.h / 2);
+        }
+        const now = await window.evaluate(() => (window as any).__gridwellTest.palette());
+        return (now.items ?? [])
+          .filter((i: any) => i.isPlugin)
+          .map((i: any) => i.label)
+          .join(',');
+      },
+      { message: 'the far node’s menu arrives by itself', timeout: 75_000 },
+    )
+    .toBe('home,trash');
+  expect(sawNotice, 'the swallowed read surfaced rather than disappearing').toBe(true);
+});

@@ -89,9 +89,15 @@ a delete: it is the one copy of unsaved typing.
 parks a retry thunk under `Key{Op, ID}`, any verdict acks. One live entry
 per key, last-writer-wins, order preserved. `inflight.Set` bounds and
 cancels fetches so a request that died with its link cannot hold a dedupe
-claim forever. `App.startSSE` marks a `gap` on any stream break and fires
+claim forever. It is the client's ONE claim mechanism, and `App.fetchState`
+holds every set: grids, tiles, tile content, url previews, and the + menu's
+per-node context. A deduped read that kept a claim of its own — a bare bool
+beside its own cache — was bounded by nothing and cancelled by nothing, so a
+request the network swallowed held its key for the life of the page and the
+face it fed never loaded, never retried, and never said a word.
+`App.startSSE` marks a `gap` on any stream break and fires
 `retryKick(true, cache.EverySource)` on the next successful subscribe: clear
-the failure latches, cancel the three fetch sets, refetch every named and
+the failure latches, cancel every fetch set, refetch every named and
 known grid, then `syncContentOutbox` and drain. `retryBackstop` runs
 `retryKick(false, …)` every 30s while anything is parked.
 
@@ -101,7 +107,10 @@ serves it, because a hop prepends one segment to a health uuid exactly as it
 does to ids; so `cache.ServedBy` is the join of those two facts
 (`rpc.ChainedThrough` — a chain prefix, not an equality, so a connection's
 flap covers the far node's home store and the far node's plugins alike), and
-`Cache.ResyncSet` is the grids one source answers for. A health flap passes
+`Cache.ResyncSet` is the grids one source answers for. `cache.Reaches` is the
+same rule asked about a source NAME rather than about a thing a source serves,
+for the one claim keyed that way — the menu context, which is a node's fact
+about itself. A health flap passes
 that source and touches nothing else: only its grids refetch, only its
 latches clear, only its in-flight fetches are cancelled — the others kept
 their link and are still owed an answer. A stream gap passes
@@ -375,6 +384,8 @@ Each cross-layer behaviour in the three traces, and what pins it.
 | A flap resyncs the flapping source's grids and NOBODY else's, including a chain through it | `client/cache/resync_test.go:TestAFlapResyncsOnlyTheGridsItsSourceServes`, `TestAConnectionsFlapOwnsEveryGridChainedThroughIt`; the chain rule at its owner, `api/rpc/segment_test.go:TestChainedThroughIsTheWholeChainNotOneNodesPeel` |
 | The gap paths keep their breadth: `cache.EverySource` is the whole cache | `client/cache/resync_test.go:TestEverySourceIsTheWholeCache` |
 | A flap cancels only the fetches that rode through it | `client/inflight/inflight_test.go:TestCancelIfLeavesTheFetchesThatKeptTheirLink` |
+| The menu claim's scope — a source's own name, and every node behind it | `client/cache/resync_test.go:TestReachesCoversTheSourceItselfAndEveryNodeBehindIt` |
+| A swallowed menu read does not latch a remote pane's + menu empty: it gives up, surfaces, and the menu fills itself in | `apps/desktop/e2e-web/web-remote-menu.spec.ts` ("a menu read the network swallows does not latch the remote menu empty") |
 | A single connection's recovery does NOT re-warm the whole source | `sourcecache/prefetch_seam_test.go:TestOneConnectionsRecoveryDoesNotReWalkTheSource`, and the comments in `prefetch.go` and `Layer.Subscribe` |
 
 ### Trace (c)

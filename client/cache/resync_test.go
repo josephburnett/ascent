@@ -126,3 +126,41 @@ func TestServedBy(t *testing.T) {
 		})
 	}
 }
+
+// Reaches is the predicate for a read keyed by a source NAME rather than by
+// something a source serves: the + menu's per-node context. A node's own menu
+// is that node's fact, which ServedBy would answer "no" to, and a connection's
+// flap covers every node behind it, which equality would answer "no" to. Both
+// halves matter, because both are how a menu read hung on a dead link gets
+// cancelled instead of waiting out its deadline.
+func TestReachesCoversTheSourceItselfAndEveryNodeBehindIt(t *testing.T) {
+	cases := []struct {
+		name       string
+		ns, source string
+		want       bool
+	}{
+		{"a node's own menu is that node's fact", conn, conn, true},
+		{"the far node behind the connection", farHome, conn, true},
+		{"a far plugin behind the connection", farPl, conn, true},
+		{"the connection is not behind the far node", conn, farHome, false},
+		{"a different connection", node + "/other", conn, false},
+		{"a segment that merely starts the same", conn + "x", conn, false},
+		{"this node's own menu under a connection's flap", node, conn, false},
+		{"every source reaches every namespace", conn, EverySource, true},
+		{"every source reaches the local context", "", EverySource, true},
+		{"no namespace is behind a named source when it is empty", "", conn, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Reaches(tc.ns, tc.source); got != tc.want {
+				t.Errorf("Reaches(%q, %q) = %v, want %v", tc.ns, tc.source, got, tc.want)
+			}
+		})
+	}
+	// The half that makes it a second question rather than a second copy:
+	// ServedBy, asked about a source's own name, says no — a namespace is
+	// not a thing it serves.
+	if ServedBy(conn, conn) {
+		t.Errorf("ServedBy(%q, %q) = true; a namespace is not something it serves", conn, conn)
+	}
+}
