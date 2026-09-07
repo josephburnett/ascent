@@ -1,9 +1,8 @@
 import type { NativeImage, WebContentsView } from 'electron';
 
 // JPEG quality for mirrored and frozen frames. The frozen preview is the
-// durable picture of a url tile: it is what you see without going live, and
-// it is zoomed up in larger panes, so it stays crisp. The base64 payload
-// over IPC is still modest at this quality.
+// durable picture of a url tile and is zoomed up in larger panes, so it has to
+// stay crisp; the base64 payload over IPC is still modest at this quality.
 const JPEG_QUALITY = 92;
 
 // CAPTURE_TIMEOUT_MS time-boxes capturePage. A parked or busy renderer can
@@ -12,12 +11,10 @@ const JPEG_QUALITY = 92;
 // the user just left.
 const CAPTURE_TIMEOUT_MS = 1500;
 
-// CaptureAttempt is one capture attempt's outcome, labelled. It is the whole
-// truth about what happened, which is more than the bytes: a caller that only
-// ever sees '' cannot tell a wedged renderer from a blank page, and that is
-// precisely what a frozen preview needs said about it. The kind is
-// capturestreak's vocabulary; the payload beside it is this layer's, since the
-// error objects belong to Electron.
+// CaptureAttempt is one capture attempt's outcome. A caller that sees only ''
+// cannot tell a wedged renderer from a blank page, which is what a frozen
+// preview needs said about it. The kind is capturestreak's AttemptKind; the
+// payload beside it is this layer's, because the error objects are Electron's.
 export type CaptureAttempt =
   | { kind: 'ok'; jpegBase64: string }
   | { kind: 'empty' }
@@ -31,10 +28,8 @@ export type CaptureAttempt =
 // this capture feeds the other panes' frozen previews and the freeze-on-ascend
 // snapshot.
 //
-// Every way this can fail is a case here, because every way it can fail looks
-// identical from the outside — a preview that stopped updating. The kinds are
-// capturestreak's AttemptKind; the compiler holds the two vocabularies together
-// where capture() hands one to decideStreak.
+// Every way it can fail is a case here, because from the outside they all look
+// like a preview that stopped updating.
 export async function captureAttempt(
   view: WebContentsView,
   timeoutMs = CAPTURE_TIMEOUT_MS,
@@ -42,8 +37,7 @@ export async function captureAttempt(
   let pending: Promise<NativeImage>;
   try {
     // Reading webContents off a destroyed view throws synchronously, and so
-    // does calling capturePage on a closed one. That is the view being gone,
-    // not the capture failing.
+    // does calling capturePage on a closed one. That is the view being gone.
     pending = view.webContents.capturePage();
   } catch (err) {
     return { kind: 'view-gone', error: err };
@@ -59,9 +53,8 @@ export async function captureAttempt(
 }
 
 // captureJpegBase64 is captureAttempt for the callers that only want the bytes:
-// '' means no frame, whatever went wrong. The view-gone arm is rethrown rather
-// than flattened, so the contract is exactly the one this function always had —
-// remove() catches it and reports "view crashed while closing". Its getURL()
+// '' means no frame, whatever went wrong. The view-gone arm is rethrown so
+// remove() can catch it and report "view crashed while closing". Its getURL()
 // read on the same dead webContents usually throws first, but the report must
 // not depend on that ordering.
 export async function captureJpegBase64(view: WebContentsView, timeoutMs = CAPTURE_TIMEOUT_MS): Promise<string> {
@@ -70,9 +63,9 @@ export async function captureJpegBase64(view: WebContentsView, timeoutMs = CAPTU
   return attempt.kind === 'ok' ? attempt.jpegBase64 : '';
 }
 
-// describeAttempt is the human half of an attempt, for the report the user
-// reads. Only the failing arms are ever reported; 'ok' is here so the switch is
-// exhaustive and a new kind cannot be added with no description.
+// describeAttempt is the text of an attempt, for the report the user reads.
+// Only the failing arms are reported; 'ok' is here so the switch is exhaustive
+// and a new kind cannot be added with no description.
 export function describeAttempt(attempt: CaptureAttempt): string {
   switch (attempt.kind) {
     case 'ok':
@@ -88,16 +81,15 @@ export function describeAttempt(attempt: CaptureAttempt): string {
   }
 }
 
-// Settled distinguishes the three ways the time-boxed promise can end. The
-// previous shape collapsed all three to null, which is how a timeout and a
-// rejection became invisible to everything downstream.
+// Settled distinguishes the three ways the time-boxed promise can end, so a
+// timeout and a rejection stay visible downstream.
 type Settled<T> =
   | { kind: 'value'; value: T }
   | { kind: 'timeout' }
   | { kind: 'rejected'; error: unknown };
 
-// settleWithin resolves (never rejects) with what p did, or 'timeout' if p had
-// not settled within ms.
+// settleWithin resolves, and never rejects, with what p did, or 'timeout' if p
+// had not settled within ms.
 function settleWithin<T>(p: Promise<T>, ms: number): Promise<Settled<T>> {
   return new Promise<Settled<T>>((resolve) => {
     let done = false;
@@ -115,10 +107,10 @@ function settleWithin<T>(p: Promise<T>, ms: number): Promise<Settled<T>> {
   });
 }
 
-// MirrorPump periodically captures every live pane and pushes frames to a
-// sink (index.ts sweeps reg.paneIds() each tick), so a tile mirrored in a
-// second pane stays fresh. The cadence is modest; mirrored previews do not
-// need to run at frame rate.
+// MirrorPump periodically captures every live pane and pushes frames to a sink,
+// so a tile mirrored in a second pane stays fresh. index.ts sweeps
+// reg.paneIds() each tick. The cadence is low, because mirrored previews do not
+// need frame rate.
 export class MirrorPump {
   private timer: NodeJS.Timeout | null = null;
   private readonly intervalMs: number;

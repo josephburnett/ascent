@@ -1,17 +1,13 @@
-// contextmenu.ts builds the context menu for a live url WebContentsView.
+// The context menu for a live url WebContentsView. A WebContentsView has no
+// built-in one: right-clicking a page emits a `context-menu` event on the
+// webContents and nothing appears unless something handles it.
 //
-// A WebContentsView has no built-in context menu: right-clicking a page emits
-// a `context-menu` event on the webContents, and nothing appears unless
-// something handles it. So this app has to build and pop the menu itself.
-//
-// The template is a pure function of a minimal params subset and a bag of
-// injected actions, returning plain menu items whose `click` calls those
-// actions. webviews.ts supplies the real actions (clipboard, webContents) and
-// feeds the template to Menu.buildFromTemplate. Policy lives here, Electron
-// plumbing lives there, and that seam is what makes the menu testable.
+// This module owns which items a right-click offers. webviews.ts supplies the
+// actions and feeds the template to Menu.buildFromTemplate, which keeps the
+// menu testable with no Electron import here.
 
 // ContextParams is the subset of Electron's ContextMenuParams the menu needs,
-// plus the two navigation flags (which live on webContents, not the params).
+// plus the two navigation flags, which live on webContents.
 interface ContextParams {
   // linkURL is the href of an <a> under the cursor, or '' if none.
   linkURL: string;
@@ -29,9 +25,8 @@ interface ContextParams {
   canFreeze: boolean;
 }
 
-// ContextActions are the effects the menu items invoke. Injected so the
-// template stays pure: webviews.ts wires these to clipboard + the view's
-// webContents; the unit test wires spies.
+// ContextActions are the effects the menu items invoke. webviews.ts wires them
+// to the clipboard and the view's webContents; the unit test wires spies.
 interface ContextActions {
   copyText(text: string): void;
   copyLink(url: string): void;
@@ -41,16 +36,15 @@ interface ContextActions {
   back(): void;
   forward(): void;
   reload(): void;
-  // freeze is the explicit freeze gesture: tear the live view down with the
-  // usual freeze writeback and store the user's standing frozen intent on the
-  // tile, so re-descending stays frozen until the reconnect button clears it.
+  // freeze tears the live view down with the usual freeze writeback and stores
+  // the user's standing frozen intent on the tile, so re-descending stays
+  // frozen until the reconnect button clears it.
   freeze(): void;
 }
 
-// MenuTemplateItem is the structural subset of Electron's
-// MenuItemConstructorOptions this builder emits. It is declared locally so the
-// module imports nothing from electron and runs under plain node in the unit
-// test; it stays assignable to MenuItemConstructorOptions at the call site.
+// MenuTemplateItem is the subset of Electron's MenuItemConstructorOptions this
+// builder emits. Declared here so the module imports nothing from electron; it
+// stays assignable to MenuItemConstructorOptions at the call site.
 interface MenuTemplateItem {
   label?: string;
   type?: 'separator';
@@ -59,10 +53,10 @@ interface MenuTemplateItem {
 }
 
 // urlContextMenuTemplate assembles the menu for a right-click over live web
-// content, in the familiar Chromium order: link actions, then text and edit
-// actions, then page navigation. Items that do not apply (no link, no
-// selection, not editable) are omitted so the menu shows no dead entries. The
-// navigation block is always present; its items disable rather than vanish.
+// content, in Chromium's order: link actions, then text and edit actions, then
+// page navigation. Items that do not apply are omitted so the menu shows no
+// dead entries. The navigation block is always present and its items disable
+// instead.
 export function urlContextMenuTemplate(p: ContextParams, a: ContextActions): MenuTemplateItem[] {
   const items: MenuTemplateItem[] = [];
 
