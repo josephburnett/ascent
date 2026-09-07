@@ -22,12 +22,11 @@ export interface PluginSpec {
   config?: Record<string, string>;
 }
 
-// seedHome creates a throwaway Gridwell home: a server.yaml declaring the
-// given content plugins (ids are minted by the first serve, which also
-// creates the home store — the same first run a real user gets). Every
-// launch points GRIDWELL_HOME at a home seeded this way. `extraYaml`
-// appends raw server.yaml sections (e.g. a connections: list). Returns
-// the home dir; callers remove it on teardown.
+// seedHome creates a throwaway Gridwell home: a server.yaml declaring the given
+// content plugins. The first serve mints the ids and creates the home store,
+// which is the first run a real user gets. Every launch points GRIDWELL_HOME at
+// a home seeded this way. `extraYaml` appends raw server.yaml sections, such as
+// a connections: list. Returns the home dir; callers remove it on teardown.
 export function seedHome(extra: PluginSpec[] = [], extraYaml = ''): string {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'gridwell-e2e-'));
   let yaml = '';
@@ -124,8 +123,8 @@ export async function loginToken(origin: string, password: string): Promise<stri
 }
 
 // assertSidecarExited polls briefly that the sidecar process is dead after
-// app.close(). It fails loudly so the leaking test is blamed, not a later one
-// that hits a stale port or database lock.
+// app.close(), so a leak is blamed on the test that caused it rather than on a
+// later one hitting a stale port or database lock.
 async function assertSidecarExited(pid: number | null): Promise<void> {
   if (pid == null) return;
 
@@ -142,8 +141,8 @@ async function assertSidecarExited(pid: number | null): Promise<void> {
     await new Promise((r) => setTimeout(r, 100));
   }
 
-  // Still alive after the grace period: fail loudly so this test is blamed,
-  // not a later one that collides with the stale process.
+  // Still alive after the grace period, so this test is blamed rather than a
+  // later one colliding with the stale process.
   throw new Error(
     `e2e teardown leak: sidecar (pid ${pid}) still running after app.close(). ` +
       'This test did not clean up properly (e.g. a live shell tile was left open). ' +
@@ -169,27 +168,21 @@ type Fixtures = {
   extraYaml: string;
 };
 
-// The e2e fixture launches the same `electron .` entry `make launch` uses;
+// The e2e fixture launches the same `electron .` entry `make launch` uses.
 // apps/desktop/src/main/index.ts spawns the Go sidecar itself, so the whole
 // stack runs: renderer, wasm, Connect-RPC, server, SQLite. Each test gets a
 // fresh temp home, and GRIDWELL_E2E=1 turns on the renderer's read-only
 // introspection hook.
 //
-// Isolation: GRIDWELL_HOME is a per-test mkdtemp, and Electron's userData is set
-// to <home>/electron by two mechanisms together:
+// GRIDWELL_HOME is a per-test mkdtemp, and Electron's userData is set to
+// <home>/electron two ways: the --user-data-dir command-line flag, which
+// Chromium reads before any Node.js module runs, and applyUserDataOverride in
+// index.ts, which covers a direct non-Playwright launch with GRIDWELL_HOME set
+// and no flag. With both, no test instance shares
+// ~/.config/gridwell-desktop with the live app or with a concurrent instance.
 //
-//   1. the --user-data-dir command-line flag, which Chromium reads before any
-//      Node.js module runs, so Playwright's interception of app.isReady cannot
-//      delay it. This is the reliable path for e2e isolation.
-//
-//   2. applyUserDataOverride in index.ts, which covers a direct non-Playwright
-//      launch with GRIDWELL_HOME set and no --user-data-dir.
-//
-// With both, no test instance shares ~/.config/gridwell-desktop with the live
-// app or with a concurrent test instance.
-//
-// Teardown: after app.close() the fixture kills stray tmux servers and asserts
-// the sidecar exited, so a leak is blamed on the test that caused it.
+// After app.close() the fixture kills stray tmux servers and asserts the
+// sidecar exited.
 export const test = base.extend<Fixtures>({
   extraPlugins: [[], { option: true }],
   extraNodes: [[], { option: true }],
@@ -219,25 +212,23 @@ export const test = base.extend<Fixtures>({
     const app = await electron.launch({
       // --user-data-dir is a Chromium switch, so Chromium picks up the
       // isolated profile directory before the Node.js main script runs.
-      // Playwright intercepts app.isReady(), which makes app.setPath() in
-      // index.ts unreliable for profile isolation: Chromium has already
-      // initialised by the time it runs.
+      // Playwright intercepts app.isReady(), so app.setPath() in index.ts runs
+      // after Chromium has already initialised.
       //
-      // The flag must come before the app path ('.') in args. Electron treats
-      // everything after the app path as app arguments rather than switches.
-      // Playwright prepends --inspect=0 and --remote-debugging-port=0, so the
-      // final argv is:
+      // The flag must come before the app path ('.') in args, because Electron
+      // treats everything after the app path as app arguments. Playwright
+      // prepends --inspect=0 and --remote-debugging-port=0, so the final argv
+      // is:
       //   electron --inspect=0 --remote-debugging-port=0 --user-data-dir=... .
       args: [`--user-data-dir=${electronDir}`, '.'],
       cwd: DESKTOP_DIR,
       env: {
         // Strip the live app's plugin env vars so they cannot bleed into the
         // test sidecar's plugin subprocess. GRIDWELL_PLUGIN_CONFIG carries the
-        // live app's DB path, and reaching the go-plugin Start() call it lands
-        // as the last duplicate in the subprocess env, because go-plugin
-        // re-appends os.Environ(), overriding the fresh per-test config.
-        // GRIDWELL_PLUGIN is a companion var go-plugin sets in the live app's
-        // tmux session. The sidecar sets both correctly for each fresh launch.
+        // live app's DB path, and go-plugin re-appends os.Environ() at Start(),
+        // so it would land as the last duplicate and override the fresh
+        // per-test config. GRIDWELL_PLUGIN is a companion var go-plugin sets in
+        // the live app's tmux session. The sidecar sets both for each launch.
         ...Object.fromEntries(
           Object.entries(process.env).filter(
             ([k]) => k !== 'GRIDWELL_PLUGIN_CONFIG' && k !== 'GRIDWELL_PLUGIN',
@@ -254,11 +245,10 @@ export const test = base.extend<Fixtures>({
     // ── Teardown (runs after every test, pass or fail) ──────────────────────
 
     // Teardown must complete from any spec end state, including a spec that
-    // died mid-body with a live shell still attached. A hung teardown is worse
-    // than the failure it follows: the worker is SIGKILLed at the test timeout,
-    // every later step (tmux kill, home removal, the sidecar assert) is skipped,
-    // and the report gains a 90s "Tearing down electronApp" plus an
-    // unattributed error that reads as a flake.
+    // died mid-body with a live shell still attached. If it hangs, the worker
+    // is SIGKILLed at the test timeout, the tmux kill, the home removal and the
+    // sidecar assert are all skipped, and the report gains a 90s "Tearing down
+    // electronApp" plus an unattributed error that reads as a flake.
 
     // Capture the sidecar pid before closing. index.ts exposes it under
     // GRIDWELL_E2E=1; it is null if the app never finished booting.
@@ -272,11 +262,11 @@ export const test = base.extend<Fixtures>({
     }
 
     // electronApp.close() does not settle when a live shell stream existed at
-    // close time: the Electron process itself exits promptly and cleanly, with
-    // the exit event and code 0, but the Playwright-side promise hangs. A dirty
-    // live url view closes fine; only shells wedge it. So race close() against a
-    // deadline and verify the process exit here instead, since nothing
-    // downstream depends on close()'s own bookkeeping.
+    // close time. The Electron process exits promptly with code 0 and the exit
+    // event, while the Playwright-side promise hangs; only shells wedge it, not
+    // a dirty live url view. So close() races a deadline and the process exit
+    // is verified here, since nothing downstream depends on close()'s own
+    // bookkeeping.
     const proc = app.process();
     const closed = await Promise.race([
       app.close().then(
@@ -289,13 +279,13 @@ export const test = base.extend<Fixtures>({
       }),
     ]);
     if (!closed) {
-      // Surface it: a wedged close is expected only with a live shell, so
-      // seeing this on another spec is new information.
+      // A wedged close is expected only with a live shell, so seeing it on
+      // another spec is new information.
       console.warn('[e2e teardown] electronApp.close() did not settle in 10s; proceeding with direct cleanup');
       if (proc.exitCode === null) {
-        // The app is genuinely still alive, rather than the known wedge where
-        // it has already exited. Kill it and the sidecar, which would otherwise
-        // never receive before-quit's SIGTERM.
+        // The app is still alive, rather than the wedge where it has already
+        // exited. Kill it and the sidecar, which would otherwise never receive
+        // before-quit's SIGTERM.
         proc.kill('SIGKILL');
         if (sidecarPid != null) {
           try {
@@ -312,8 +302,7 @@ export const test = base.extend<Fixtures>({
     // so rmSync would not clean it up.
     killTmuxServers(pluginUUIDs(home));
 
-    // Assert the sidecar exited, failing here in this test's teardown rather
-    // than polluting the next test.
+    // Fail here in this test's teardown rather than polluting the next test.
     await assertSidecarExited(sidecarPid);
 
     fs.rmSync(home, { recursive: true, force: true });
@@ -335,11 +324,10 @@ export const test = base.extend<Fixtures>({
     // The sidecar must report ready before the window opens, and the wasm must
     // boot and install the hook. Give the whole chain a generous budget.
     await win.waitForFunction(() => !!(window as any).__gridwellTest, null, { timeout: 30_000 });
-    // Boot is not done at hook-install: the focused pane's anchor resolves
-    // asynchronously (Handshake, then HomeGrid), and a spec's first focused()
-    // read can catch anchor="" on a slow boot. That was the load-sensitive half
-    // of the stack-hygiene flake, whose captured "home" was empty, so the
-    // round-trip assertion compared against nothing. Ready means anchored.
+    // Boot is not done at hook-install. The focused pane's anchor resolves
+    // asynchronously, through Handshake and then HomeGrid, and a spec's first
+    // focused() read can catch anchor="" on a slow boot and compare against
+    // nothing. Ready means anchored.
     await win.waitForFunction(
       () => {
         const t = (window as any).__gridwellTest;

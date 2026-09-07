@@ -1,13 +1,10 @@
-// The server oracle: a small Connect-RPC (proto-JSON) client the e2e tests use
-// to read the real server's grid state, independently of the renderer.
+// A Connect-RPC (proto-JSON) client the e2e tests use to read the real server's
+// grid state, independently of the renderer.
 //
-// The canvas is opaque: a tile that disappeared might never have been created,
-// or might have been created and not drawn. Querying the server's GetGrid
-// splits those cases:
+// The canvas cannot say whether a missing tile was never created or was created
+// and not drawn. GetGrid splits those cases:
 //   - present here but not on the canvas → a render, cache, or Subscribe bug
 //   - absent here                        → a create-request routing bug
-// so one assertion against the oracle turns "nothing happened" into a located
-// failure.
 //
 // The endpoint is the same loopback origin the window is served from, and the
 // Connect handler is mounted at /<package>.<service>/<method>.
@@ -84,9 +81,9 @@ function* deEnvelope(body: Buffer): Generator<{ flags: number; payload: Buffer }
   }
 }
 
-// getTileContent fetches a tile's body bytes through ReadContent (the one
-// content read), reassembling the enveloped JSON chunk stream. Returns ''
-// when the tile has no body. A leaf link resolves to its target server-side.
+// getTileContent fetches a tile's body bytes through ReadContent, the one
+// content read, reassembling the enveloped JSON chunk stream. Returns '' when
+// the tile has no body. A leaf link resolves to its target server-side.
 export async function getTileContent(origin: string, tileId: string): Promise<string> {
   const res = await fetch(`${origin}/${SERVICE}/ReadContent`, {
     method: 'POST',
@@ -109,11 +106,11 @@ export async function getTileContent(origin: string, tileId: string): Promise<st
 }
 
 // writeContent writes a tile's content bytes directly through the server, so to
-// the app under test it is a foreign writer: another device editing the same
-// tile. This is the one content door: a text body bumps the version, while a
-// pane layout is framing-class. version is the optimistic-concurrency claim.
-// Throws on any non-OK response, including a version conflict riding the
-// end-stream frame.
+// the app under test it is a foreign writer, another device editing the same
+// tile. It is the one content door: a text body bumps the version, while a pane
+// layout is framing-class. version is the optimistic-concurrency claim. Throws
+// on any non-OK response, including a version conflict riding the end-stream
+// frame.
 export async function writeContent(
   origin: string,
   tileId: string,
@@ -130,7 +127,7 @@ export async function writeContent(
   if (!res.ok) throw new Error(`WriteContent(${tileId}@${version}) failed: ${res.status} ${await res.text()}`);
   // Client-stream responses are enveloped too: a message frame, then the
   // EndStreamResponse. An in-stream error such as a version conflict rides the
-  // end frame with HTTP 200, so it must be surfaced here.
+  // end frame with HTTP 200, so it is surfaced here.
   const raw = Buffer.from(await res.arrayBuffer());
   for (const { flags, payload } of deEnvelope(raw)) {
     if (flags & 0x02) {
@@ -140,9 +137,9 @@ export async function writeContent(
   }
 }
 
-// placeTile moves or resizes a tile directly through the server: a foreign
-// writer moving it out from under the app's stored references, which is the
-// relocation specs' shape. Unary Connect JSON, like getGrid.
+// placeTile moves or resizes a tile directly through the server, as a foreign
+// writer moving it out from under the app's stored references. Unary Connect
+// JSON, like getGrid.
 export async function placeTile(
   origin: string,
   tileId: string,
@@ -165,9 +162,9 @@ export async function placeTile(
 
 // createExitWell creates a link well directly through the server: a well whose
 // child grid is a qualified id in another namespace. The node stores the
-// reference verbatim and never checks that the namespace exists — it cannot,
-// since the namespace may be a remote's — so this is also how a spec seeds a
-// DANGLING link, one into a namespace this node does not declare.
+// reference verbatim and cannot check that the namespace exists, since it may
+// be a remote's, so this is also how a spec seeds a dangling link, one into a
+// namespace this node does not declare.
 export async function createExitWell(
   origin: string,
   gridId: string,

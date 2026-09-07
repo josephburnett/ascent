@@ -12,10 +12,9 @@ import { freePort } from '../src/main/freeport';
 // suite, loaded in plain Chromium with no Electron shell, which is the degraded
 // phone and tablet client. `gridwell serve` is spawned directly, with no
 // sidecar, the page is Playwright's ordinary browser page, and GridwellDriver
-// and the server oracle are reused verbatim from ../e2e. What this suite alone
-// proves: the client boots and works with no window.gridwell bridge, live-url
-// affordances degrade visibly through client/caps, and the touch gesture layer
-// in client/touchgest drives the real canvas.
+// and the server oracle are reused verbatim from ../e2e. This suite alone sees
+// the client booting with no window.gridwell bridge, the live-url affordances
+// degrading through client/caps, and client/touchgest driving the real canvas.
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 
@@ -23,7 +22,7 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..', '..');
 // names.
 export const serveBin = () => path.join(REPO_ROOT, process.env.GRIDWELL_SERVE_BIN || 'gridwell');
 
-// freePort is the sidecar's own electron-free picker; there is one copy.
+// freePort is the sidecar's own electron-free picker.
 export { freePort };
 
 type Fixtures = {
@@ -35,9 +34,9 @@ type Fixtures = {
   extraPlugins: PluginSpec[];
 };
 
-// Served is one running `gridwell serve`: its web origin, its home, and the auth
-// token the banner announced. The web door is always gated by the password serve
-// minted, and the token is what a logged-in browser's cookie carries.
+// Served is one running `gridwell serve`: its web origin, its home, and the
+// auth token the banner announced, which is what a logged-in browser's cookie
+// carries.
 export interface Served {
   origin: string;
   home: string;
@@ -45,9 +44,9 @@ export interface Served {
   child: ChildProcess;
 }
 
-// spawnServe is the one serve spawner for the browser suites: it boots a node on
-// a home, waits for the banner, and returns the origin with its token. Readiness
-// is the banner itself, since the server prints "serving on" only once both
+// spawnServe is the one serve spawner for the browser suites. It boots a node on
+// a home, waits for the banner, and returns the origin with its token. The
+// banner is readiness, because the server prints "serving on" only once both
 // doors listen.
 export async function spawnServe(home: string, port: number, extraArgs: string[] = []): Promise<Served> {
   const origin = `http://127.0.0.1:${port}`;
@@ -61,9 +60,9 @@ export async function spawnServe(home: string, port: number, extraArgs: string[]
   child.stderr!.on('data', (d) => (output += d));
   const deadline = Date.now() + 15_000;
   for (;;) {
-    // The banner is parsed by the sidecar's own reader in lines.ts, the one boot
-    // contract with `gridwell serve`, so a banner change that breaks the app
-    // breaks this suite the same way rather than passing a private regex.
+    // Parsed by the sidecar's own reader in lines.ts, the one boot contract with
+    // `gridwell serve`, so a banner change that breaks the app breaks this
+    // suite the same way rather than passing a private regex.
     const served = output.split('\n').map(parseServingLine).find((a) => a?.auth);
     if (served?.auth) {
       setOracleAuth(origin, served.auth); // every served node is reachable by the oracle
@@ -121,7 +120,7 @@ export const test = base.extend<Fixtures>({
   },
 
   // window is Playwright's plain browser page pointed at the served client, with
-  // the ?e2e=1 introspection hook installed: the same contract as the Electron
+  // the ?e2e=1 introspection hook installed, the same contract as the Electron
   // suite's window fixture.
   window: async ({ serve, page }, use) => {
     await authenticate(page, serve);

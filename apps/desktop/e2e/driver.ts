@@ -1,16 +1,16 @@
 import type { Page } from '@playwright/test';
 import { getGrid, getTileContent, GridSnapshot } from './oracle';
 
-// GridwellDriver is the reusable gesture layer the e2e tests are written
-// against. It composes two sources of truth:
+// GridwellDriver is the gesture layer the e2e tests are written against. It
+// reads two sources:
 //   - window.__gridwellTest, the renderer's read-only introspection hook,
-//     installed only under ?e2e=1. It supplies where to click (pane rects,
-//     palette swatch rects, the + button, cell-to-screen centers) and an idle()
-//     settle signal, so a spec waits on state rather than on sleeps.
-//   - the server oracle (getGrid), which supplies what a gesture actually
-//     created.
+//     installed only under ?e2e=1. It supplies where to click, such as pane
+//     rects, palette swatch rects, the + button and cell-to-screen centers,
+//     plus an idle() settle signal, so a spec waits on state rather than on
+//     sleeps.
+//   - the server oracle (getGrid), which supplies what a gesture created.
 // Every click goes through window.mouse, which dispatches real CDP input the
-// canvas listeners receive exactly as they would a user's mouse.
+// canvas listeners receive as they would a user's mouse.
 
 export interface PaneInfo {
   id: string;
@@ -32,30 +32,30 @@ export interface PaneInfo {
   // How many doorways deep the pane's place stack is; 0 is its root grid.
   // There is one stack, so a leaked frame has nowhere to hide.
   placeDepth: number;
-  // The ids of the tiles this pane renders, i.e. its cache contents. A tile the
-  // getGrid oracle sees but this does not is the "disappeared" bug.
+  // The ids of the tiles this pane renders, which is its cache contents. A tile
+  // the getGrid oracle sees but this does not has disappeared from the client.
   tileIds: string[];
 }
 
 export interface PaletteItem {
   index: number;
-  // Doorway swatches sit in the top row — one per declared doorway: a node's
-  // home, a connection's far home, and every collection a plugin declares as
-  // a menu entry. A click descends into it, a drag drops an exit-well link.
+  // Doorway swatches sit in the top row, one per declared doorway: a node's
+  // home, a connection's far home, and every collection a plugin declares as a
+  // menu entry. A click descends into it, a drag drops an exit-well link.
   // isPlugin tells them from the primitive swatches. kind is the declaring
-  // row's kind (fs, proc, gitlab, connection, …), label and uuid identify it,
-  // and rootGridID and status mirror the pluginhealth surface.
+  // row's kind, label and uuid identify it, and rootGridID and status mirror
+  // the pluginhealth surface.
   isPlugin: boolean;
   kind: string;
   label?: string;
   uuid?: string;
   rootGridID?: string;
   status?: string;
-  // The swatch's declared face — the same selector the bar's crumb for this
+  // The swatch's declared face, the same selector the bar's crumb for this
   // row's root grid wears, so a spec can pin that the two agree.
   glyph?: string;
   // The declared menu entry's id this swatch came from, such as the home's
-  // "trash", empty on a row's own place. Creation entries are !isPlugin rows
+  // "trash". Empty on a row's own place. Creation entries are !isPlugin rows
   // after the primitives.
   entry?: string;
   x: number;
@@ -64,7 +64,7 @@ export interface PaletteItem {
   h: number;
 }
 
-// PluginDescriptor is one configured plugin as the client knows it: the
+// PluginDescriptor is one configured plugin as the client knows it, from the
 // position-free plugin list (window.__gridwellTest.plugins()), available
 // wherever the focused pane sits.
 export interface PluginDescriptor {
@@ -72,9 +72,9 @@ export interface PluginDescriptor {
   kind: string;
   label: string;
   uuid: string;
-  // The row's own grid, where it has one. A plugin names none — it declares
-  // collections instead — so this is empty for a plugin and menuEntries is
-  // where its grids are.
+  // The row's own grid, where it has one. A plugin declares collections and
+  // names no grid of its own, so this is empty for a plugin and its grids are
+  // in menuEntries.
   rootGridID: string;
   menuEntries: PluginCollection[];
   scratchGridID: string;
@@ -118,8 +118,8 @@ export interface PaletteInfo {
   plusX: number;
   plusY: number;
   items: PaletteItem[];
-  // The hovered swatch index, -1 for none: what the palette highlights, read
-  // off client/menu, the one owner of the menu's live state.
+  // The hovered swatch index, or -1 for none, read off client/menu, the one
+  // owner of the menu's live state.
   hover: number;
   toggle: PaletteToggle;
 }
@@ -239,11 +239,11 @@ export class GridwellDriver {
   }
 
   // cellCenter maps a grid cell to screen coordinates and refuses a point
-  // outside the pane's rect. An off-pane or off-viewport point is always a spec
-  // bug: the cell is not where the viewport shows at this zoom. CDP silently
-  // drops events dispatched outside the window, so half the gesture fires,
-  // dragging never clears, and waitIdle hangs with no clue. Fail loudly with the
-  // numbers instead.
+  // outside the pane's rect. An off-pane or off-viewport point is a spec bug:
+  // the cell is not where the viewport shows at this zoom. CDP silently drops
+  // events dispatched outside the window, so half the gesture fires, dragging
+  // never clears, and waitIdle hangs with no clue. This fails with the numbers
+  // instead.
   async cellCenter(paneID: string, cx: number, cy: number): Promise<{ x: number; y: number }> {
     const pt = await this.win.evaluate(
       ([id, x, y]) => (window as any).__gridwellTest.cellCenter(id, x, y),
@@ -296,10 +296,10 @@ export class GridwellDriver {
   }
 
   // expandPlugins unfolds the + menu's plugin and connection section by
-  // clicking its chevron strip: the gesture every plugin swatch is now behind,
-  // since a menu opens collapsed. It no-ops when the section is already shown
-  // — expanded, or a popover with no control at all, such as a read-only
-  // grid's menu — so a caller never has to ask which state it is in.
+  // clicking its chevron strip, the gesture every plugin swatch sits behind
+  // because a menu opens collapsed. It no-ops when the section is already
+  // shown, whether expanded or in a popover with no control at all such as a
+  // read-only grid's menu, so a caller never has to ask which state it is in.
   async expandPlugins(): Promise<void> {
     // The control appears with the section, and a remote pane's menu waits on
     // the far node's plugin list, so wait for one or the other rather than
@@ -325,16 +325,16 @@ export class GridwellDriver {
 
   // focusPane left-clicks the empty center of the given pane to move focus to
   // it. The grid is empty after an entry or split, so the press lands on no
-  // tile: a pure focus click, with no descend and no pan. It exercises the
-  // focus-change rules, such as the + menu closing when focus leaves its pane.
+  // tile and neither descends nor pans. It exercises the focus-change rules,
+  // such as the + menu closing when focus leaves its pane.
   async focusPane(p: PaneInfo): Promise<void> {
     await this.win.mouse.click(p.x + p.w / 2, p.y + p.h / 2);
     await this.waitIdle();
   }
 
   // dragCreate drags the palette swatch of the given primitive kind ("well",
-  // "markdown", "url", "shell") onto cell (cx, cy) of the focused pane: press on
-  // the swatch, move past the 4px drag threshold, drag to the cell, release.
+  // "markdown", "url", "shell") onto cell (cx, cy) of the focused pane: press
+  // on the swatch, move past the 4px drag threshold, drag to the cell, release.
   async dragCreate(kind: string, cx: number, cy: number): Promise<void> {
     const pal = await this.palette();
     const item = pal.items.find((i) => !i.isPlugin && i.kind === kind);
@@ -343,8 +343,8 @@ export class GridwellDriver {
   }
 
   // dragPluginLink drags a plugin swatch, matched by kind or label, onto cell
-  // (cx, cy) of the focused pane: the drop-a-link gesture, distinct from
-  // clickPluginSwatch's descend.
+  // (cx, cy) of the focused pane. It drops a link, where clickPluginSwatch
+  // descends.
   async dragPluginLink(match: string, cx: number, cy: number): Promise<void> {
     await this.expandPlugins();
     const pal = await this.palette();
@@ -354,8 +354,8 @@ export class GridwellDriver {
   }
 
   // dragCreateToScreen drags the palette swatch of the given primitive kind to
-  // an arbitrary screen point rather than a cell of the focused pane: the drop
-  // a cell address cannot name, such as a point inside another pane that is
+  // an arbitrary screen point rather than a cell of the focused pane, for a
+  // drop no cell address can name, such as a point inside another pane
   // descended into a tile, where there is no grid to take a cell from.
   async dragCreateToScreen(kind: string, x: number, y: number): Promise<void> {
     const pal = await this.palette();
@@ -384,9 +384,8 @@ export class GridwellDriver {
   }
 
   // clickPaletteSwatch opens the palette and single-clicks, without dragging,
-  // the primitive swatch of the given kind. A click differs from dragCreate's
-  // drag: on the url swatch it opens the ephemeral-visit modal rather than
-  // placing a tile.
+  // the primitive swatch of the given kind. On the url swatch a click opens the
+  // ephemeral-visit modal, where dragCreate's drag places a tile.
   async clickPaletteSwatch(kind: string): Promise<void> {
     await this.openPalette();
     const pal = await this.palette();
@@ -395,9 +394,9 @@ export class GridwellDriver {
     await this.win.mouse.click(item.x + item.w / 2, item.y + item.h / 2);
   }
 
-  // clickPluginSwatch opens the palette and single-clicks, without dragging, the
-  // plugin swatch matched by kind or label: the descend-from-the-menu gesture.
-  // The pane lands in the plugin's root grid.
+  // clickPluginSwatch opens the palette and single-clicks, without dragging,
+  // the plugin swatch matched by kind or label. The pane lands in the plugin's
+  // root grid.
   async clickPluginSwatch(match: string): Promise<void> {
     await this.openPalette();
     await this.expandPlugins();
@@ -426,8 +425,8 @@ export class GridwellDriver {
     await this.waitIdle();
   }
 
-  // ctrlDescendCell is descendCell with Control held: the descent lands in a
-  // new pane split below, which takes focus; the clicked pane stays put.
+  // ctrlDescendCell is descendCell with Control held, so the descent lands in a
+  // new pane split below, which takes focus. The clicked pane stays put.
   async ctrlDescendCell(cx: number, cy: number): Promise<void> {
     const f = await this.focused();
     const c = await this.cellCenter(f.id, cx, cy);
@@ -439,35 +438,35 @@ export class GridwellDriver {
 
   // ── Tile gestures (left/right button drags over the canvas) ───────────────
 
-  // NUDGE is the first move of every synthetic drag: comfortably past the 4px
-  // canvas and preload drag threshold, so the press reads as a drag.
+  // NUDGE is the first move of every synthetic drag, past the 4px canvas and
+  // preload drag threshold, so the press reads as a drag.
   private static readonly NUDGE = 8;
 
   // dragTileCell left-drags the tile at cell (fromCx,fromCy) to (toCx,toCy) in
-  // the focused pane: the move gesture. The tile's X and Y change on the server.
+  // the focused pane, the move gesture. The tile's X and Y change on the server.
   async dragTileCell(fromCx: number, fromCy: number, toCx: number, toCy: number): Promise<void> {
     await this.dragCell(fromCx, fromCy, toCx, toCy, 'left');
   }
 
   // cloneTileCell right-drags from the center of the tile at (fromCx,fromCy) to
-  // (toCx,toCy): the clone gesture, a right-drag from a tile's inner third. A
+  // (toCx,toCy), the clone gesture, a right-drag from a tile's inner third. A
   // new independent tile lands at the destination cell.
   async cloneTileCell(fromCx: number, fromCy: number, toCx: number, toCy: number): Promise<void> {
     await this.dragCell(fromCx, fromCy, toCx, toCy, 'right');
   }
 
   // linkTileCell ctrl+right-drags from the center of the tile at (fromCx,fromCy)
-  // to (toCx,toCy): the link gesture. Ctrl flips the right button's meaning from
+  // to (toCx,toCy), the link gesture. Ctrl flips the right button's meaning from
   // copy to link, so a reference lands at the destination and the source is
-  // untouched. Ctrl is held across the PRESS, which is where the gesture
+  // untouched. Ctrl is held across the press, which is where the gesture
   // classifies; releasing it mid-drag changes nothing.
   async linkTileCell(fromCx: number, fromCy: number, toCx: number, toCy: number): Promise<void> {
     await this.dragCell(fromCx, fromCy, toCx, toCy, 'right', true);
   }
 
   // dragCell is the shared press, nudge, drag, release over two cell centers.
-  // ctrl, when set, is held down across the press and released after the drop —
-  // the modifier the canvas reads off the mousedown event.
+  // ctrl, when set, is held down across the press and released after the drop,
+  // because the canvas reads the modifier off the mousedown event.
   private async dragCell(fromCx: number, fromCy: number, toCx: number, toCy: number, button: 'left' | 'right', ctrl = false): Promise<void> {
     const f = await this.focused();
     const from = await this.cellCenter(f.id, fromCx, fromCy);
@@ -515,8 +514,8 @@ export class GridwellDriver {
   }
 
   // resizeTileCell right-drags from near the corner of the 1x1 tile at (cx,cy),
-  // outside its center third so the gesture is a resize rather than a clone, out
-  // to the center of (toCx,toCy). The tile's footprint rubber-bands to the
+  // outside its center third so the gesture is a resize rather than a clone,
+  // out to the center of (toCx,toCy). The tile's footprint rubber-bands to the
   // bounding box of the pinned corner and the cursor.
   async resizeTileCell(cx: number, cy: number, toCx: number, toCy: number): Promise<void> {
     const f = await this.focused();
@@ -554,8 +553,8 @@ export class GridwellDriver {
   // ── Pane gestures (right-drag in screen space) ────────────────────────────
 
   // rightDragScreen presses the right button at (fromX,fromY), nudges past the
-  // threshold, drags to (toX,toY) and releases: the raw pane-gesture driver for
-  // split, swap, and divider resize.
+  // threshold, drags to (toX,toY) and releases. It is the raw pane-gesture
+  // driver for split, swap and divider resize.
   async rightDragScreen(fromX: number, fromY: number, toX: number, toY: number): Promise<void> {
     const m = this.win.mouse;
     await m.move(fromX, fromY);
@@ -579,9 +578,9 @@ export class GridwellDriver {
   // bottom edge band, splitting it into two stacked panes.
   async splitFocusedPaneHorizontal(): Promise<void> {
     const p = await this.focused();
-    // 30% across: the whole bottom edge is the pane's own border band now
-    // that the one bar lives below every pane, so a right-down anywhere along
-    // it arms the split.
+    // 30% across. The one bar lives below every pane, so the whole bottom edge
+    // is the pane's own border band and a right-down anywhere along it arms the
+    // split.
     const x = p.x + p.w * 0.3;
     await this.rightDragScreen(x, p.y + p.h - 5, x, p.y + p.h * 0.45);
   }
@@ -603,8 +602,8 @@ export class GridwellDriver {
     dy: number,
   ): Promise<{ before: number; after: number }> {
     const g = await this.hDividerGeom();
-    // Grab from below the boundary, in the lower pane's top band. The two
-    // sides of a border are equivalent.
+    // Grab from below the boundary, in the lower pane's top band. The two sides
+    // of a border are equivalent.
     if (button === 'right') {
       await this.rightDragScreen(g.x, g.y + 2, g.x, g.y + dy);
     } else {
@@ -615,7 +614,7 @@ export class GridwellDriver {
   }
 
   // leftDragScreen presses the left button at (fromX,fromY), nudges past the
-  // threshold, drags to (toX,toY) and releases: the clamped left-drag
+  // threshold, drags to (toX,toY) and releases. It is the clamped left-drag
   // pane-boundary resize.
   async leftDragScreen(fromX: number, fromY: number, toX: number, toY: number): Promise<void> {
     const m = this.win.mouse;
@@ -652,11 +651,11 @@ export class GridwellDriver {
   }
 
   // ascendViaCrumb left-clicks the previous chain crumb in the focused pane's
-  // bottom bar: the bar's ascent gesture.
+  // bottom bar, which is the bar's ascent gesture.
   async ascendViaCrumb(): Promise<void> {
     const bar = await this.win.evaluate(() => (window as any).__gridwellTest.bar());
     const depth = await this.win.evaluate(() => (window as any).__gridwellTest.workspace().depth);
-    // Only the current tree's crumbs: the one chain also carries the outer
+    // Only the current tree's crumbs. The one chain also carries the outer
     // context, and clicking those would cross the workspace boundary.
     const chain = (bar.segments as any[]).filter((s) => s.kind === 'chain' && s.level === depth);
     if (chain.length < 2) return; // nothing to ascend to
@@ -670,18 +669,18 @@ export class GridwellDriver {
 
   // ── View gestures ─────────────────────────────────────────────────────────
 
-  // middleClickPane middle-clicks the center of the focused pane's rect: the
-  // universal ascend, and position-independent. Prefer it over middleClickCell
+  // middleClickPane middle-clicks the center of the focused pane's rect, the
+  // universal ascend, independent of position. Prefer it over middleClickCell
   // for a bare ascent, because a computed cell center can land outside the pane
-  // at high zoom (one cell below center is off-pane once cells exceed half the
-  // pane), and an off-pane click is swallowed without a trace.
+  // at high zoom, once cells exceed half the pane, and an off-pane click is
+  // swallowed without a trace.
   async middleClickPane(): Promise<void> {
     const f = await this.focused();
     await this.win.mouse.click(f.x + f.w / 2, f.y + f.h / 2, { button: 'middle' });
     await this.waitIdle();
   }
 
-  // middleClickCell middle-clicks the center of a cell: the universal ascend
+  // middleClickCell middle-clicks the center of a cell, the universal ascend
   // shortcut over a descended pane.
   async middleClickCell(cx: number, cy: number): Promise<void> {
     const f = await this.focused();
@@ -729,7 +728,7 @@ export class GridwellDriver {
     await this.waitIdle();
   }
 
-  // toggleTextMode left-clicks the bar-slot toggle of a file descent: the DOM
+  // toggleTextMode left-clicks the bar-slot toggle of a file descent, the DOM
   // button that flips the focused pane between raw text and rendered markdown,
   // in the same slot the + button occupies on a grid pane.
   async toggleTextMode(): Promise<void> {
@@ -748,8 +747,8 @@ export class GridwellDriver {
     return this.win.evaluate(() => (window as any).__gridwellTest.textareaInfo());
   }
 
-  // textareaValue reads the raw-text overlay's current buffer straight from the
-  // DOM: what the user sees in a text descent. It is null when no textarea
+  // textareaValue reads the raw-text overlay's current buffer from the DOM,
+  // which is what the user sees in a text descent. It is null when no textarea
   // overlay exists.
   textareaValue(): Promise<string | null> {
     return this.win.evaluate(() => {

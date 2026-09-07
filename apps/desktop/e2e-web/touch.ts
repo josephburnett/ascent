@@ -2,9 +2,8 @@ import type { Page } from '@playwright/test';
 
 // Raw CDP touch injection. page.touchscreen offers only tap, while the
 // long-press and multi-finger vocabulary in client/touchgest needs
-// Input.dispatchTouchEvent, so the browser fires real TouchEvents at the canvas,
-// the same events a phone produces, and the whole touch-to-gesture pipeline runs
-// rather than being simulated.
+// Input.dispatchTouchEvent. The browser then fires the same real TouchEvents at
+// the canvas a phone produces, and the whole touch-to-gesture pipeline runs.
 
 interface Pt {
   x: number;
@@ -16,9 +15,10 @@ async function session(page: Page) {
 }
 
 // longPressDrag holds one finger still past the touchgest HoldMs threshold,
-// which classifies the press as the right button, then drags it: the touch form
-// of every right-drag pane gesture, split, swap, clone, resize, ascend. The hold
-// is a real wall-clock wait, because the long-press is a duration.
+// which classifies the press as the right button, then drags it. It is the
+// touch form of every right-drag pane gesture: split, swap, clone, resize,
+// ascend. The hold is a real wall-clock wait, because the long-press is a
+// duration.
 export async function longPressDrag(page: Page, from: Pt, to: Pt, holdMs = 550): Promise<void> {
   const s = await session(page);
   await s.send('Input.dispatchTouchEvent', {
