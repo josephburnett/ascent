@@ -92,7 +92,7 @@ func TestPrefetchWarmsLinkTargetBody(t *testing.T) {
 	cc := openLayer(t, up, filepath.Join(t.TempDir(), "cache.db"), Options{Prefetch: true})
 
 	ctx := context.Background()
-	cc.Prefetch(ctx)
+	cc.prefetch(ctx, "")
 	up.dark = true
 
 	_, _, data := readContent(t, cc, "u1/2")

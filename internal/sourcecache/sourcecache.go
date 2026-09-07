@@ -162,13 +162,14 @@ const freshWindow = 30 * time.Second
 // Options is the per-seam policy over the one engine: what differs between two
 // fronted namespaces is how eagerly the engine warms.
 type Options struct {
-	// Prefetch walks the whole namespace on every successful Subscribe,
-	// warming grids, tiles, previews, and bodies nobody has opened yet; see
-	// prefetch.go. It is the offline policy, and belongs to a namespace whose
-	// answers cross a network and whose absence is a machine going dark: the
-	// transport, which is the one namespace fronted today. The default is off,
-	// so a seam fronted without asking for a crawl reads through and remembers,
-	// nothing more.
+	// Prefetch walks the whole namespace on every successful Subscribe, and
+	// one source again when it comes back, warming grids, tiles, previews,
+	// and bodies nobody has opened yet; prefetch.go owns both triggers. It is
+	// the offline policy, and belongs to a namespace whose answers cross a
+	// network and whose absence is a machine going dark: the transport, which
+	// is the one namespace fronted today. The default is off, so a seam
+	// fronted without asking for a crawl reads through and remembers, nothing
+	// more.
 	Prefetch bool
 	// FreshWindow overrides freshWindow, the serve-first horizon. Zero takes
 	// the default; tests shrink it so an aged answer is one they just stored.
@@ -256,12 +257,26 @@ func sourceOfNS(ns string) string {
 // own stream so a client already holding it re-reads. grid is consulted on the
 // transition alone (looking one up costs a query), and a nil grid — or one
 // that names nothing — announces nothing.
+//
+// The transition BACK to light is shared, and it is the prefetch walk's second
+// trigger (prefetch.go). It belongs to the door rather than to either
+// direction because "this source is back" is one fact whichever direction
+// notices it first: after a real recovery the client's own refetch usually
+// answers before the connection's health event arrives, so a kick hung off
+// the health arm alone silently did nothing, which is what test/connections
+// caught.
 func (c *Layer) setDark(source string, dark bool, announce bool, grid func() string) {
 	c.darkMu.Lock()
 	changed := c.dark[source] != dark
 	c.dark[source] = dark
 	c.darkMu.Unlock()
-	if !changed || !announce || grid == nil {
+	if !changed {
+		return
+	}
+	if !dark {
+		c.kickPrefetch(source)
+	}
+	if !announce || grid == nil {
 		return
 	}
 	if id := grid(); id != "" {
@@ -347,11 +362,12 @@ func Open(dbPath string) (*Store, error) {
 func (s *Store) Front(upstream namespace.Namespace, opts Options) *Layer {
 	c := &Layer{Namespace: upstream, db: s.db, opts: opts,
 		revalInflight: map[string]bool{}, subs: map[int]chan *pb.Event{}, dark: map[string]bool{}}
+	c.pf.running = map[string]bool{}
 	c.pf.ctx, c.pf.cancel = context.WithCancel(context.Background())
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.closed { // opened after the store closed: this layer never warms
-		c.pf.cancel()
+		c.stopWalks()
 		return c
 	}
 	s.layers = append(s.layers, c)
@@ -370,8 +386,7 @@ func (s *Store) Close() error {
 	s.layers = nil
 	s.mu.Unlock()
 	for _, c := range layers {
-		c.pf.cancel()
-		c.pf.wg.Wait()   // the walk is out before its DB goes away
+		c.stopWalks()    // the walk is out before its DB goes away
 		c.revalWG.Wait() // and so is every in-flight revalidation
 	}
 	return s.db.Close()
@@ -876,12 +891,13 @@ func blob(b []byte) []byte {
 //
 // Info declares watch on that basis: the layer always has a stream to offer.
 func (c *Layer) Subscribe(ctx context.Context, in *pb.SubscribeRequest, send func(*pb.Event) error) error {
-	// Every subscription and resubscription is a moment to warm the whole
-	// source. In front of the transport that means the initial connect and a
-	// re-dial of the server's own fan-in: one connection going dark and
-	// coming back does not land here, because the stream this relays is the
-	// transport's hub, which survives it. prefetch.go says what that costs.
-	c.kickPrefetch()
+	// Every subscription and resubscription is a moment to warm every source:
+	// in front of the transport, the initial connect and a re-dial of the
+	// server's own fan-in. One connection going dark and coming back does not
+	// land here — the stream this relays is the transport's hub, which
+	// survives it — so that source is warmed when setDark sees it come back
+	// instead. kickPrefetch holds both triggers.
+	c.kickPrefetch("")
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// One send at a time: the two streams are relayed by two goroutines and
@@ -986,7 +1002,10 @@ func (c *Layer) applyEvent(ctx context.Context, ev *pb.Event) {
 		// is relayed onward to the very client that would be told, on this
 		// same stream, in this same call (Subscribe's emit). A GridChanged of
 		// ours would be a second telling of a fact already delivered, and what
-		// the client does with it is the client's half.
+		// the client does with it is the client's half. A health-UP is often
+		// how the node first learns a source is back, and setDark turns that
+		// transition into the prefetch walk's second trigger for that one
+		// source.
 		c.setDark(p.PluginHealth.GetPluginUuid(), !p.PluginHealth.GetHealthy(), false, nil)
 	}
 }

@@ -49,17 +49,19 @@ FIRST (`Layer.GetGrid`): inside `freshWindow` (30s) with the source not
 known dark it serves as-is; otherwise `Grid.Stale = true` — this serve is a
 memory — and one background `revalidateGrid` is kicked, single-flight per
 grid id. Only a miss waits on the source. Darkness is `Layer.dark`, keyed by
-connection segment (`sourceOf`), with two writers that are the same fact
-from two directions: `noteReach`, from any pass-through call that failed
+connection segment (`sourceOf`), learned from two directions that are the
+same fact — `noteReach`, from any pass-through call that failed
 transport-shaped, and `applyEvent`'s health arm, from the connection's own
-health on the stream this layer relays. Every other read passes through and
-remembers, falling back to the remembered answer on a transport-class
-failure only. Writes always pass through and fold their responses into the
-remembered rows (`foldWrite`). A stale answer is never remembered
+health on the stream this layer relays — and written through one door,
+`setDark`, whose transition back to light is also what re-warms that source.
+Every other read passes through and remembers, falling back to the remembered
+answer on a transport-class failure only. Writes always pass through and fold
+their responses into the remembered rows (`foldWrite`). A stale answer is
+never remembered
 (`getGridLive`), so a degraded read cannot overwrite the good one it
-degraded from. `prefetch.go` warms the whole source on Subscribe;
-`servecontent.go` gives the `/content/` door the same treatment under its
-own caps.
+degraded from. `prefetch.go` warms every source on Subscribe and one source
+when it comes back; `servecontent.go` gives the `/content/` door the same
+treatment under its own caps.
 
 **5. The server fan-in** — `internal/server/router.go`. `Subscribe` starts
 one `watchPlugin` per namespace plus one for the transport. `watchPlugin`
@@ -231,11 +233,23 @@ cached grid chained through it, and nobody else's. Those reads hit the cache
 inside their windows with the source no longer dark, so they serve unstamped
 and the chip clears.
 
-Note what does NOT happen on a single connection's recovery: the
-whole-source prefetch walk. `Layer.kickPrefetch` fires from `Layer.Subscribe`,
-and the layer's upstream subscription is the transport's hub stream, which
-survives one connection's outage. The resync after a recovery is the client's
-blunt refetch of every grid it holds, not a re-walk.
+The recovery also re-kicks the prefetch walk, for that one source
+(`Layer.kickPrefetch`, from `setDark`'s transition out of darkness). The
+`Layer.Subscribe` trigger cannot cover this: the layer's upstream
+subscription is the transport's hub stream, which survives one connection's
+outage, so nothing else here notices the machine came back. The client's
+`retryKick` refetches the grids it holds; the walk is for the grids nobody
+re-opened, which is where "a recent copy of what you did not happen to read"
+has gone most stale. It is transport-only — reads, no version claims — and
+revalidates through the ordinary window rules.
+
+The trigger is the door's, not either direction's, because either can notice
+first: in practice the client's refetch answers before the fan-in publishes
+health, so a kick hung off the health arm alone did nothing at all, which is
+what `test/connections` caught. Only the transition to light kicks, only for
+the source that came back, and the walk's single-flight is keyed by source, so
+a flapping connection has at most one walk in flight rather than one per
+flap.
 
 ## Trace (c): a write racing its own echo
 
@@ -386,7 +400,11 @@ Each cross-layer behaviour in the three traces, and what pins it.
 | A flap cancels only the fetches that rode through it | `client/inflight/inflight_test.go:TestCancelIfLeavesTheFetchesThatKeptTheirLink` |
 | The menu claim's scope — a source's own name, and every node behind it | `client/cache/resync_test.go:TestReachesCoversTheSourceItselfAndEveryNodeBehindIt` |
 | A swallowed menu read does not latch a remote pane's + menu empty: it gives up, surfaces, and the menu fills itself in | `apps/desktop/e2e-web/web-remote-menu.spec.ts` ("a menu read the network swallows does not latch the remote menu empty") |
-| A single connection's recovery does NOT re-warm the whole source | `sourcecache/prefetch_seam_test.go:TestOneConnectionsRecoveryDoesNotReWalkTheSource`, and the comments in `prefetch.go` and `Layer.Subscribe` |
+| A single connection's recovery re-walks that source, over the real transport and its relayed health | `sourcecache/prefetch_seam_test.go:TestOneConnectionsRecoveryReWalksThatSource` |
+| A recovery the layer learns from its own answering call walks it too | `prefetch_seam_test.go:TestARecoveryNoticedByAReadWalksTheSourceToo` |
+| It walks only the source that recovered | `prefetch_seam_test.go:TestARecoveryWalksOnlyTheSourceThatRecovered` (two connections, two far nodes) |
+| A flap storm does not stack walks: single-flight per source | `prefetch_seam_test.go:TestAFlapStormDoesNotStackWalks` |
+| Real binaries, real ssh: a revived connection warms what nobody read, so a second partition serves it | `test/connections/partition_test.go:TestMountPartitionServesCache` (`make check-connections`) |
 
 ### Trace (c)
 

@@ -9,27 +9,30 @@ package sourcecache
 // construction — text, previews, metadata — so the walk is a full traversal
 // with caps as emergency valves, not a sampling strategy.
 //
-// The trigger is every Layer.Subscribe establishment, and nothing else. In
-// front of the transport that stream is the connection hub's, one for every
-// connection, so the trigger means the initial connect and a re-dial of the
-// server's own fan-in — NOT one connection's recovery, which the hub survives
-// without a resubscription here. What resyncs after a recovery is the client's
-// blunt refetch of the grids it holds; a grid the user never re-opened waits
-// for the next establishment, so the walk is the deletes-while-away resync
-// only that far. (Whether a health-up should kick the walk is an open question
-// for the owner in docs/freshness.md;
-// prefetch_seam_test.go:TestOneConnectionsRecoveryDoesNotReWalkTheSource pins
-// what happens today.) The walk runs through the wrapper's own read methods,
-// so every answer lands in the cache by the one existing write path and there
-// is no second writer.
+// There are two triggers, and kickPrefetch is where both are written down.
+// One is every Layer.Subscribe establishment, which warms every source the
+// namespace declares: in front of the transport that stream is the connection
+// hub's, one for every connection, so it means the initial connect and a
+// re-dial of the server's own fan-in. The other is a source coming back —
+// Layer.setDark's transition out of darkness, from a relayed health-up or
+// from a pass-through call answering again, whichever notices first — which
+// warms that ONE source, because the hub survives a single connection's
+// outage and nothing else here would notice it returned. A recovery is when
+// the promise is most stale: what the user re-opens is refetched by the
+// client's blunt kick, and what nobody re-opened is exactly what this walk is
+// for. The walk runs through the wrapper's own read methods, so every answer
+// lands in the cache by the one existing write path and there is no second
+// writer; it reads only, claims no version, and going dark does nothing.
 //
 // A transport failure mid-walk aborts quietly: the source went dark, and the
-// next successful Subscribe walks again. A coded refusal on an individual read
-// — a tombstoned segment, a permission wall — skips that branch and keeps
-// walking, because the walker must never invent reachability the source
-// denies. A serves_page tile's door body, at its root subpath, is walked under
-// the same byte budget, so photos and plugin pages are offline too in the
-// common case.
+// next trigger — a Subscribe, or that source coming back — walks again. A
+// whole-source walk aborts on the first dark source it meets, and the
+// recovery trigger is what picks that source up again. A coded refusal on an
+// individual read — a tombstoned segment, a permission wall — skips that
+// branch and keeps walking, because the walker must never invent
+// reachability the source denies. A serves_page tile's door body, at its root
+// subpath, is walked under the same byte budget, so photos and plugin pages
+// are offline too in the common case.
 
 import (
 	"context"
@@ -62,32 +65,47 @@ var (
 // preview.
 var contentKinds = map[string]bool{"text": true, "pane": true}
 
-// prefetcher is the walk's single-flight state, one per Client.
+// prefetcher is the walk's single-flight state, one per Client. running is
+// the walks in flight keyed by what each covers: "" is every source, a
+// connection segment is that one.
 type prefetcher struct {
 	mu      sync.Mutex
-	running bool
-	ctx     context.Context
-	cancel  context.CancelFunc
+	running map[string]bool
+	// closed is set before the closer waits, under the same mutex a kick
+	// takes, so no walk can be started once waiting has begun. A trigger now
+	// rides every pass-through call, and one landing during Close would
+	// otherwise race the WaitGroup it is counted by.
+	closed bool
+	ctx    context.Context
+	cancel context.CancelFunc
 	// wg counts the running walk. The closer waits on it after cancelling and
 	// before closing the DB, so a walk never writes into a closed cache.
 	wg sync.WaitGroup
 }
 
-// kick starts one walk if none is running, and only where the walk is this
-// namespace's policy (Options.Prefetch). It is serialized, never queued: a
-// trigger during a walk is satisfied by that walk's own freshness, since each
-// Subscribe re-trigger means the source is up now and the running walk is
-// already exploiting that.
-func (c *Layer) kickPrefetch() {
+// kickPrefetch is the one owner of when a walk starts, and it starts on two
+// triggers, both landing here: a Layer.Subscribe establishment, with source
+// "" for every source the namespace declares, and a source coming back
+// (Layer.setDark), with that source's segment for that source alone. It runs
+// only where the walk is this namespace's policy (Options.Prefetch).
+//
+// It is serialized per source and never queued: a trigger for ground a
+// running walk already covers is satisfied by that walk's own freshness,
+// since a trigger means the source is up now and the running walk is already
+// exploiting that. That is also the flap guard — a connection that leaves and
+// returns twenty times has at most one walk in flight, never twenty stacked.
+func (c *Layer) kickPrefetch(source string) {
 	if !c.opts.Prefetch {
 		return
 	}
 	c.pf.mu.Lock()
-	if c.pf.running || c.pf.ctx == nil {
+	// running[""] is the whole-source walk, which covers every source: a
+	// recovery arriving under one is that walk's to warm.
+	if c.pf.ctx == nil || c.pf.closed || c.pf.running[""] || c.pf.running[source] {
 		c.pf.mu.Unlock()
 		return
 	}
-	c.pf.running = true
+	c.pf.running[source] = true
 	c.pf.wg.Add(1)
 	ctx := c.pf.ctx
 	c.pf.mu.Unlock()
@@ -95,18 +113,33 @@ func (c *Layer) kickPrefetch() {
 		defer c.pf.wg.Done()
 		defer func() {
 			c.pf.mu.Lock()
-			c.pf.running = false
+			delete(c.pf.running, source)
 			c.pf.mu.Unlock()
 		}()
-		c.Prefetch(ctx)
+		c.prefetch(ctx, source)
 	}()
 }
 
-// Prefetch walks the whole source through the wrapper's own read methods,
-// warming grids, tiles, previews, plugin lists, and content bodies. It is
-// exported so a deliberate warm can run it synchronously; the Subscribe
-// trigger runs it in the background.
-func (c *Layer) Prefetch(ctx context.Context) {
+// stopWalks refuses further kicks and waits for the walks in flight, so a
+// walk never writes into a closed cache. Refusing first is the point: a
+// trigger rides every pass-through call now, and one landing between the
+// cancel and the wait would be counted by a WaitGroup already being waited
+// on.
+func (c *Layer) stopWalks() {
+	c.pf.mu.Lock()
+	c.pf.closed = true
+	c.pf.mu.Unlock()
+	c.pf.cancel()
+	c.pf.wg.Wait()
+}
+
+// prefetch is the walk itself, over one source or over all of them: it goes
+// through the wrapper's own read methods, warming grids, tiles, previews,
+// plugin lists, and content bodies. Source "" warms every root the namespace
+// declares and a connection segment warms only the roots that belong to it —
+// one walk implementation, taken from one end or from one branch of it.
+// kickPrefetch runs it in the background; a test runs it synchronously.
+func (c *Layer) prefetch(ctx context.Context, source string) {
 	w := &walker{c: c, ctx: ctx, seenGrids: map[string]bool{}, seenTiles: map[string]bool{}, seenNs: map[string]bool{}}
 	// The roots are what the fronted namespace declares about itself, through
 	// the door every namespace answers on: the handshake with no namespace.
@@ -120,9 +153,15 @@ func (c *Layer) Prefetch(ctx context.Context) {
 	}
 	roots := []string{}
 	add := func(id string) {
-		if id != "" {
-			roots = append(roots, id)
+		// A root belongs to the source its id names, which is how one
+		// source's walk is a filter over the same declaration rather than a
+		// second way of asking. A source key deeper than a connection segment
+		// — a far plugin's health — owns no root here and warms nothing: a
+		// plugin being down never made the machine unreachable.
+		if id == "" || (source != "" && sourceOf(id) != source) {
+			return
 		}
+		roots = append(roots, id)
 	}
 	for _, conn := range hs.GetConnections() {
 		add(conn.GetRootGridId())

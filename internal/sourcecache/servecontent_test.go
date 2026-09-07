@@ -192,7 +192,7 @@ func TestPrefetchWalksServesPageBodies(t *testing.T) {
 	cc := openLayer(t, fake, filepath.Join(t.TempDir(), "cache.db"), Options{Prefetch: true})
 	ctx := context.Background()
 
-	cc.Prefetch(ctx)
+	cc.prefetch(ctx, "")
 	fake.dark = true
 
 	st, mt, data, err := serveDoor(cc, "7", "")
