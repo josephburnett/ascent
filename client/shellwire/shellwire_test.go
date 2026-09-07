@@ -5,9 +5,8 @@ import (
 	"testing"
 )
 
-// The grammar is pinned to itself: what AttachURL writes is exactly what
-// ParseAttach reads. A round trip is the only test that catches one side
-// drifting. The content URL grammar (rpc.PageURL) is pinned the same way.
+// What AttachURL writes is exactly what ParseAttach reads. Only a round trip
+// catches one side drifting.
 func TestAttachURLRoundTrip(t *testing.T) {
 	for _, tc := range []struct {
 		origin string
@@ -41,7 +40,7 @@ func TestAttachURLRoundTrip(t *testing.T) {
 	}
 }
 
-// A qualified id is a chain with slashes; it survives the query string
+// A qualified id is a chain with slashes, and it must survive the query string
 // intact, or a mounted node's shell attaches to the wrong tile.
 func TestAttachURLQualifiedChain(t *testing.T) {
 	const id = "abc1234/desk/xyz9876/41"
@@ -68,16 +67,14 @@ func TestAttachURLRejectsNonHTTPOrigin(t *testing.T) {
 	}
 }
 
-// No tile id, nothing to attach to: the door refuses rather than opening a
-// socket bound to nothing.
+// The door refuses rather than opening a socket bound to nothing.
 func TestParseAttachRequiresTileID(t *testing.T) {
 	if _, err := ParseAttach(url.Values{QueryCols: {"80"}}); err == nil {
 		t.Fatal("a bind with no tile_id must be an error")
 	}
 }
 
-// Absent or garbage sizes mean "no opinion" (0), not a fabricated default:
-// shellsvc.ClampSize is the one owner of the bounds.
+// Absent or garbage sizes are 0, since shellsvc.ClampSize owns the bounds.
 func TestParseAttachSizesAreOptional(t *testing.T) {
 	a, err := ParseAttach(url.Values{QueryTileID: {"a/1"}, QueryCols: {"nonsense"}})
 	if err != nil {
@@ -103,8 +100,7 @@ func TestControlRoundTrip(t *testing.T) {
 	if c.Kind != KindExit || c.Message != "session gone" || !c.SessionGone {
 		t.Fatalf("exit round trip gave %+v", c)
 	}
-	// A clean end carries no verdict: the client cannot read "gone" out of
-	// an ordinary detach.
+	// A clean end carries no verdict, so an ordinary detach cannot read as gone.
 	c, err = DecodeControl(EncodeExit("", false))
 	if err != nil {
 		t.Fatal(err)
