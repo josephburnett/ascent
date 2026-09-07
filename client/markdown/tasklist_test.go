@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// TaskCount is the tests' parity oracle: how many toggleable checkboxes the
-// toggle machinery sees. Test-only — production counts nothing, it only
-// toggles (the deadcode gate keeps it that way).
+// TaskCount reports how many toggleable checkboxes the toggle machinery sees.
+// It is test-only, because production only toggles, and the deadcode gate keeps
+// it that way.
 func TaskCount(src []byte) int {
 	return len(taskMarkerOffsets(src))
 }
@@ -34,8 +34,8 @@ func TestToggleTaskBasic(t *testing.T) {
 		t.Errorf("toggle 2 (uppercase X): ok=%v %q", ok, out)
 	}
 
-	// Round trip: toggling twice restores the source byte-for-byte —
-	// except an [X], which normalizes to [x] (unchecked then rechecked).
+	// Toggling twice restores the source byte for byte, except that an [X]
+	// normalizes to [x].
 	once, _ := ToggleTask(src, 0)
 	twice, _ := ToggleTask(once, 0)
 	if string(twice) != string(src) {
@@ -67,8 +67,8 @@ func TestToggleTaskEditsExactlyOneByte(t *testing.T) {
 }
 
 func TestToggleTaskDocumentOrderAcrossShapes(t *testing.T) {
-	// Ordered lists, nesting, and a blockquote — the DOM renders these
-	// checkboxes in document order and the toggle must count the same way.
+	// The DOM renders these checkboxes in document order and the toggle must
+	// count the same way.
 	src := []byte(`1. [ ] first
 2. [x] second
 
@@ -122,12 +122,10 @@ func TestToggleTaskOutOfRange(t *testing.T) {
 	}
 }
 
-// TestToggleTaskRenderParity pins THE mapping invariant: the number of
-// checkbox inputs RenderHTML emits equals TaskCount, for shapes chosen to
-// tempt them apart (code fences, prose brackets, html-ish text, nesting,
-// blockquotes, loose/tight lists). The DOM index → source index mapping is
-// sound exactly when these two counts can never disagree — they share one
-// parser, and this test is the tripwire if that ever stops being true.
+// TestToggleTaskRenderParity pins the mapping invariant: the number of checkbox
+// inputs RenderHTML emits equals TaskCount, for shapes chosen to tempt them
+// apart. The DOM index maps to the source index exactly while those two counts
+// agree, and they share one parser.
 func TestToggleTaskRenderParity(t *testing.T) {
 	docs := []string{
 		"- [ ] a\n- [x] b\n",
@@ -150,10 +148,9 @@ func TestToggleTaskRenderParity(t *testing.T) {
 	}
 }
 
-// TestRenderHTMLCheckboxesInteractive pins that the rendered view's
-// checkboxes are not disabled (a disabled input swallows clicks — it could
-// never be a control), that checked state survives sanitization, and that
-// the sanitizer still strips active content around them.
+// TestRenderHTMLCheckboxesInteractive pins that the rendered view's checkboxes
+// carry no disabled attribute, which would swallow clicks, that checked state
+// survives sanitization, and that the sanitizer still strips active content.
 func TestRenderHTMLCheckboxesInteractive(t *testing.T) {
 	html := RenderHTML([]byte("- [ ] open\n- [x] done <script>alert(1)</script>\n"), false)
 	if strings.Contains(html, "disabled") {

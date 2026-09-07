@@ -17,16 +17,14 @@ import (
 	"github.com/josephburnett/gridwell/internal/doctype"
 )
 
-// The read-only rendered view: source bytes → sanitized HTML string, handed
-// by the wasm overlay code to a DOM div. The decision lives here, js-free and
-// unit-tested. goldmark — already this package's parser — does markdown,
-// go-org (Hugo's org engine) does org files, and bluemonday sanitizes both as
-// defense in depth; goldmark is safe by default, omitting raw HTML in
-// markdown rather than passing it through.
+// The read-only rendered view: source bytes to sanitized HTML, which the wasm
+// overlay hands to a DOM div. The decision lives here, js-free and unit-tested.
+// goldmark does markdown, go-org (Hugo's org engine) does org files, and
+// bluemonday sanitizes both as defense in depth; goldmark is already safe by
+// default, omitting raw HTML rather than passing it through.
 
-// gmRenderer shares the GFM configuration with gmParser: one dialect,
-// whether the bytes are being lowered for alt-text derivation, rendered
-// for the overlay, or scanned for task markers (tasklist.go).
+// gmRenderer holds this package's one GFM configuration, so rendering for the
+// overlay and the task-marker scan in tasklist.go read the same dialect.
 var gmRenderer = goldmark.New(
 	goldmark.WithExtensions(extension.GFM),
 	goldmark.WithRendererOptions(renderer.WithNodeRenderers(
@@ -34,12 +32,10 @@ var gmRenderer = goldmark.New(
 	)),
 )
 
-// taskCheckboxRenderer overrides GFM's task-list checkbox renderer to emit
-// the input without `disabled`: task-list checkboxes are the one interactive
-// control in the otherwise read-only rendered view, and clicking one toggles
-// the source marker through the normal text-edit door (tasklist.go owns the
-// mapping). A disabled input swallows clicks entirely, so it could never be a
-// control.
+// taskCheckboxRenderer emits GFM's task-list checkbox without `disabled`.
+// Task-list checkboxes are the one interactive control in the otherwise
+// read-only rendered view, and a disabled input swallows clicks. tasklist.go
+// maps a click back to the source marker.
 type taskCheckboxRenderer struct{}
 
 func (taskCheckboxRenderer) RegisterFuncs(reg renderer.NodeRendererFuncRegisterer) {
@@ -58,9 +54,8 @@ func renderTaskCheckbox(w util.BufWriter, _ []byte, node ast.Node, entering bool
 	return ast.WalkContinue, nil
 }
 
-// htmlPolicy is bluemonday's user-generated-content policy plus the class/
-// id attributes go-org's output leans on (outline containers, headline
-// anchors, footnotes) and goldmark's task-list checkboxes.
+// htmlPolicy is bluemonday's user-generated-content policy plus the class and
+// id attributes go-org's output leans on and goldmark's task-list checkboxes.
 var htmlPolicy = func() *bluemonday.Policy {
 	p := bluemonday.UGCPolicy()
 	p.AllowAttrs("class", "id").Globally()
@@ -68,21 +63,18 @@ var htmlPolicy = func() *bluemonday.Policy {
 	return p
 }()
 
-// IsOrg reports whether a tile's name marks it as an org-mode document —
-// the one detection rule (a tile has no filename; its user-visible name is
-// the alt text).
+// IsOrg reports whether a tile's name marks it as an org-mode document. A tile
+// has no filename, so its user-visible name carries the type.
 func IsOrg(name string) bool { return doctype.IsOrg(name) }
 
-// Renderable / IsOrg are re-exports of internal/doctype — the neutral
-// home both sides of the plugin seam import (the fs plugin must not
-// depend on a client rendering package). One rule, re-exported so this
-// package's render pipeline and the classification can never disagree.
+// Renderable reports whether a name's document type renders. It and IsOrg
+// re-export internal/doctype, the neutral home both sides of the plugin seam
+// import, so classification and this package's render pipeline cannot disagree.
 func Renderable(name string) bool { return doctype.Renderable(name) }
 
-// RenderHTML renders source bytes to sanitized HTML for the read-only
-// rendered view. org selects the org-mode renderer; anything else is GFM
-// markdown. Errors degrade to an escaped <pre> of the source: a document must
-// never render as nothing.
+// RenderHTML renders source bytes to sanitized HTML. isOrg selects the org-mode
+// renderer, anything else is GFM markdown. Errors degrade to an escaped <pre>
+// of the source, because a document must never render as nothing.
 func RenderHTML(src []byte, isOrg bool) string {
 	var out string
 	if isOrg {
@@ -103,17 +95,16 @@ func RenderHTML(src []byte, isOrg bool) string {
 	return htmlPolicy.Sanitize(out)
 }
 
-// renderFallback is the never-blank degradation: the raw source, escaped,
-// in a <pre>.
+// renderFallback degrades to the raw source, escaped, in a <pre>.
 func renderFallback(src []byte) string {
 	esc := strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
 	return "<pre>" + esc.Replace(string(src)) + "</pre>"
 }
 
-// RenderPlainHTML presents a plain-text body — source code, logs, config:
-// anything the owning plugin declares text_presentation "plain" — verbatim in
-// a preformatted block. No markdown interpretation, so a shell comment can
-// never become a heading, and escaped, so it is inert HTML by construction.
+// RenderPlainHTML presents a body whose owning plugin declares
+// text_presentation "plain" verbatim in a preformatted block. Nothing is
+// interpreted as markdown, so a shell comment cannot become a heading, and the
+// source is escaped, so it is inert HTML.
 func RenderPlainHTML(src []byte) string {
 	return `<pre class="gw-plain" style="margin:0;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:0.9em;">` +
 		html.EscapeString(string(src)) + `</pre>`

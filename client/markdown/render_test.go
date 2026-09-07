@@ -12,7 +12,7 @@ func TestRenderHTMLMarkdown(t *testing.T) {
 			t.Errorf("markdown render missing %q in:\n%s", want, got)
 		}
 	}
-	// GFM table — the dialect the parse half already speaks.
+	// GFM table, the dialect the parse half already speaks.
 	got = RenderHTML([]byte("| a | b |\n|---|---|\n| 1 | 2 |"), false)
 	if !strings.Contains(got, "<table") {
 		t.Errorf("GFM table not rendered:\n%s", got)
@@ -28,9 +28,8 @@ func TestRenderHTMLOrg(t *testing.T) {
 	}
 }
 
-// Sanitization is load-bearing even with goldmark's safe defaults: script
-// injection through raw HTML, javascript: hrefs, and event handlers must
-// never reach the overlay's innerHTML.
+// Script injection through raw HTML, javascript: hrefs and event handlers must
+// never reach the overlay's innerHTML, even with goldmark's safe defaults.
 func TestRenderHTMLSanitizes(t *testing.T) {
 	cases := []string{
 		"<script>alert(1)</script>",
@@ -62,8 +61,8 @@ func TestIsOrg(t *testing.T) {
 	}
 }
 
-// RenderPlainHTML shows a body verbatim: escaped (inert by construction)
-// and never interpreted as markdown — a shell comment stays a comment.
+// RenderPlainHTML shows a body verbatim and escaped, so a shell comment stays
+// a comment and the output is inert.
 func TestRenderPlainHTML(t *testing.T) {
 	out := RenderPlainHTML([]byte("# not a heading\n<script>x</script>"))
 	if !strings.Contains(out, "# not a heading") {

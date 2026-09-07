@@ -5,9 +5,9 @@ import (
 	"testing"
 )
 
-// The contract: WrapRawLine reproduces a monospace textarea's soft wrap
-// (pre-wrap plus break-word), so the canvas painter and the editor agree
-// row for row and the text never reflows when focus moves.
+// WrapRawLine reproduces a monospace textarea's soft wrap, so the canvas
+// painter and the editor agree row for row and the text never reflows when
+// focus moves.
 func TestWrapRawLine(t *testing.T) {
 	cases := []struct {
 		name string
@@ -35,8 +35,8 @@ func TestWrapRawLine(t *testing.T) {
 	}
 }
 
-// Rejoining the rows (dropping nothing) must reproduce the source line:
-// wrapping only chooses break points, it never edits content.
+// Rejoining the rows reproduces the source line, because wrapping only
+// chooses break points.
 func TestWrapRawLineLossless(t *testing.T) {
 	lines := []string{
 		"the quick brown fox jumps over the lazy dog",
