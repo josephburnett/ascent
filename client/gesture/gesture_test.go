@@ -6,13 +6,12 @@ import (
 	"github.com/josephburnett/gridwell/client/pane"
 )
 
-// resizeRegion / splitRegion / swapRegion are concrete Region values for
-// the classifier table. ClassifyRegion is tested in the pane package; here
-// we only need representatives of each predicate class.
+// resizeRegion, splitRegion and swapRegion are one Region value per
+// predicate class. ClassifyRegion itself is tested in the pane package.
 func regionFor(t *testing.T, kind string) pane.Region {
 	t.Helper()
-	// A small pane with a generous band: the corners are resize, the edge
-	// midpoints are split, the center is swap.
+	// A small pane with a generous band, so the corners are resize, the
+	// edge midpoints split, and the center swap.
 	r := pane.Rect{X: 0, Y: 0, W: 100, H: 100}
 	band := 10.0
 	switch kind {
@@ -62,8 +61,8 @@ func TestClassifyPriority(t *testing.T) {
 			want: Swap,
 		},
 		{
-			// The right button always splits from a border, divider or
-			// screen edge alike; resize and close are the left button.
+			// The right button splits from a border, divider or screen
+			// edge alike.
 			name: "resize region splits (divider resizing is the left button's)",
 			in: Input{
 				Region: resize,
@@ -91,13 +90,13 @@ func TestClassifyPriority(t *testing.T) {
 }
 
 func TestSplitOutcome(t *testing.T) {
-	// A 200x200 pane; the side was already resolved by SplitSideFromDrag.
+	// A 200x200 pane, with the side already resolved.
 	r := pane.Rect{X: 0, Y: 0, W: 200, H: 200}
 	ratio, ok := SplitOutcome(pane.SideTop, r, 100, 100)
 	if !ok {
 		t.Fatalf("SplitOutcome mid-pane = cancel, want ok")
 	}
-	// Cursor at y=100 in a 200-tall pane splitting off the top → ~0.5.
+	// Cursor at y=100 in a 200-tall pane splitting off the top gives 0.5.
 	if ratio < 0.4 || ratio > 0.6 {
 		t.Errorf("ratio = %v, want ~0.5 for a mid-pane release", ratio)
 	}
@@ -107,9 +106,9 @@ func TestSplitOutcome(t *testing.T) {
 	}
 }
 
-// The side follows the drag: either side of a border behaves identically, the
-// direction can flip mid-gesture, and a sub-threshold drag is inactive, so a
-// bare right-click on a border never splits.
+// The side follows the drag, so either side of a border behaves identically
+// and the direction can flip mid-gesture. A drag under the threshold is
+// inactive, so a bare right-click on a border never splits.
 func TestSplitSideFromDrag(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -131,7 +130,7 @@ func TestSplitSideFromDrag(t *testing.T) {
 			t.Errorf("%s: = (%v, %v), want (%v, %v)", c.name, side, active, c.want, c.wantActive)
 		}
 	}
-	// Flip mid-gesture: same start, opposite cursor — opposite side.
+	// The same start with the opposite cursor gives the opposite side.
 	s1, _ := SplitSideFromDrag(pane.Vertical, 100, 0, 160, 0)
 	s2, _ := SplitSideFromDrag(pane.Vertical, 100, 0, 40, 0)
 	if s1 == s2 {
@@ -140,8 +139,7 @@ func TestSplitSideFromDrag(t *testing.T) {
 }
 
 func TestResizeAffordance(t *testing.T) {
-	// A pane with a divider on every side, so a press anywhere in a band
-	// grabs; the fixture is the geometry, the grab is the decision.
+	// A pane with a divider on every side, so a press in any band grabs.
 	pr := pane.Rect{X: 100, Y: 100, W: 200, H: 200}
 	divs := []pane.Divider{
 		{Dir: pane.Vertical, Rect: pane.Rect{X: 99, Y: 0, W: 2, H: 600}},
@@ -174,7 +172,7 @@ func TestResizeAffordance(t *testing.T) {
 				c.name, g, arm, cursor, c.wantArm, c.wantCursor)
 		}
 	}
-	// A band with no divider on that side does not arm — the veto survives.
+	// A band with no divider on that side does not arm.
 	edge := pane.Rect{X: 0, Y: 0, W: 200, H: 200}
 	g := pane.GrabDividers(nil, edge, band, 3, 3)
 	if arm, cursor := ResizeAffordance(g); arm || cursor != "" {
