@@ -13,9 +13,8 @@ test('a revived url tile can still go back', async ({ electronApp, window, gw })
   const cx = Math.round(home.cx);
   const cy = Math.round(home.cy);
 
-  // A placed url tile: drag-create lands it bare, since the drop never prompts.
-  // The first descent opens the address prompt, and submitting descends into the
-  // live page on the local origin.
+  // Drag-create lands the tile bare, since the drop never prompts. The first
+  // descent opens the address prompt.
   const wcBefore = await electronApp.evaluate(
     ({ webContents }) => webContents.getAllWebContents().length,
   );
@@ -26,8 +25,8 @@ test('a revived url tile can still go back', async ({ electronApp, window, gw })
   await window.fill('#gw-url-input', `${gw.origin}/wasm_exec.js?h=1`);
   await window.locator('#gw-url-form').evaluate((f: HTMLFormElement) => f.requestSubmit());
   await gw.waitIdle();
-  // Poll for the navigated view rather than a webContents count: the count grows
-  // at view creation, before loadURL lands.
+  // The webContents count grows at view creation, before loadURL lands, so poll
+  // for the navigated view instead.
   await expect
     .poll(
       () =>
@@ -38,7 +37,7 @@ test('a revived url tile can still go back', async ({ electronApp, window, gw })
     )
     .toBe(true);
 
-  // Navigate twice inside the live view: real navigations, real history.
+  // Two real navigations inside the live view, so there is real history.
   const navTo = async (marker: string) => {
     await electronApp.evaluate(
       async ({ webContents }, [org, m]: string[]) => {
@@ -60,7 +59,7 @@ test('a revived url tile can still go back', async ({ electronApp, window, gw })
   await navTo('2');
   await navTo('3');
 
-  // Ascend: the freeze persists the back-stack on the tile.
+  // The freeze persists the back-stack on the tile.
   await gw.middleClickCell(cx, cy);
   await gw.waitIdle();
   await expect
@@ -69,8 +68,8 @@ test('a revived url tile can still go back', async ({ electronApp, window, gw })
     })
     .toContain('h=2');
 
-  // Revive by descending. Every descent goes live, so the restored view appears
-  // without a refresh click, and it can go back.
+  // Every descent goes live, so the restored view appears without a refresh
+  // click.
   await gw.descendCell(cx, cy);
   await gw.waitIdle();
   await expect
@@ -79,10 +78,9 @@ test('a revived url tile can still go back', async ({ electronApp, window, gw })
     })
     .toBeGreaterThan(wcBefore);
 
-  // Wait for the restore's own navigation to commit before going back. A goBack
-  // issued while the restore's load is still in flight is superseded and no-ops
-  // silently, and canGoBack is already true the moment the entries install,
-  // which is the trap.
+  // A goBack issued while the restore's load is still in flight is superseded
+  // and no-ops silently, and canGoBack is already true the moment the entries
+  // install. Wait for the restore's navigation to commit first.
   await expect
     .poll(
       () =>
@@ -103,7 +101,7 @@ test('a revived url tile can still go back', async ({ electronApp, window, gw })
     return can;
   });
   expect(canGoBack, 'restored view has a back-stack').toBe(true);
-  // Poll the landing: a fixed post-goBack sleep flaked under suite load, since
+  // Poll the landing. A fixed post-goBack sleep flaked under suite load, since
   // the navigation can take longer than any constant.
   await expect
     .poll(

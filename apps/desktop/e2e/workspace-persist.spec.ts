@@ -24,7 +24,7 @@ test('reload restores the workspace from ?w=; post-reload bar ascent lands at th
   const pt = tileAt(await gw.getGrid(rootGrid), 'pane', wx, wy);
   expect(pt).toBeTruthy();
 
-  // Enter and arrange: a split the reload must bring back.
+  // The split is the arrangement the reload must bring back.
   await gw.descendCell(wx, wy);
   await expect.poll(async () => (await workspaceState(window)).depth).toBe(1);
   await gw.splitFocusedPaneVertical();
@@ -57,10 +57,8 @@ test('reload restores the workspace from ?w=; post-reload bar ascent lands at th
     message: 'the split arrangement must come back from the blob',
   }).toBe(2);
 
-  // Post-reload the stack has no outer tree: the bar falls back to the pane
+  // Post-reload the stack has no outer tree, so the bar falls back to the pane
   // tile's containing grid.
-  // The bar lives inside the focused pane, and a crumb click goes to that crumb,
-  // so leaving means clicking the crumb before the pane boundary.
   await gw.leaveWorkspace();
   await expect.poll(async () => (await workspaceState(window)).depth).toBe(0);
   // The re-anchor fetches the tile asynchronously, since a click handler cannot

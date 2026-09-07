@@ -1,21 +1,13 @@
 import { test, expect } from './fixtures';
 
-// Right-clicking a live url pane moves focus to it, like every other press.
-//
-// The rule is "clicks act in the focused pane; a click in an unfocused pane
-// moves focus, nothing else", and focusToPane is its one owner. A live url view
-// swallows the renderer's own mouse events, so the left button reaches that
-// owner through the preload's VIEW_LEFTDOWN relay — but a plain right press is
-// deliberately NOT forwarded (urlview-preload only forwards one once it has
-// become a drag), so it became a native context menu on a pane that never took
-// focus. Picking Reload then reloaded a pane the bar was not even riding.
-//
-// The fix is at the funnel both doors into that menu pass through:
-// WebviewRegistry.showContextMenu announces the pane it is about to open on,
-// main relays it as EV.menuPane, and the wasm routes it into the same
-// focusToPane. This spec crosses the whole seam — a genuine right press inside
-// the view's own webContents, the real menu, the real Reload item — and asserts
-// the pane took focus and the bar slid under it.
+// Right-clicking a live url pane focuses it before any menu item can run, so
+// the menu acts in the pane the bar rides. A live url view swallows the
+// renderer's mouse events and urlview-preload forwards a right press only once
+// it has become a drag, so the focus cannot come from the canvas:
+// WebviewRegistry.showContextMenu announces the pane, main relays it as
+// EV.menuPane, and the wasm routes it into focusToPane, the one owner of
+// "a click in an unfocused pane moves focus". The spec crosses that seam with a
+// real right press inside the view's own webContents and the real Reload item.
 
 test('right-clicking a live url pane focuses it before the menu can act', async ({
   electronApp,
@@ -27,8 +19,8 @@ test('right-clicking a live url pane focuses it before the menu can act', async 
   const cx = Math.round(f.cx);
   const cy = Math.round(f.cy);
 
-  // A live url descent, on a url the sidecar actually serves so the load
-  // commits and the view's getURL carries the marker.
+  // The url has to be one the sidecar serves, so the load commits and the
+  // view's getURL carries the marker.
   const marker = 'gwe2emenufocus';
   await gw.openPalette();
   await gw.dragCreate('url', cx, cy);
@@ -45,8 +37,7 @@ test('right-clicking a live url pane focuses it before the menu can act', async 
 
   const urlPaneId = (await gw.focused()).id;
 
-  // Split it: focus moves to the new pane, the url pane keeps its live view and
-  // loses focus. That is the state the bug lives in.
+  // The split leaves the url pane live but unfocused.
   await gw.splitFocusedPaneVertical();
   const otherPaneId = (await gw.focused()).id;
   expect(otherPaneId, 'the split moved focus off the url pane').not.toBe(urlPaneId);
@@ -64,9 +55,9 @@ test('right-clicking a live url pane focuses it before the menu can act', async 
   });
 
   try {
-    // A genuine right press and release inside the view's own webContents —
-    // the events the canvas never sees. The preload does not suppress a plain
-    // click, so Chromium emits context-menu and the registry pops the menu.
+    // A right press inside the view's own webContents, which the canvas never
+    // sees. The preload does not suppress a plain click, so Chromium emits
+    // context-menu and the registry pops the menu.
     await electronApp.evaluate(async ({ webContents }, m) => {
       const wc = webContents.getAllWebContents().find((w) => w.getURL().includes(m));
       if (!wc) throw new Error('live view webContents not found');
@@ -83,20 +74,18 @@ test('right-clicking a live url pane focuses it before the menu can act', async 
       })
       .toBe(true);
 
-    // The menu opened, so the pane it acts in already has focus — before any
-    // item can run.
+    // The menu opened, so the pane it acts in already has focus.
     await expect
       .poll(() => gw.focused().then((p) => p.id), { timeout: 5_000 })
       .toBe(urlPaneId);
 
-    // And the one bar slid under it: the bar rides the focused pane.
+    // The bar rides the focused pane.
     const urlPane = (await gw.panes()).find((p) => p.id === urlPaneId)!;
     const bar = await window.evaluate(() => (window as any).__gridwellTest.bar());
     expect(bar.left, 'the bar rides the newly focused pane').toBeCloseTo(urlPane.x, 0);
     expect(bar.width, 'and spans it').toBeCloseTo(urlPane.w, 0);
 
-    // Joe's case: pick Reload. Focus stays where the right-click put it, so the
-    // reload happens in the focused pane.
+    // Reload runs in the pane the right-click focused.
     const labels = await electronApp.evaluate(() =>
       (globalThis as any).__gwCtxMenu.items.map((i: any) => i.label).filter((l: string) => l),
     );

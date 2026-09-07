@@ -3,11 +3,10 @@ import { test, expect } from './fixtures';
 // Raw text must not reflow when pane focus moves. The canvas painter, which is
 // what an unfocused descended pane shows, soft-wraps to the same columns the
 // editing textarea does. This spec crosses the browser-wrap and canvas-wrap seam
-// with the same bytes on both sides: the textarea's own rendered row count, its
+// with the same bytes on both sides: the textarea's rendered row count, its
 // scrollHeight over its line box, must match the rows the canvas painter
 // computes, read through the rawRows hook. A painter that draws one row per
-// source line diverges by dozens of rows on wrapping prose, which is the visible
-// unwrap.
+// source line diverges by dozens of rows on wrapping prose.
 
 test('the canvas paints the rows the textarea soft-wraps', async ({ gw, window }) => {
   await gw.enterPlugin('home');

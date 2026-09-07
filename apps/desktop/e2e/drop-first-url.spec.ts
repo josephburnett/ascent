@@ -1,13 +1,12 @@
 import { test, expect } from './fixtures';
 import { tileAt } from './oracle';
 
-// Drop first, prompt on the first descent: the url half. Dragging the url
-// swatch creates an address-less tile immediately, with no modal at drop. The
-// first descent opens the url modal, and submitting writes the address as the
-// tile's content through the store's url arm, which validates and bumps the
-// version, then descends straight into the live page. Cancel keeps the dropped
+// Dragging the url swatch creates an address-less tile, with no modal at drop.
+// The first descent opens the url modal, and submitting writes the address as
+// the tile's content through the store's url arm, which validates and bumps
+// the version, then descends into the live page. Cancel keeps the dropped
 // tile. Clicking the palette swatch is an ephemeral visit and still prompts up
-// front, since going to a url now needs an address.
+// front, since going to a url needs an address.
 
 test('a url drops bare; the first descent prompts, writes the address, and goes live (#209)', async ({
   gw,
@@ -18,7 +17,7 @@ test('a url drops bare; the first descent prompts, writes the address, and goes 
   const cx = Math.round(home.cx);
   const cy = Math.round(home.cy);
 
-  // Drop: no modal, an address-less url tile at version 1.
+  // Drop: no modal, an address-less url tile.
   await gw.openPalette();
   await gw.dragCreate('url', cx, cy);
   const openModal = window.locator('#gw-url-modal.open');
@@ -27,7 +26,6 @@ test('a url drops bare; the first descent prompts, writes the address, and goes 
   expect(t, 'the url tile landed at the drop cell').toBeTruthy();
   expect(t.urlString ?? '', 'dropped address-less').toBe('');
 
-  // The first descent prompts; cancel keeps the tile and stays on the grid.
   await gw.descendCell(cx, cy);
   await expect(openModal, 'first descent prompts for the address').toBeVisible();
   await window.locator('#gw-url-cancel').click();
@@ -36,9 +34,8 @@ test('a url drops bare; the first descent prompts, writes the address, and goes 
   t = tileAt(await gw.getGrid(home.gridID), 'url', cx, cy)!;
   expect(t, 'cancel keeps the dropped tile').toBeTruthy();
 
-  // Descend again and fill the address: it commits as content, and since a row
-  // is born at version 0, which protojson omits, the write bumps it to 1. The
-  // pane then descends into the live page.
+  // Fill the address: it commits as content. A row is born at version 0, which
+  // protojson omits, so the write shows as version 1.
   await gw.descendCell(cx, cy);
   await expect(openModal).toBeVisible();
   await window.fill('#gw-url-input', `${gw.origin}/wasm_exec.js?cfg=1`);
@@ -53,8 +50,8 @@ test('a url drops bare; the first descent prompts, writes the address, and goes 
     })
     .toEqual({ url: `${gw.origin}/wasm_exec.js?cfg=1`, version: '1' });
 
-  // Leave clean: ascend out of the url descent. The middle-click is retried
-  // because a click mid-animation is deliberately swallowed.
+  // Ascend out of the url descent. The middle-click is retried because a click
+  // mid-animation is deliberately swallowed.
   const m = window.mouse;
   await expect
     .poll(

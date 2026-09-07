@@ -1,11 +1,10 @@
 import { test, expect } from './fixtures';
 
-// Ctrl + left-click on a well descends into it in a NEW pane: the pane
-// splits below (the same programmatic split a link out of a live tile
-// opens), the new lower pane takes focus and shows the child grid, and the
-// original pane stays exactly where it was. A plain click still descends in
-// place — ctrl is an additive ask, decided at press time
-// (dragdrop.DropNavigateSplit).
+// Ctrl + left-click on a well descends into it in a new pane. The pane splits
+// below, the same split a link out of a live tile opens, the new lower pane
+// takes focus and shows the child grid, and the original pane stays where it
+// was. A plain click still descends in place. dragdrop.DropNavigateSplit
+// decides this at press time.
 test('ctrl+click descends in a new split pane; plain click stays in place', async ({ gw }) => {
   await gw.enterPlugin('home');
   const before = await gw.focused();
@@ -30,7 +29,7 @@ test('ctrl+click descends in a new split pane; plain click stays in place', asyn
   expect(original.gridID, 'the original pane still shows its grid').toBe(before.gridID);
   expect(focused.y, 'the new pane is the lower half').toBeGreaterThan(original.y);
 
-  // A plain click on the same well still descends in place: no third pane.
+  // A plain click on the same well descends in place, making no third pane.
   await gw.focusPane(original);
   await gw.descendCell(cx, cy);
   await expect.poll(async () => (await gw.focused()).gridID, {

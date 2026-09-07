@@ -16,9 +16,8 @@ test('window.open from a live view splits the pane and opens ephemeral below', a
   await gw.enterPlugin('home');
   const panesBefore = (await gw.panes()).length;
 
-  // A live ephemeral visit to the local origin. Poll for the navigated view
-  // rather than a webContents count: the count grows at view creation, before
-  // loadURL lands.
+  // Poll for the navigated view rather than a webContents count: the count
+  // grows at view creation, before loadURL lands.
   await gw.clickPaletteSwatch('url');
   await window.locator('#gw-url-modal.open').waitFor({ timeout: 5_000 });
   await window.fill('#gw-url-input', `${gw.origin}/wasm_exec.js?src=page`);
@@ -34,10 +33,9 @@ test('window.open from a live view splits the pane and opens ephemeral below', a
     )
     .toBe(true);
 
-  // A non-web protocol popup first: it must open nothing, neither a pane split
-  // nor an OS hand-off, since the session denies openExternal. The web url that
-  // follows proves the path still works, so swallowing everything would fail
-  // below.
+  // A non-web protocol popup must open nothing, neither a pane split nor an OS
+  // hand-off, since the session denies openExternal. The web url below proves
+  // the path still works, so swallowing everything fails there.
   await electronApp.evaluate(async ({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('src=page'));
     if (!wc) throw new Error('live view not found');
@@ -53,7 +51,6 @@ test('window.open from a live view splits the pane and opens ephemeral below', a
     await wc.executeJavaScript(`window.open(${JSON.stringify(`${org}/wasm_exec.js?opened=below`)})`, true);
   }, gw.origin);
 
-  // A new pane appears below, focused, descended into an ephemeral url tile.
   await expect.poll(async () => (await gw.panes()).length, { timeout: 15_000 }).toBe(
     panesBefore + 1,
   );
@@ -61,8 +58,8 @@ test('window.open from a live view splits the pane and opens ephemeral below', a
   const lower = panes[panes.length - 1];
   expect(lower.focused, 'the new lower pane took focus').toBe(true);
   expect(lower.y, 'the new pane sits below').toBeGreaterThan(panes[0].y);
-  // The universal pane minimum holds for the programmatic ephemeral split too:
-  // neither half may be born below MinPanePx, which is 32.
+  // The universal pane minimum holds for the programmatic split too: neither
+  // half may be born below pane.MinPanePx, which is 32.
   for (const p of panes) {
     expect(p.h, `pane ${p.id} height respects the universal minimum`).toBeGreaterThanOrEqual(32);
   }
@@ -74,8 +71,7 @@ test('window.open from a live view splits the pane and opens ephemeral below', a
     }, { timeout: 10_000 })
     .toBe(1);
 
-  // The source pane's visit is untouched and its tile still exists: the clone's
-  // file-level ascent must not delete it.
+  // The clone's file-level ascent must not delete the source pane's tile.
   const sc = await gw.getGrid(scratchGridID);
   expect(
     (sc.tiles ?? []).filter((t) => String(t.urlString ?? '').includes('src=page')),
@@ -83,17 +79,15 @@ test('window.open from a live view splits the pane and opens ephemeral below', a
   ).toHaveLength(1);
 
   // Ascending the new pane deletes its ephemeral visit. Wait out the descent
-  // transition first, since a click mid-animation is deliberately swallowed, then
-  // middle-click at the lower pane's center; cell math could land in the upper
-  // pane.
+  // transition first and re-click until it clears, since a click mid-animation
+  // is deliberately swallowed. Middle-click at the lower pane's center, because
+  // cell math could land in the upper pane.
   await expect
     .poll(async () => (await gw.panes()).find((p) => p.id === lower.id)?.textFocus ?? '', {
       timeout: 10_000,
     })
     .not.toBe('');
   await gw.waitIdle();
-  // Retry the ascent: under suite load a single click can land mid-animation and
-  // be swallowed, so re-click until the descent clears.
   const m = window.mouse;
   await expect
     .poll(
@@ -120,12 +114,11 @@ test('window.open from a live view splits the pane and opens ephemeral below', a
     .toBe(0);
 });
 
-// The programmatic split is not an ascent. splitBelowForOpen clones the source
-// pane, so the clone inherits a content frame it must shed before the visit
-// lands — but there is no footprint to zoom out of and the user made no ascent
-// gesture, so animating it is a second transition for one gesture, and it
-// lands wearing the "you just came from here" trace of a departure that never
-// happened. The clone sheds its frame synchronously instead.
+// splitBelowForOpen clones the source pane, so the clone inherits a content
+// frame it must shed before the visit lands. It sheds it synchronously: there
+// is no footprint to zoom out of and the user made no ascent gesture, so
+// animating it would be a second transition for one gesture and would leave
+// the pane wearing the trace of a departure that never happened.
 test('a link-open split lands without animating an ascent nobody made', async ({ gw, window }) => {
   await gw.enterPlugin('home');
   const home = await gw.focused();
@@ -155,8 +148,8 @@ test('a link-open split lands without animating an ascent nobody made', async ({
     'the split pane wears an ascent trace for a departure the user never made',
   ).toEqual([]);
 
-  // The control: a real ascent in this same pane does arm one, so the empty
-  // read above is "not armed", not "the observable is dead".
+  // The control: a real ascent in this same pane does arm a trace, so the empty
+  // read above means "not armed" rather than a dead observable.
   await gw.waitIdle();
   await expect
     .poll(

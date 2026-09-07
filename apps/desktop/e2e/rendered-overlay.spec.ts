@@ -28,10 +28,8 @@ test('rendered mode shows sanitized HTML; the toggle round-trips to the editor',
   await expect(view.locator('em')).toHaveText('world');
   // Sanitization: the script tag must not exist as an element.
   await expect(view.locator('script')).toHaveCount(0);
-  // The editor is hidden while rendered.
   await expect(window.locator('#gw-text-editor')).toBeHidden();
 
-  // Toggle back: the editor returns with the same source and the overlay hides.
   await gw.toggleTextMode();
   await expect(window.locator('#gw-text-editor')).toBeVisible();
   await expect(view).toBeHidden();

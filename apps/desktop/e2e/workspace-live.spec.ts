@@ -2,12 +2,12 @@ import { test, expect } from './fixtures';
 import { tileAt } from './oracle';
 
 // Descending into a pane tile keeps the outer level fully alive: its live views
-// park off-screen and keep running, so a hidden call keeps ringing, and its
-// shells stay attached. Liveness follows pane existence: a pane's resources run
-// until the pane closes, and leaving a view closes that view's panes. Nothing
-// freezes at the boundary, so nothing needs reviving on return; the parked view
-// comes back on screen. `make check` cannot see this seam, since native views
-// live off the main page.
+// park off-screen and keep running, so a hidden call keeps ringing and its
+// shells stay attached. Liveness follows pane existence, so a pane's resources
+// run until the pane closes and leaving a view closes that view's panes. Nothing
+// freezes at the boundary, so nothing needs reviving on return and the parked
+// view comes back on screen. `make check` cannot see this seam, since native
+// views live off the main page.
 
 async function workspaceState(window: any): Promise<{ depth: number }> {
   return window.evaluate(() => (window as any).__gridwellTest.workspace());
@@ -26,10 +26,9 @@ test('workspace descent keeps the outer live url running, parked; ascent shows i
   const pt = tileAt(await gw.getGrid(rootGrid), 'pane', cx + 2, cy);
   expect(pt).toBeTruthy();
 
-  // Go live in this pane through the ephemeral-visit swatch: click, not drag.
-  // Ephemeral visits are stripped from the layout capture, so the fresh workspace
-  // will not clone this pane. No one-surface takeover applies, and the outer view
-  // must simply keep running, hidden.
+  // A swatch click is the ephemeral visit. Ephemeral visits are stripped from
+  // the layout capture, so the fresh workspace will not clone this pane, no
+  // one-surface takeover applies, and the outer view must keep running hidden.
   const wcBefore = await electronApp.evaluate(({ webContents }) => webContents.getAllWebContents().length);
   await gw.clickPaletteSwatch('url');
   await window.locator('#gw-url-modal.open').waitFor({ timeout: 5_000 });
@@ -56,25 +55,25 @@ test('workspace descent keeps the outer live url running, parked; ascent shows i
     });
   await expect.poll(async () => (await viewBounds())?.x ?? -99999, { timeout: 10_000 }).toBeGreaterThan(-1000);
 
-  // Split so a second pane can host the workspace descent while the url
-  // pane keeps its live view.
+  // The second pane hosts the workspace descent while the url pane keeps its
+  // live view.
   await gw.splitFocusedPaneVertical();
   const urlPane = (await gw.panes()).find((p: any) => p.textFocus !== '');
   expect(urlPane, 'one pane is descended into the url').toBeTruthy();
 
-  // Descend into the pane tile from the other pane: a whole-window takeover.
+  // Descending into the pane tile takes over the whole window.
   await gw.descendCell(cx + 2, cy);
   await expect.poll(async () => (await workspaceState(window)).depth).toBe(1);
 
-  // The outer live view is still running: its webContents survives, parked
-  // off-screen because its pane is not in the current layout.
+  // The outer live view's webContents survives, parked off-screen because its
+  // pane is not in the current layout.
   await window.waitForTimeout(1_000); // give a wrong teardown time to fire
   const parked = await viewBounds();
   expect(parked, 'the outer live view survives the descent').not.toBeNull();
   expect(parked!.x, 'and is parked off-screen').toBeLessThan(-1000);
 
-  // Ascend: the outer arrangement returns, the url pane is still descended, and
-  // the same webContents comes back on screen. It never reloaded, because it
+  // On ascent the outer arrangement returns, the url pane is still descended,
+  // and the same webContents comes back on screen without reloading, because it
   // never stopped.
   await gw.leaveWorkspace();
   await expect.poll(async () => (await workspaceState(window)).depth).toBe(0);
@@ -86,8 +85,8 @@ test('workspace descent keeps the outer live url running, parked; ascent shows i
     timeout: 15_000,
   }).toBeGreaterThan(-1000);
 
-  // Teardown: ascend the ephemeral url so the session ends clean; the ascent
-  // deletes the scratch tile.
+  // The ascent out of the ephemeral url deletes its scratch tile, so the session
+  // ends clean.
   const rp = (await gw.panes()).find((p: any) => p.textFocus !== '')!;
   await window.mouse.click(rp.x + rp.w / 2, rp.y + rp.h / 2, { button: 'middle' });
   await gw.waitIdle();

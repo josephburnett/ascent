@@ -5,14 +5,13 @@ import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-// Every shipped plugin kind, crawled through the browser client: proc, a live
-// process tree, and gitlab, todos against a fake GitLab API. Each runs as a
-// spawned gridwell-plugin-<kind> subprocess, which is the one way a plugin
-// loads; seeding only fs would leave proc and gitlab uncrossed.
+// The proc and gitlab plugins, crawled through the browser client: proc walks a
+// live process tree, gitlab serves todos against a fake GitLab API. Each runs as
+// a spawned gridwell-plugin-<kind> subprocess, which is the one way a plugin
+// loads, so seeding only fs would leave both uncrossed.
 
-// A todo the fake serves. The JSON shape is the wire form of
-// the gitlab plugin's todos.Todo, from GET /api/v4/todos: one pending review
-// request.
+// A todo the fake serves. The JSON shape is the wire form of the gitlab
+// plugin's todos.Todo, from GET /api/v4/todos: one pending review request.
 const TODO = {
   id: 7,
   action_name: 'review_requested',
@@ -28,11 +27,11 @@ const TODO = {
 };
 const TOKEN = 'glpat-e2e-fake';
 
-// fakeGitLab answers the two endpoints the plugin speaks — the todos pager and
-// mark_as_done — and refuses a wrong token with a 401 the way GitLab does, so
-// a seeded token_file that did not reach the plugin is a visible failure
-// rather than an empty grid. Marking done flips the one todo's state, the way
-// the real API does, so a later walk agrees with the write.
+// fakeGitLab answers the two endpoints the plugin speaks, the todos pager and
+// mark_as_done, and refuses a wrong token with a 401 the way GitLab does, so a
+// seeded token_file that did not reach the plugin fails visibly instead of
+// showing an empty grid. Marking done flips the one todo's state, as the real
+// API does, so a later walk agrees with the write.
 function fakeGitLab(): Promise<http.Server> {
   TODO.state = 'pending'; // each server starts undone, whatever an earlier test wrote
   const srv = http.createServer((req, res) => {
@@ -92,8 +91,8 @@ test('proc: the root grid lists the served node as a child of this worker', asyn
   expect(child, `pid ${serve.child.pid} (gridwell serve) is a child well of ${process.pid}`).toBeTruthy();
   expect(child!.kind).toBe('well');
 
-  // Descend into the served node's process: its own @info tile is there, so the
-  // child context round-trips through the node's id space.
+  // The child process has its own @info tile, so the child context round-trips
+  // through the node's id space.
   await gw.descendCell(Number(child!.x ?? 0), Number(child!.y ?? 0));
   const inner = await gw.focused();
   expect(inner.gridID).not.toBe(f.gridID);
@@ -114,14 +113,13 @@ test('gitlab: the week well descends to the todo, whose content is its markdown'
   const todo = todos.find((t) => String(t.altText).startsWith('Ada: !7'));
   expect(todo, `the todo tile is labeled by author and ref; have ${JSON.stringify(todos.map((t) => t.altText))}`).toBeTruthy();
 
-  // ReadContent is the todo's markdown, served through the node exactly like any
-  // text tile: the oracle is the RPC, not the plugin.
+  // ReadContent serves the todo's markdown through the node like any text tile,
+  // so the oracle here is the RPC.
   expect(await gw.getTileContent(todo!.id)).toContain('please **review**');
 
-  // The trash gesture on a todo means mark-as-done: the tile does not vanish,
-  // it re-lists resolved — GitLab took the write (the fake flips its state),
-  // the label wears the ✓ and the week's counts move. The whole journey rides
-  // the one delete path: drag → DeleteTile → plugin Delete → mark_as_done.
+  // The trash gesture on a todo means mark-as-done. The tile does not vanish, it
+  // re-lists resolved, and the write rides the one delete path: drag, DeleteTile,
+  // plugin Delete, mark_as_done.
   await gw.deleteTileCell(Number(todo!.x ?? 0), Number(todo!.y ?? 0));
   const after = (await gw.getGrid(inner.gridID)).tiles ?? [];
   const doneTile = after.find((t) => t.id === todo!.id);

@@ -5,10 +5,10 @@ import { tileAt } from './oracle';
 
 // Clicking a url rendered in a live shell opens the ephemeral visit below and
 // nothing else. Every exit is instrumented: renderer window.open and confirm,
-// main-process shell.openExternal, and the BrowserWindow count. The
-// app-wide seals keep it that way even on paths this
-// spec's plain click cannot reach: openExternal is denied on every session, and
-// window.open is denied on every webContents without the live-view handler.
+// main-process shell.openExternal, and the BrowserWindow count. The app-wide
+// seals cover the paths this spec's plain click cannot reach: openExternal is
+// denied on every session, and window.open is denied on every webContents
+// without the live-view handler.
 
 test('a shell url click opens the visit below and nothing escapes', async ({
   electronApp,
@@ -55,11 +55,9 @@ test('a shell url click opens the visit below and nothing escapes', async ({
   const url = `${gw.origin}/wasm_exec.js?shell-link=1`;
   await window.keyboard.type(`echo visit ${url} end`);
   await window.keyboard.press('Enter');
-  // Wait for echo's output line, the exact predicate the row selection below
-  // consumes. A whole-buffer `toContain` is satisfied by the typed command line,
-  // which also carries the marker, so on a slow echo the selection runs before
-  // the output exists and indexes the wrong row: this spec's flake was it racing
-  // itself.
+  // Match echo's output row explicitly. A whole-buffer `toContain` is satisfied
+  // by the typed command line, which also carries the marker, so on a slow echo
+  // the selection indexes the wrong row. That was this spec's flake.
   const outputRow = (t: string) =>
     t.split('\n').findIndex((l) => l.includes('shell-link=1 end') && !l.includes('echo '));
   await expect
@@ -69,9 +67,7 @@ test('a shell url click opens the visit below and nothing escapes', async ({
     )
     .toBeGreaterThanOrEqual(0);
 
-  // Click the rendered link, mapping buffer row and column to screen pixels
-  // through the hook. The buffer only appends, so the row the poll found is
-  // stable.
+  // The buffer only appends, so the row the poll found is still valid.
   const text: string = await window.evaluate(() => (window as any).__gridwellTest.shellText());
   const lines = text.split('\n');
   const row = outputRow(text);
@@ -80,10 +76,10 @@ test('a shell url click opens the visit below and nothing escapes', async ({
     ([c, r]: number[]) => (window as any).__gridwellTest.shellCellPx(c, r),
     [col, row],
   );
-  // Hover, then wait for xterm's own decoration ack: it marks a hovered link by
-  // putting xterm-cursor-pointer on the screen element. That beats sleeping and
-  // hoping the linkifier ran. The first move is a step away, so a pointer
-  // already at the target still produces a mousemove.
+  // xterm marks a hovered link with xterm-cursor-pointer on the screen element,
+  // so waiting for that class replaces sleeping until the linkifier has run. The
+  // first move is a step away, so a pointer already at the target still produces
+  // a mousemove.
   await window.mouse.move(pt.x, pt.y - 40);
   await window.mouse.move(pt.x, pt.y);
   await expect
@@ -97,7 +93,7 @@ test('a shell url click opens the visit below and nothing escapes', async ({
     .toBe(true);
   await window.mouse.click(pt.x, pt.y);
 
-  // The one correct effect: a new pane below, descended into the visit.
+  // The one effect is a new pane below, descended into the visit.
   await expect.poll(async () => (await gw.panes()).length, { timeout: 15_000 }).toBe(2);
   await expect
     .poll(() =>
@@ -108,8 +104,8 @@ test('a shell url click opens the visit below and nothing escapes', async ({
     )
     .toBe(true);
 
-  // And nothing else: no renderer window.open, no xterm confirm dialog,
-  // no shell.openExternal, no new BrowserWindow.
+  // Nothing else: no renderer window.open, no xterm confirm dialog, no
+  // shell.openExternal, no new BrowserWindow.
   expect(await window.evaluate(() => (window as any).__wopens)).toEqual([]);
   expect(await window.evaluate(() => (window as any).__confirms)).toEqual([]);
   expect(await electronApp.evaluate(() => (global as any).__extOpens)).toEqual([]);
@@ -118,8 +114,8 @@ test('a shell url click opens the visit below and nothing escapes', async ({
     await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length),
   ).toBe(winBefore);
 
-  // The app-wide seal: a bare window.open from the root renderer, which is any
-  // library trying to leave, is denied. No new window, nothing external.
+  // The app-wide seal denies a bare window.open from the root renderer, which
+  // is any library trying to leave.
   await window.evaluate(() => {
     (window as any).open = (window as any).__realOpen; // the real one, for the seal probe
   });
@@ -145,14 +141,13 @@ test('a shell url click opens the visit below and nothing escapes', async ({
 });
 
 // The same click must not also reach the terminal application. With mouse
-// reporting on — every TUI that tracks the mouse — xterm both activates the
-// hovered link and sends the press to the PTY, so an application with
-// clickable links runs its own opener on the same url and it opens a second
-// time, outside Gridwell, in the host browser. The application here is `dd`
-// writing every byte the PTY delivers to a file, so the assertion crosses
-// the whole seam: click, xterm, the /shell WebSocket, tmux, the PTY. A click on
-// plain text first proves reporting really is on, so "no bytes" cannot pass by
-// the terminal being deaf.
+// reporting on, as in any TUI that tracks the mouse, xterm would both activate
+// the hovered link and send the press to the PTY, so an application with
+// clickable links would run its own opener on the same url and open it a second
+// time in the host browser. The application here is `dd` writing every byte the
+// PTY delivers to a file, so the assertion crosses click, xterm, the /shell
+// WebSocket, tmux and the PTY. A click on plain text first proves reporting is
+// on, so "no bytes" cannot pass because the terminal is deaf.
 test('a shell url click is not also delivered to the terminal application', async ({
   gw,
   home,
@@ -172,11 +167,9 @@ test('a shell url click is not also delivered to the terminal application', asyn
     })
     .toBe('webgl');
 
-  // Print the url, turn on SGR mouse reporting, then drain the PTY into a file
-  // this test can read: what the application sees, byte for byte. Raw mode, so
-  // the line discipline delivers the report instead of holding it for a
-  // newline, and `dd bs=1`, which writes each byte through instead of buffering
-  // it like `cat` does to a file.
+  // The sink file holds what the application sees, byte for byte. Raw mode, so
+  // the line discipline delivers the report instead of holding it for a newline,
+  // and `dd bs=1`, which writes each byte through where `cat` would buffer.
   const sink = path.join(home, 'mouse-report.txt');
   const url = `${gw.origin}/wasm_exec.js?shell-click=1`;
   await window.keyboard.type(
@@ -201,15 +194,15 @@ test('a shell url click is not also delivered to the terminal application', asyn
     );
   const sunk = () => (fs.existsSync(sink) ? fs.readFileSync(sink, 'utf8') : '');
 
-  // Plain text, no link: the press is the application's, and arrives as an SGR
-  // report. Without this the "no bytes" assertion below would pass on a
-  // terminal that never reports at all.
+  // A press on plain text belongs to the application and arrives as an SGR
+  // report. Without this the "no bytes" assertion below would pass on a terminal
+  // that never reports at all.
   const plain = await cellPx(lines[row].indexOf('visit') + 2);
   await window.mouse.click(plain.x, plain.y);
   await expect.poll(sunk, { timeout: 10_000 }).toContain('\u001b[<');
   const beforeLink = sunk();
 
-  // The link: hover until xterm acknowledges the decoration, then click.
+  // Hover until xterm acknowledges the decoration, then click.
   const pt = await cellPx(lines[row].indexOf('http') + 5);
   await window.mouse.move(pt.x, pt.y - 40);
   await window.mouse.move(pt.x, pt.y);
@@ -226,9 +219,9 @@ test('a shell url click is not also delivered to the terminal application', asyn
     .toBe(true);
   await window.mouse.click(pt.x, pt.y);
 
-  // Gridwell's one effect: the visit below.
+  // Gridwell's one effect is the visit below.
   await expect.poll(async () => (await gw.panes()).length, { timeout: 15_000 }).toBe(2);
-  // And the application heard nothing: no press, no release, no bytes at all.
+  // The application heard nothing: no press, no release, no bytes at all.
   await window.waitForTimeout(1000);
   expect(sunk()).toBe(beforeLink);
 
@@ -245,14 +238,13 @@ test('a shell url click is not also delivered to the terminal application', asyn
   if (shell) await gw.deleteTileCell(cx, cy);
 });
 
-// A program's own OSC 8 hyperlink is a link like any other, and opens where
-// every link opens: the visit below. xterm ships a default handler for these —
-// a confirm() and then window.open — which is a tab in the host browser on a
-// browser host, and a denied popup that opens nothing on the desktop. Neither
-// is Gridwell's answer, so the terminal is handed the one owner instead. The
-// sequence is fed straight into the terminal (shellFeed): a hyperlink is a
-// terminal-level contract, and tmux strips it unless the outer terminal
-// declares the capability.
+// A program's own OSC 8 hyperlink opens the visit below, like every other link.
+// xterm's default handler for these calls confirm() and then window.open, which
+// is a host-browser tab on a browser host and a denied popup on the desktop, so
+// the terminal is handed Gridwell's owner instead. The sequence is fed straight
+// into the terminal with shellFeed, because a hyperlink is a terminal-level
+// contract and tmux strips it unless the outer terminal declares the
+// capability.
 test('an OSC 8 hyperlink in a shell opens the visit below, not a browser', async ({
   gw,
   window,
@@ -285,8 +277,8 @@ test('an OSC 8 hyperlink in a shell opens the visit below, not a browser', async
   });
 
   // The url rides the sequence and the cells say only OSC8CLICKME, so the url
-  // scanner cannot see this link: the linkifier's own hyperlink is the only
-  // one here.
+  // scanner cannot see this link. The linkifier's own hyperlink is the only one
+  // here.
   const url = `${gw.origin}/wasm_exec.js?osc8=1`;
   await window.evaluate(
     (u: string) =>
@@ -295,11 +287,10 @@ test('an OSC 8 hyperlink in a shell opens the visit below, not a browser', async
       ),
     url,
   );
-  // The fed row must RENDER before it can be clicked. A flake, 2026-09-05:
-  // once in a full combined run this poll never saw the marker, while the same
-  // built tree passed it four times in isolation — the sequence was fed and
-  // never reached the buffer. No mechanism yet; docs/flake-ledger.md carries
-  // the evidence.
+  // The fed row must render before it can be clicked. This poll is a known
+  // flake with no mechanism yet: once in a full run it never saw the marker
+  // while the same built tree passed four times in isolation.
+  // docs/flake-ledger.md carries the evidence.
   const markerRow = (t: string) => t.split('\n').findIndex((l) => l.includes('OSC8CLICKME'));
   await expect
     .poll(
@@ -328,7 +319,7 @@ test('an OSC 8 hyperlink in a shell opens the visit below, not a browser', async
     .toBe(true);
   await window.mouse.click(pt.x, pt.y);
 
-  // The visit below, and no browser: no confirm, no window.open.
+  // The visit opens below and no browser does: no confirm, no window.open.
   await expect.poll(async () => (await gw.panes()).length, { timeout: 15_000 }).toBe(2);
   expect(await window.evaluate(() => (window as any).__confirms)).toEqual([]);
   expect(await window.evaluate(() => (window as any).__wopens)).toEqual([]);

@@ -34,7 +34,6 @@ test('live tiles in different plugins share the one local session', async ({
       .toBe(true);
   };
 
-  // A live tile in the first namespace sets a cookie in-page.
   await gw.enterPlugin('home');
   await goLiveURL('plug=one');
   await electronApp.evaluate(async ({ webContents }) => {
@@ -43,14 +42,11 @@ test('live tiles in different plugins share the one local session', async ({
     await wc.executeJavaScript(`document.cookie = 'gwshared=yes; path=/'; true`);
   });
 
-  // Ascend out, which freezes and tears the view down, portal home, then enter
-  // the second namespace and go live there.
   await gw.ascendViaCrumb(); // ascend the url descent
   await gw.ascendViaCrumb(); // ascend the menu portal
   await gw.enterPlugin('second');
   await goLiveURL('plug=two');
 
-  // The second live view sees the first's cookie: one session.
   const cookie = await electronApp.evaluate(async ({ webContents }) => {
     const wc = webContents.getAllWebContents().find((w) => w.getURL().includes('plug=two'));
     if (!wc) throw new Error('second live view not found');

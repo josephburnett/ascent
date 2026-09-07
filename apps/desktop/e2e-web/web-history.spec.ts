@@ -1,11 +1,11 @@
 import { test, expect } from './fixtures';
 
-// Crosses the browser-history seam: structural navigation, a descend, ascend, or
-// portal, pushes a history entry, while framing, a pan or zoom, replaces one. So
-// the back button traverses descents and ascents, never pan positions, and each
+// Structural navigation, meaning a descend, ascend, or portal, pushes a browser
+// history entry; framing, meaning a pan or zoom, replaces one. The back button
+// therefore traverses descents and ascents and never pan positions, and each
 // restored place shows the framing it was left at, which the settle persister
-// makes server truth. Driven in a real browser, because history and popstate are
-// the browser-integration surface the Electron specs do not exercise.
+// made server truth. This runs in a real browser because history and popstate
+// are a surface the Electron specs do not exercise.
 
 test('back ascends a descent; forward re-descends; pans never make entries', async ({
   gw,
@@ -22,7 +22,7 @@ test('back ascends a descent; forward re-descends; pans never make entries', asy
   const child = await gw.focused();
   expect(child.gridID, 'descended into the well').not.toBe(home.gridID);
 
-  // Pan and zoom inside the well: framing only, which must create no entries.
+  // Pan and zoom are framing, so they must create no history entries.
   await gw.wheelAtFocusedCenter(-300);
   const zc = await gw.focused();
   await gw.panFocusedGrid(Math.round(zc.cx), Math.round(zc.cy), Math.round(zc.cx) - 1, Math.round(zc.cy) - 1);
@@ -31,15 +31,14 @@ test('back ascends a descent; forward re-descends; pans never make entries', asy
   // Let the debounced url write settle so the entry state is current.
   await window.waitForTimeout(400);
 
-  // Back: one press ascends past the whole pan and zoom excursion.
+  // One back press ascends past the whole pan and zoom excursion.
   await window.evaluate(() => history.back());
   await expect
     .poll(async () => (await gw.focused()).gridID, { timeout: 10_000 })
     .toBe(home.gridID);
   expect((await gw.focused()).path, 'back landed at the parent, path empty').toEqual([]);
 
-  // Forward: re-descends into the well, restoring the framing it was left at,
-  // which the settle persister made server truth.
+  // Forward re-descends into the well and restores the framing it was left at.
   await window.evaluate(() => history.forward());
   await expect
     .poll(async () => (await gw.focused()).gridID, { timeout: 10_000 })

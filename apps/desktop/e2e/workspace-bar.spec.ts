@@ -1,15 +1,15 @@
 import { test, expect } from './fixtures';
 import { tileAt } from './oracle';
 
-// The bottom bar sits in always-reserved layout — a full-width band across the
-// window's bottom — and rides the focused pane inside it, carrying the one nav
-// chain: the complete path from the root, as an outer chain, the pane-tile
-// boundary crumb, and the inner chain. The band never overlays pane content,
-// and inside a pane tile the bar rides the inset pane. Every crumb click
-// goes to that crumb, so the current boundary is a no-op and leaving is clicking
-// any crumb before it. The workspace boundary belongs to the bar alone:
-//   - the in-pane ascent gesture, a middle click, on a fully-ascended pane does
-//     not leave the workspace; the two ascent vocabularies never blur;
+// The bottom bar sits in always-reserved layout, a full-width band across the
+// window's bottom, and rides the focused pane inside it. It carries the one nav
+// chain: the complete path from the root as an outer chain, the pane-tile
+// boundary crumb, and the inner chain. The band never overlays pane content, and
+// inside a pane tile the bar rides the inset pane. Every crumb click goes to that
+// crumb, so the current boundary is a no-op and leaving is clicking any crumb
+// before it. The workspace boundary belongs to the bar alone:
+//   - a middle click, the in-pane ascent gesture, on a fully-ascended pane does
+//     not leave the workspace, so the two ascent vocabularies never blur;
 //   - a right-click on the boundary crumb renames the workspace inline.
 
 async function workspaceState(window: any): Promise<{ depth: number; names: string[] }> {
@@ -29,8 +29,8 @@ test('the bar is always reserved; workspace crumbs appear only inside; in-pane a
 
   // The band is reserved layout below every pane: the pane's bottom edge is
   // exactly the band's top, so the two can never overlap. Outside a workspace
-  // there is no workspace crumb and no anchor block; the chain starts the
-  // band. On a grid the theme is the blue grid family.
+  // there is no boundary crumb, so the chain starts the band. On a grid the
+  // theme is the blue grid family.
   const outside = await bar(window);
   expect((await workspaceState(window)).depth).toBe(0);
   const fp0 = await gw.focused();
@@ -49,9 +49,9 @@ test('the bar is always reserved; workspace crumbs appear only inside; in-pane a
   await gw.descendCell(wx, wy);
   await expect.poll(async () => (await workspaceState(window)).depth).toBe(1);
 
-  // The teal workspace outline is reserved layout: panes inset by its width on
-  // every side, so the line never paints over the panes' own kind-colored
-  // borders. It is the strip's reserved-band pattern again.
+  // The teal workspace outline is reserved layout, like the notice strip: panes
+  // inset by its width on every side, so the line never paints over the panes'
+  // own kind-colored borders.
   const winW = await window.evaluate(() => globalThis.innerWidth);
   const winH = await window.evaluate(() => globalThis.innerHeight);
   const wp = (await gw.panes())[0];
@@ -64,8 +64,8 @@ test('the bar is always reserved; workspace crumbs appear only inside; in-pane a
   const inside0 = await bar(window);
   expect(winH - (wp.y + wp.h), 'the gutter, then the band').toBe(wp.x + inside0.height);
   expect(inside0.top - (wp.y + wp.h), 'the outline stays off the band').toBe(wp.x);
-  // The bar rides the pane, so the outline's gutter narrows it too: the band
-  // stays full width, the chrome sits under the inset pane.
+  // The bar rides the pane, so the outline's gutter narrows it too. The band
+  // stays full width and the chrome sits under the inset pane.
   expect(inside0.left, 'the bar rides the inset pane').toBe(wp.x);
   expect(inside0.width).toBe(wp.w);
 
@@ -79,24 +79,22 @@ test('the bar is always reserved; workspace crumbs appear only inside; in-pane a
   expect(inside.segments[boundaryIdx - 1].kind).toBe('chain');
   expect(inside.segments.length, 'the inner chain follows the boundary').toBeGreaterThan(boundaryIdx + 1);
 
-  // Clicking the current boundary crumb goes there, which is here: a no-op,
-  // never a close. The last view closes by clicking any crumb before its
-  // boundary.
+  // Clicking the current boundary crumb goes where the pane already is, so it is
+  // a no-op. Closing the last view means clicking a crumb before its boundary.
   await window.mouse.click(crumb.x + crumb.w / 2, inside.top + inside.height / 2);
   await gw.waitIdle();
   expect((await workspaceState(window)).depth, 'clicking the current boundary stays put').toBe(1);
 
   // The workspace's default pane frames the containing grid with nothing to pop
-  // in-pane: no path, no portal frames. A middle-click, the universal in-pane
-  // ascend, must not leave the workspace; the bar is the only exit.
+  // in-pane. A middle-click, the in-pane ascend, must not leave the workspace,
+  // because the bar is the only exit.
   const inner = await gw.focused();
   await window.mouse.click(inner.x + inner.w / 2, inner.y + inner.h / 2, { button: 'middle' });
   await gw.waitIdle();
   expect((await workspaceState(window)).depth, 'in-pane ascent crossed the workspace boundary').toBe(1);
 
-  // Right-click the crumb for the shared inline rename input, aimed at the
-  // workspace. Enter commits a user-owned name, and the crumb and the tile's alt
-  // both update.
+  // The right-click opens the shared inline rename input, aimed at the
+  // workspace, and Enter commits a user-owned name.
   await window.mouse.click(crumb.x + 20, inside.top + inside.height / 2, { button: 'right' });
   await window.locator('#gw-rename-input').waitFor({ timeout: 5_000 });
   await window.fill('#gw-rename-input', 'ops board');
@@ -115,8 +113,8 @@ test('the bar is always reserved; workspace crumbs appear only inside; in-pane a
   await gw.leaveWorkspace();
   await expect.poll(async () => (await workspaceState(window)).depth).toBe(0);
 
-  // A wheel over the band zooms the current pane, centered: the escape hatch for
-  // well-tiled grids.
+  // A wheel over the band zooms the current pane on its center, which is the
+  // escape hatch for well-tiled grids.
   const zBefore = (await gw.focused()).zoom;
   const b3 = await bar(window);
   await window.mouse.move(b3.left + b3.width / 2, b3.top + b3.height / 2);

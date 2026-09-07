@@ -1,11 +1,11 @@
 import { test, expect } from './fixtures';
 
-// The + menu's plugin and connection section is an open set — a node declares
-// as many as it likes and one plugin declares several entries — so it is
-// folded away behind a chevron strip and the four primitives are what a menu
-// opens on. This crosses the seam palette.Show cannot see on its own: the
-// composition decision, the popover geometry it moves, the press that works
-// the strip, and client/menu's fold flag dying with the menu.
+// The + menu's plugin and connection section is an open set, since a node
+// declares as many as it likes and one plugin declares several entries, so it
+// is folded away behind a chevron strip and a menu opens on the four
+// primitives. This crosses what palette.Show cannot see on its own: the
+// composition decision, the popover geometry it moves, the press that works the
+// strip, and client/menu's fold flag dying with the menu.
 
 test('the + menu opens with the plugin section folded, and the chevron works it', async ({
   gw,
@@ -26,8 +26,8 @@ test('the + menu opens with the plugin section folded, and the chevron works it'
   ).toBe(false);
   const primitives = folded.items.filter((i) => !i.isPlugin);
   expect(primitives.length, 'the regular tiles are there').toBeGreaterThanOrEqual(4);
-  // The strip is inside the popover and on no swatch: a press there is the
-  // menu's, never the canvas underneath it.
+  // The strip is inside the popover and on no swatch, so a press there belongs
+  // to the menu rather than the canvas underneath it.
   for (const p of primitives) {
     expect(p.y, 'every primitive sits below the strip').toBeGreaterThanOrEqual(
       folded.toggle.y + folded.toggle.h,
@@ -35,7 +35,7 @@ test('the + menu opens with the plugin section folded, and the chevron works it'
   }
 
   // Press the strip: the section opens above the primitives, and nothing else
-  // moves — same focused pane, same open menu, same selection.
+  // moves. Same focused pane, same open menu, same selection.
   await window.mouse.click(
     folded.toggle.x + folded.toggle.w / 2,
     folded.toggle.y + folded.toggle.h / 2,
@@ -75,8 +75,7 @@ test('an expanded entry still descends, and the next menu opens folded again', a
   const home = pls.find((p) => p.label === 'home')!;
   const before = await gw.focused();
 
-  // Expanded, a swatch behaves exactly as it did when the section was always
-  // shown: a click descends into the grid it roots.
+  // Expanded, a swatch click descends into the grid it roots.
   await gw.openPalette();
   await gw.expandPlugins();
   await gw.clickPluginSwatch('home');

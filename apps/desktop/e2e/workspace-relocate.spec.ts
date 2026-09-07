@@ -1,14 +1,14 @@
 import { test, expect } from './fixtures';
 import { tileAt, placeTile } from './oracle';
 
-// A workspace leaf references its tile by anchor, path, and id, and the path goes
-// stale the moment the tile is moved: ids are immutable, paths are not.
-// Re-entering the workspace must heal the leaf. The client notices the stored
-// path no longer leads to the tile's grid, asks the server's LocateTile for the
-// current containing-well chain, and rebinds the pane there, so the descent works
-// and the crumbs show a true path. The move happens through the server directly,
-// as a foreign writer, which is the out-from-under case a live session never
-// sees.
+// A workspace leaf references its tile by anchor, path, and id. Ids are
+// immutable while paths are not, so the path goes stale the moment the tile is
+// moved, and re-entering the workspace must heal the leaf. The client notices
+// the stored path no longer leads to the tile's grid, asks the server for a
+// scoped `id:` search, and rebinds the pane at the containing-well chain that
+// comes back, so the descent works and the crumbs show a true path. The move
+// happens through the server directly, as a foreign writer, which is the
+// out-from-under case a live session never sees.
 
 test('re-entering a workspace heals a leaf whose tile was moved into a well', async ({
   gw,
@@ -64,9 +64,9 @@ test('re-entering a workspace heals a leaf whose tile was moved into a well', as
     .poll(async () => ((await gw.getGrid(well.childGridId!)).tiles ?? []).some((t: any) => t.id === doc.id))
     .toBe(true);
 
-  // Re-enter: the leaf must find the moved tile and bind to it in its new grid.
-  // Without the heal the pane restores at the stale path, with the content frame
-  // set but the pane's grid still the old root: a dead preview.
+  // The leaf must find the moved tile and bind to it in its new grid. Without
+  // the heal the pane restores at the stale path, with the content frame set and
+  // the pane's grid still the old root, which draws a dead preview.
   await gw.descendCell(cx - 2, cy);
   await expect
     .poll(async () => window.evaluate(() => (window as any).__gridwellTest.workspace().depth))
@@ -78,8 +78,8 @@ test('re-entering a workspace heals a leaf whose tile was moved into a well', as
     }, { timeout: 15_000 })
     .toEqual({ focus: doc.id, grid: well.childGridId });
 
-  // The healed descent is real: the crumb chain now passes through the well, so
-  // root, well, and tile make three chain crumbs.
+  // The crumb chain now passes through the well, so root, well and tile make
+  // three chain crumbs.
   const healed = await window.evaluate(() => (window as any).__gridwellTest.bar());
   const chain = healed.segments.filter((s: any) => s.kind === 'chain');
   expect(chain.length, 'crumbs show the true path through the well').toBeGreaterThanOrEqual(3);

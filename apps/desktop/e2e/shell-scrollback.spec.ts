@@ -1,13 +1,13 @@
 import { test, expect } from './fixtures';
 
-// The wheel over a live shell scrolls back through tmux history. The tmux client
-// keeps xterm in the alternate buffer, where xterm turns a wheel into arrow keys
-// and the 50k-line tmux history is unreachable except through C-b [. With `mouse
-// on` in the generated tmux config, xterm forwards the wheel as mouse reports,
-// tmux enters copy-mode on a wheel-up and scrolls history, and a wheel-down at
-// the bottom drops back to live. This spec crosses the whole seam: real wheel
-// events over the xterm overlay, mouse reports through the /shell WebSocket,
-// tmux copy-mode, and the redrawn screen read back through the terminal buffer.
+// The wheel over a live shell scrolls back through tmux history. The tmux
+// client keeps xterm in the alternate buffer, where xterm turns a wheel into
+// arrow keys and the tmux history is unreachable except through C-b [. With
+// `mouse on` in the generated tmux config, xterm forwards the wheel as mouse
+// reports, tmux enters copy-mode on a wheel-up, and a wheel-down at the bottom
+// drops back to live. The spec crosses the whole seam: real wheel events over
+// the xterm overlay, mouse reports through the /shell WebSocket, tmux
+// copy-mode, and the redrawn screen read back through the terminal buffer.
 
 const shellText = (window: any): Promise<string> =>
   window.evaluate(() => (window as any).__gridwellTest.shellText());
@@ -26,8 +26,8 @@ test('wheel over a live shell scrolls back through tmux history (#206)', async (
   await gw.descendCell(sx, sy); // the drop lands bare; the descent creates the session
   await expect.poll(async () => (await gw.focused()).textFocus, { timeout: 15_000 }).not.toBe('');
 
-  // Fill well past one screen. The -end suffix keeps "line-5-end" from matching
-  // "line-50..." in the substring assertions.
+  // The -end suffix keeps "line-5-end" from matching "line-50..." in the
+  // substring assertions.
   await window.keyboard.type('for i in $(seq 1 200); do echo scroll-line-$i-end; done');
   await window.keyboard.press('Enter');
   await expect.poll(() => shellText(window), { timeout: 10_000 }).toContain('scroll-line-200-end');
@@ -35,8 +35,7 @@ test('wheel over a live shell scrolls back through tmux history (#206)', async (
     'scroll-line-5-end',
   );
 
-  // Wheel up over the terminal: tmux enters copy-mode and the earlier lines come
-  // back into view.
+  // Wheel up: tmux enters copy-mode and the earlier lines come back.
   const p = await gw.focused();
   await window.mouse.move(p.x + p.w / 2, p.y + p.h / 2);
   for (let i = 0; i < 60; i++) {
@@ -44,15 +43,14 @@ test('wheel over a live shell scrolls back through tmux history (#206)', async (
   }
   await expect.poll(() => shellText(window), { timeout: 10_000 }).toContain('scroll-line-5-end');
 
-  // Wheel back down: copy-mode exits at the bottom and the live tail is visible
-  // again.
+  // Wheel down: copy-mode exits at the bottom and the live tail is back.
   for (let i = 0; i < 80; i++) {
     await window.mouse.wheel(0, 120);
   }
   await expect.poll(() => shellText(window), { timeout: 10_000 }).toContain('scroll-line-200-end');
 
-  // Leave clean: ascend and delete the shell tile so its tmux session dies and
-  // teardown does not hang on a live PTY.
+  // Delete the shell tile so its tmux session dies and teardown does not hang
+  // on a live PTY.
   await gw.ascendViaCrumb();
   await expect.poll(async () => (await gw.focused()).textFocus).toBe('');
   await gw.deleteTileCell(sx, sy);

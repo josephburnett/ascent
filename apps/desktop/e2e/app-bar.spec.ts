@@ -1,13 +1,10 @@
 import { test, expect } from './fixtures';
 
-// One navigation bar, at the bottom of the window, always visible, riding
-// whichever pane has focus: it is only as wide as that pane and sits under it,
-// so the circle slot is never a wide screen away from the pane you are working
-// in. The band it sits in is reserved once and full width — every pane ends at
-// its top edge, whatever the split and whoever has focus — so nothing can
-// occlude the bar and no pane resizes when focus moves. Beside the bar the
-// band is plain background belonging to no pane: a click there does nothing
-// and never falls through.
+// One bar at the bottom of the window, as wide as the focused pane and sitting
+// under it. The band it sits in is full width and reserved once, so every pane
+// ends at its top edge and no pane resizes when focus moves. Beside the bar the
+// band belongs to no pane, and a click there does nothing and does not fall
+// through.
 
 test('one bar rides the focused pane, in a band reserved once', async ({ gw, window }) => {
   await gw.enterPlugin('home');
@@ -25,8 +22,6 @@ test('one bar rides the focused pane, in a band reserved once', async ({ gw, win
   const focused = panes.find((p) => p.focused)!;
   const other = panes.find((p) => !p.focused)!;
 
-  // Still one bar, and now it is only as wide as the pane it rides, sitting
-  // under that pane's own columns.
   const bar2 = await gw.bar();
   expect(bar2.left, 'the bar sits under the focused pane').toBe(focused.x);
   expect(bar2.width, 'and is only as wide as it').toBe(focused.w);
@@ -34,22 +29,16 @@ test('one bar rides the focused pane, in a band reserved once', async ({ gw, win
   expect(bar2.top, 'the band did not move').toBe(bar1.top);
   expect(bar2.height, 'nor change height').toBe(bar1.height);
 
-  // The band is reserved once, for the window: every pane ends exactly at its
-  // top edge, not once per pane.
   for (const p of panes) {
     expect(p.y + p.h, `pane ${p.id} ends at the band`).toBe(bar2.top);
   }
 
-  // The circle slot rides with the bar: the + menu is at the focused pane's
-  // right edge, not the window's.
+  // The + menu rides the bar, so it sits at the focused pane's right edge.
   const pal = await gw.palette();
   expect(pal.plusX, 'the + menu is beside the pane you are working in').toBeGreaterThan(focused.x);
   expect(pal.plusX).toBeLessThan(focused.x + focused.w);
   expect(pal.plusY).toBeGreaterThan(bar2.top);
 
-  // Beside the bar, the band is plain background over no pane at all: a click
-  // in the other pane's column of the band row opens no menu, moves no focus,
-  // and moves no pane. Nothing there is the bar's, and nothing falls through.
   await gw.clickScreen(other.x + other.w - 8, bar2.top + bar2.height / 2);
   expect((await gw.palette()).open, 'no + menu beside the bar').toBe(false);
   const afterQuiet = await gw.panes();
@@ -61,14 +50,11 @@ test('one bar rides the focused pane, in a band reserved once', async ({ gw, win
     expect(after.w).toBe(before.w);
   }
 
-  // A left-click in the unfocused pane's empty center moves focus and nothing
-  // else: no zoom toggle, no ascent, no pane closed.
+  // A click in an unfocused pane moves focus and does nothing else.
   await gw.focusPane(other);
   await expect.poll(async () => (await gw.panes()).find((p) => p.focused)?.id).toBe(other.id);
   expect((await gw.panes()).length, 'no pane closed, none zoomed').toBe(2);
 
-  // The bar now rides the newly focused pane: it slid under it, in the same
-  // band, at the same height.
   const bar3 = await gw.bar();
   expect(bar3.left, 'the bar slid under the newly focused pane').toBe(other.x);
   expect(bar3.width).toBe(other.w);
@@ -80,8 +66,6 @@ test('one bar rides the focused pane, in a band reserved once', async ({ gw, win
   expect(title.x, 'and is inside it').toBeGreaterThanOrEqual(bar3.left);
   expect(title.x + title.w).toBeLessThanOrEqual(bar3.left + bar3.width);
 
-  // And the panes did not move or resize when focus moved: only the chrome
-  // slides. Things stay as you left them.
   for (const before of [focused, other]) {
     const after = (await gw.panes()).find((p) => p.id === before.id)!;
     expect(after.h, `pane ${before.id} kept its height`).toBe(before.h);

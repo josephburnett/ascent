@@ -7,12 +7,12 @@ import { Served, spawnServe, stopServe, freePort, authHeaders, authenticate } fr
 import { GridwellDriver } from '../e2e/driver';
 import { getGrid, tileAt } from '../e2e/oracle';
 
-// The remote-menu seam: descending into a node means being there. Two real nodes
-// over a direct connection, with no sshd anywhere. Descending the connection
-// lands on the remote's home, the + menu inside that pane shows the remote
-// node's plugins, exactly what a direct client of it sees, a primitive dragged
-// from that menu creates on the remote node, and dropping it into a local pane
-// refuses visibly: a menu belongs to its node.
+// Descending into a node means being there. Two real nodes over a direct
+// connection, with no sshd anywhere: descending the connection lands on the
+// remote's home, the + menu inside that pane shows the remote node's plugins,
+// exactly what a direct client of it sees, a primitive dragged from that menu
+// creates on the remote node, and dropping it into a local pane refuses
+// visibly, because a menu belongs to its node.
 
 const SERVICE = 'gridwell.v1.Gridwell';
 
@@ -33,8 +33,8 @@ type Fixtures = {
 };
 
 const test = base.extend<Fixtures>({
-  // world is the local node and the far node, whose fresh home gets its id from
-  // its first serve, directly connected.
+  // world is the local node and the far node, directly connected. The far
+  // node's fresh home gets its id from its first serve.
   world: async ({}, use) => {
     const farHome = fs.mkdtempSync(path.join(os.tmpdir(), 'gridwell-far-'));
     fs.writeFileSync(path.join(farHome, 'server.yaml'), '');
@@ -55,17 +55,17 @@ const test = base.extend<Fixtures>({
 
     await use({
       local,
-      // A getter, because reviveFar replaces the process: a spec that killed the
-      // machine and brought it back must reach the one that is running now.
+      // A getter, because reviveFar replaces the process: a spec that killed
+      // the machine and brought it back must reach the one running now.
       get far() {
         return far;
       },
-      // The partition switch the stale-affordance spec uses: the far node dies
-      // mid-session, exactly like a machine going dark.
+      // The far node dies mid-session, like a machine going dark.
       killFar: () => stopServe(far.child),
       // The same machine coming back: same home, same address, same node id, so
       // the connection self-heals rather than landing somewhere new. This is
-      // partition_test.go's revival shape in the browser gate.
+      // test/connections/partition_test.go's revival shape in the browser
+      // gate.
       reviveFar: async () => {
         far = await spawnServe(farHome, farPort);
       },
@@ -88,18 +88,17 @@ const test = base.extend<Fixtures>({
   },
 });
 
-// enterFarRoom is the shared preamble of the two mount specs below: learn the
+// enterFarRoom is the shared preamble of the mount specs below: learn the
 // yaml-declared connection's root, put one tile in the far node's home, link
 // that home into the local grid, descend into it, and wait for the room to
 // arrive live. It returns the far room's qualified grid id and the cell the
 // link well sits on.
 //
-// The room arrives, then it is read. The node serves a remembered grid
-// immediately and revalidates behind it, and the client's own Subscribe kicked a
-// whole-source prefetch of this connection at boot — before the far node grew
-// the tile — so the first answers for this room are a legitimately empty memory
-// inside its freshness window, corrected when the revalidation's GridChanged
-// lands. A single read races that correction, hence the poll.
+// The node serves a remembered grid immediately and revalidates behind it, and
+// the client's own Subscribe prefetched this connection at boot, before the far
+// node grew the tile, so the first answers for this room are a legitimately
+// empty memory inside its freshness window. A single read races the correction
+// the revalidation's GridChanged brings, hence the poll.
 async function enterFarRoom(
   gw: GridwellDriver,
   world: { local: Served; far: Served },
@@ -153,8 +152,8 @@ test('the + menu inside a remote pane is the remote node, and its creations land
   window,
   world,
 }) => {
-  // ── The yaml-declared connection presents as its own menu row, and its root,
-  // the remote home, is learned through the direct dial and rides the row's
+  // ── The yaml-declared connection presents as its own menu row. Its root, the
+  // remote home, is learned through the direct dial and rides the row's
   // rootGridId. ──
   let farHomeGrid = '';
   await expect
@@ -189,9 +188,9 @@ test('the + menu inside a remote pane is the remote node, and its creations land
   // ── Descend: the pane is there, and the menu is the far node's. ──
   await gw.descendCell(cx, cy);
 
-  // The bar knows the door: the title is the link well's own name, never the
-  // remote's config label, and renaming here renames that well. The level's crumb
-  // wears the mount's glyph, the globe, rather than a generic grid face.
+  // The bar's title is the link well's own name, never the remote's config
+  // label, and renaming here renames that well. The level's crumb wears the
+  // mount's glyph, the globe, rather than a generic grid face.
   await expect.poll(async () => (await gw.barName()).label).toBe('far');
   expect((await gw.barName()).editable, 'the door is a real row — renamable').toBe(true);
   const bar = await gw.bar();
@@ -235,21 +234,19 @@ test('the + menu inside a remote pane is the remote node, and its creations land
 
   // ── The refusal: a remote menu's primitive dropped into a local pane ──
   await gw.splitFocusedPaneVertical();
-  // After a split the new sibling shows the same place. Pane B is a clone of the
-  // remote pane, so ascend B back to the local grid, then drag from A's menu into
-  // B.
+  // After a split the new sibling shows the same place, so ascend it back to the
+  // local grid before dragging into it.
   const panes = await window.evaluate(() => (window as any).__gridwellTest.panes());
   const other = panes.find((p: any) => p.id !== inside.id);
   expect(other, 'the split produced a sibling').toBeTruthy();
-  // Focus the sibling and ascend it out of the portal to the local grid.
   await gw.clickScreen(other.x + other.w / 2, other.y + 10);
   await window.mouse.click(other.x + other.w / 2, other.y + other.h / 2, { button: 'middle' });
   await gw.waitIdle();
   const sib = await gw.focused();
   expect(sib.gridID, 'the sibling ascended to the local grid').toBe(f.gridID);
 
-  // Back to the remote pane: open its menu and drag markdown into the sibling,
-  // local pane. The refusal is visible and no tile appears.
+  // Back to the remote pane: drag markdown from its menu into the local
+  // sibling. The refusal is visible and no tile appears.
   await gw.clickScreen(inside.x + 20, inside.y + 20);
   await gw.openPalette();
   const pal = await window.evaluate(() => (window as any).__gridwellTest.palette());
@@ -279,12 +276,12 @@ test('the + menu inside a remote pane is the remote node, and its creations land
 test('a dark mount serves the remembered room, marked stale', async ({ gw, window, world }) => {
   const { farHomeGrid, cx, cy, liveTiles } = await enterFarRoom(gw, world);
 
-  // The machine goes dark. Leave and re-enter: the room re-reads through the
-  // source cache and arrives as a marked memory, tiles intact. The room is
-  // young enough to be inside the cache's freshness window, so what makes it
-  // a memory is the node learning the connection is dark — its health, or a
-  // call of the node's own failing — and the client re-reading after that.
-  // Hence the poll: the stamp lands a beat after the machine does.
+  // Leave and re-enter: the room re-reads through the source cache and arrives
+  // as a marked memory, tiles intact. The room is young enough to be inside the
+  // cache's freshness window, so what makes it a memory is the node learning the
+  // connection is dark, through its health or a call of its own failing, and the
+  // client re-reading after that. Hence the poll: the stamp lands a beat after
+  // the machine does.
   await world.killFar();
   await gw.ascendViaCrumb();
   await gw.descendCell(cx, cy);
@@ -299,21 +296,21 @@ test('a dark mount serves the remembered room, marked stale', async ({ gw, windo
   void window;
 });
 
-// The machine comes back, and everything its going dark caused undoes itself
-// with nobody touching anything. This is the client half of the freshness
-// traces — the two rows docs/freshness.md's gap list left open:
+// The machine comes back and everything its going dark caused undoes itself
+// with nobody touching anything. This is the client half of the two rows
+// docs/freshness.md's gap list left open:
 //
-//   (a) the client's GridChanged arm: the event clears the per-grid failure
-//       latch and refetches, so the cached chip clears with no gesture.
-//   (b) the client's health arms: reportPluginHealth kicks a resync scoped to
-//       the source the event names, in BOTH directions, and its sticky notice
-//       resolves on recovery. This room is served through the connection that
-//       flapped, so it is inside that scope (cache.ServedBy).
+//   (a) the GridChanged arm clears the per-grid failure latch and refetches, so
+//       the cached chip clears with no gesture.
+//   (b) reportPluginHealth kicks a resync scoped to the source the event names,
+//       in BOTH directions, and its sticky notice resolves on recovery. This
+//       room is served through the connection that flapped, so it is inside
+//       that scope (cache.ServedBy).
 //
-// Both are asserted the same way, because both are only observable as absence
-// of a gesture: after the far node dies, and again after it revives, this spec
-// polls the client's own state and does nothing else. No ascent, no descent, no
-// click. Every refetch it sees was the client's own reaction to an event.
+// Both are only observable as the absence of a gesture, so after the far node
+// dies, and again after it revives, this spec polls the client's own state and
+// does nothing else. Every refetch it sees was the client's own reaction to an
+// event.
 test('a revived mount clears its chip and its notice with nobody touching anything', async ({
   gw,
   window,
@@ -340,9 +337,9 @@ test('a revived mount clears its chip and its notice with nobody touching anythi
       timeout: 60_000,
     })
     .toContain('live updates stopped');
-  // And the down direction resyncs: a source going down changes what its grids
-  // ARE, so the kick scoped to that source refetches this room with no gesture,
-  // and the answer it gets back is the node's memory of it, stamped.
+  // A source going down changes what its grids ARE, so the kick scoped to that
+  // source refetches this room with no gesture, and the answer is the node's
+  // memory of it, stamped.
   await expect
     .poll(focusedStale, {
       message: 'the chip appears with no gesture: the down kick refetched',
@@ -351,8 +348,7 @@ test('a revived mount clears its chip and its notice with nobody touching anythi
     .toBe(true);
 
   // ── Up ────────────────────────────────────────────────────────────────
-  // Same home, same address, same node id: the connection self-heals. The
-  // healthy event resolves the notice and kicks the same resync, and the
+  // The healthy event resolves the notice and kicks the same resync, and the
   // revalidation's GridChanged clears the latch behind it.
   await world.reviveFar();
   await expect
@@ -369,19 +365,18 @@ test('a revived mount clears its chip and its notice with nobody touching anythi
     .toBe(false);
 });
 
-// The remote menu is a deduped read like any other, and #272's class is the
-// claim that outlives the fetch it guards. The client asks the far node for
-// its menu once per node namespace and holds a claim on that namespace while
-// the read is out; a request the network swallows — never fulfilled, never
-// aborted — held it for the life of the page. The remote pane's + menu then
-// had no plugin section at all, forever, with nothing on the error strip: the
-// same silent permanent "loading" the grid path had, one read over.
+// The remote menu is a deduped read like any other, and the class here is a
+// claim that outlives the fetch it guards. The client asks the far node for its
+// menu once per node namespace and holds a claim on that namespace while the
+// read is out; a request the network swallows, never fulfilled and never
+// aborted, would hold it for the life of the page, leaving the remote pane's +
+// menu with no plugin section at all and nothing on the error strip.
 //
-// Nothing here kills anything, and nothing restarts: the fix is that the read
-// is bounded, so the menu fills itself in off its own clock with the link in
-// exactly the state that broke it. The claim is also cancelled by a health
-// flap on the node it names, which is faster when one happens — client/inflight
-// and client/cache's unit tests own that half.
+// The read is bounded, so the menu fills itself in off its own clock with the
+// link in exactly the state that broke it. Nothing here kills anything and
+// nothing restarts. A health flap on the node the claim names also cancels it,
+// which is faster when one happens; client/inflight and client/cache's unit
+// tests own that half.
 test('a menu read the network swallows does not latch the remote menu empty', async ({
   gw,
   window,
@@ -390,10 +385,10 @@ test('a menu read the network swallows does not latch the remote menu empty', as
   test.setTimeout(150_000);
   await enterFarRoom(gw, world);
 
-  // The black hole: the next Handshake that names the connection is swallowed.
-  // The boot handshake (no namespace) and the retry both keep a live link, so
-  // the only thing between the pane and the far node's menu is the client's own
-  // claim on that namespace.
+  // The next Handshake that names the connection is swallowed. The boot
+  // handshake (no namespace) and the retry both keep a live link, so the only
+  // thing between the pane and the far node's menu is the client's own claim on
+  // that namespace.
   let blackhole = true;
   await window.route(`**/${SERVICE}/Handshake`, async (route) => {
     if (blackhole && (route.request().postData() ?? '').includes('farconn1')) {
@@ -430,9 +425,8 @@ test('a menu read the network swallows does not latch the remote menu empty', as
       },
       { message: 'the far node’s menu arrives by itself', timeout: 75_000 },
     )
-    // The far node's own menu, declared entries included — the same roster the
-    // spec above pins, because this one asks for it after a swallowed read
-    // rather than on the first try.
+    // The same roster the spec above pins, asked for here after a swallowed
+    // read rather than on the first try.
     .toBe('home,home · trash');
   expect(sawNotice, 'the swallowed read surfaced rather than disappearing').toBe(true);
 });

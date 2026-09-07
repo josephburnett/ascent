@@ -2,10 +2,10 @@ import { test, expect } from './fixtures';
 
 // A descent that has visibly animated must happen. Two link-opens out of one
 // live page, the second fired while the first pane is provably mid-animation,
-// give two panes each animating their own descent. Neither may void the other:
-// a transition belongs to a pane, and a displaced one lands on its destination
-// rather than vanishing — otherwise the first pane is stranded on the
-// animation's scratch viewport with the descent it showed you undone.
+// give two panes each animating their own descent. A transition belongs to a
+// pane, and a displaced one lands on its destination rather than vanishing. If
+// one voided the other, the first pane would be stranded on the animation's
+// scratch viewport with the descent it showed you undone.
 //
 // The transition clock is stretched through the e2e-only setTransitionMs hook
 // so the overlap is deterministic, and transitioning() proves the second
@@ -16,9 +16,8 @@ async function hook<T>(window: any, expr: string): Promise<T> {
 }
 
 // openFromPage fires the page's own new-window intent, the path
-// webview_bridge's onOpenBelow forwards. It is one of the entry points that
-// does not go through the canvas's gesture gate, which is exactly why it can
-// arrive mid-animation.
+// webview_bridge's onOpenBelow forwards. It does not go through the canvas's
+// gesture gate, which is why it can arrive mid-animation.
 async function openFromPage(electronApp: any, url: string): Promise<void> {
   await electronApp.evaluate(async ({ webContents }: any, u: string) => {
     const wc = webContents.getAllWebContents().find((w: any) => w.getURL().includes('src=page'));
@@ -62,7 +61,7 @@ test('a second link-open mid-animation does not void the first pane descent', as
     .poll(() => hook<boolean>(window, 'transitioning()'), { timeout: 15_000 })
     .toBe(true);
 
-  // The second link arrives inside that window. Its own descent must not be
+  // The second link arrives inside that window, and its descent must not be
   // paid for with the first one's.
   await openFromPage(electronApp, `${gw.origin}/wasm_exec.js?opened=second`);
   expect(
@@ -87,9 +86,9 @@ test('a second link-open mid-animation does not void the first pane descent', as
   expect(first, 'the first visit tile was created').toBeTruthy();
   expect(second, 'the second visit tile was created').toBeTruthy();
 
-  // … and both panes are inside them. Every pane here descended into
-  // something — the source page and the two visits — so a pane sitting on a
-  // grid is a descent voided after the user watched it animate.
+  // … and both panes are inside them. Every pane here descended into something,
+  // the source page and the two visits, so a pane sitting on a grid is a descent
+  // voided after the user watched it animate.
   const panes = await gw.panes();
   const descended = panes.map((p) => p.textFocus).filter((t) => t !== '');
   expect(descended, 'both link-opens landed on their own tile').toEqual(
@@ -100,7 +99,7 @@ test('a second link-open mid-animation does not void the first pane descent', as
     'a pane was stranded on a grid: its descent animated and then did not happen',
   ).toBe(panes.length);
 
-  // No pane holds a native live view for content it is not inside: a voided
+  // No pane holds a native live view for content it is not inside. A voided
   // descent that popped a content frame while a view stayed placed leaves the
   // page hanging over a grid.
   const viewPanes = await electronApp.evaluate(() => {

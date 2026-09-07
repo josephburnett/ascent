@@ -5,19 +5,12 @@ import { test, expect } from './fixtures';
 // that lower pane is descended into a live url, its WebContentsView covers the
 // same pixels the swatches are drawn on.
 //
-// The press was already routed by the menu's own pane (onMouseDown claims a
-// left-click inside the open palette before pane resolution). The release was
-// not: onMouseUp swallowed any left release over a live url pane's content box
-// before it looked at the armed gesture. The swatch's mousedown armed the
-// template drag, its mouseup was discarded, and everything downstream followed
-// from a gesture that could never end — no url modal, an immortal ghost painted
-// at raw screen coords, and every live view parked forever, because the park
-// (liveOverlaysHidden) is keyed off the same armed drag. waitIdle, which
-// includes dragging == nil, never returned.
-//
-// The fix gives that decision one owner, panebox.LiveViewOwnsPoint, which asks
-// whether the view is parked: an armed gesture parks every live view, so the
-// release that ends one is never the view's to swallow.
+// panebox.LiveViewOwnsPoint owns that decision for the press and the release
+// alike, and it asks whether the view is parked: an armed gesture parks every
+// live view, so the release that ends one is never the view's to swallow. A
+// release swallowed there leaves the swatch's template drag armed forever, and
+// with it the park it holds (liveOverlaysHidden reads the same field), so no
+// url modal opens and waitIdle never returns.
 test('the + menu over a stacked live url pane keeps its own release', async ({
   electronApp,
   window,
@@ -50,7 +43,6 @@ test('the + menu over a stacked live url pane keeps its own release', async ({
     .toBeGreaterThan(wcBefore);
   expect((await gw.focused()).id, 'the lower pane holds the live visit').toBe(lowerId);
 
-  // Focus the upper pane and open its + menu there.
   const upper = (await gw.panes()).find((p) => p.id === upperId)!;
   await gw.focusPane(upper);
   expect((await gw.focused()).id, 'the upper pane has focus').toBe(upperId);
@@ -63,8 +55,8 @@ test('the + menu over a stacked live url pane keeps its own release', async ({
   const cy = swatch!.y + swatch!.h / 2;
 
   // The configuration this spec exists for: the swatch is drawn over the live
-  // lower pane. Without this the click would land on plain canvas and the
-  // regression could not reproduce.
+  // lower pane. Anywhere else the click lands on plain canvas and proves
+  // nothing.
   const lower = (await gw.panes()).find((p) => p.id === lowerId)!;
   expect(cy, 'the url swatch floats over the live lower pane').toBeGreaterThan(lower.y);
   expect(cy, 'and inside it').toBeLessThan(lower.y + lower.h);
@@ -72,9 +64,8 @@ test('the + menu over a stacked live url pane keeps its own release', async ({
   // Click the swatch: an ephemeral-visit click, which opens the url modal.
   await window.mouse.click(cx, cy);
 
-  // The release resolved the gesture: nothing is left armed. Polled first and
-  // on its own budget, so the failure names the stuck drag rather than timing
-  // out inside waitIdle.
+  // Polled first and on its own budget, so a failure names the stuck drag
+  // rather than timing out inside waitIdle.
   await expect
     .poll(() => window.evaluate(() => (window as any).__gridwellTest.idleDetail().dragging), {
       message: 'the swatch release must resolve the armed template drag',
@@ -84,7 +75,7 @@ test('the + menu over a stacked live url pane keeps its own release', async ({
   await window.locator('#gw-url-modal.open').waitFor({ timeout: 5_000 });
   await gw.waitIdle();
 
-  // Dismiss the modal: the click was the gesture under test, not the visit.
+  // Dismiss the modal. The click was the gesture under test.
   await window.keyboard.press('Escape');
   await expect(window.locator('#gw-url-modal.open')).toHaveCount(0);
   await gw.waitIdle();

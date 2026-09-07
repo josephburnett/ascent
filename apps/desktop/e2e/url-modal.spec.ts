@@ -11,7 +11,6 @@ test('live views park under the url modal and return on close', async ({
 }) => {
   await gw.enterPlugin('home');
 
-  // A live view first.
   const wcBefore = await electronApp.evaluate(
     ({ webContents }) => webContents.getAllWebContents().length,
   );
@@ -43,7 +42,7 @@ test('live views park under the url modal and return on close', async ({
     .poll(async () => (await viewBounds())!.x, { timeout: 10_000 })
     .toBeGreaterThan(-1000);
 
-  // Split, focus the other pane, open the modal there: the live view parks.
+  // With the modal open, the live view parks off screen.
   await gw.splitFocusedPaneVertical();
   await gw.clickPaletteSwatch('url');
   await window.locator('#gw-url-modal.open').waitFor({ timeout: 5_000 });
@@ -58,7 +57,6 @@ test('live views park under the url modal and return on close', async ({
   await window.fill('#gw-url-input', 'a-very-long-url-fragment-that-used-to-stretch-the-card');
   expect(await cardW()).toBeCloseTo(w0, 1);
 
-  // Cancel: the view returns on screen.
   await window.locator('#gw-url-cancel').click();
   await expect
     .poll(async () => (await viewBounds())!.x, { timeout: 5_000 })

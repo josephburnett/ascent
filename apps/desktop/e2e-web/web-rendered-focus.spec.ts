@@ -2,13 +2,12 @@ import { test, expect } from './fixtures';
 import { tileAt } from '../e2e/oracle';
 
 // A text pane left in rendered mode must stay rendered when focus moves to a
-// sibling pane. The rendered view is a focused-pane DOM overlay, and an
-// unfocused pane that falls back to painting raw source on canvas is a visible
-// flip the user never asked for. The uncovered pane paints the rendered raster
-// instead, so the swap between overlay and raster is invisible. The oracle is the
-// renderedPreviews hook's panePaints counter: the pane path attributes its raster
-// paints per tile, so staying rendered is a counted fact rather than a pixel
-// guess.
+// sibling pane. The rendered view is a focused-pane DOM overlay, so an unfocused
+// pane that fell back to painting raw source on canvas would be a visible flip
+// the user never asked for. The uncovered pane paints the rendered raster
+// instead, which makes the swap between overlay and raster invisible. The oracle
+// is the renderedPreviews hook's panePaints counter, which attributes raster
+// paints per tile, so staying rendered is a counted fact.
 test('a rendered pane stays rendered when focus moves to a sibling', async ({ gw, window }) => {
   await gw.enterPlugin('home');
   const f = await gw.focused();
@@ -21,14 +20,13 @@ test('a rendered pane stays rendered when focus moves to a sibling', async ({ gw
   await gw.descendCell(cx, cy);
   await gw.typeText('# A Big Heading\n\nrendered body text');
 
-  // Flip to rendered mode with the bar-slot toggle and wait for the overlay.
   await gw.toggleTextMode();
   await expect
     .poll(async () => (await gw.focused()).textMode)
     .toBe('rendered');
 
-  // Split: the sibling takes focus, and the original pane keeps its rendered
-  // descent but loses the DOM overlay.
+  // The sibling takes focus, so the original pane keeps its rendered descent and
+  // loses the DOM overlay.
   await gw.splitFocusedPaneVertical();
   await gw.waitIdle();
 

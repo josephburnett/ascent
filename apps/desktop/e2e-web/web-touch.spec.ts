@@ -4,13 +4,13 @@ import { longPressDrag, pinch, twoFingerTap } from './touch';
 
 // Crosses the touch seam, from client/touchgest through synthetic mouse and
 // wheel events into the unchanged gesture engine: real TouchEvents injected over
-// CDP must drive the canvas exactly as a finger on a phone would. Each gesture is
+// CDP must drive the canvas as a finger on a phone would. Each gesture is
 // verified against pane and server state, never pixels.
 
 test('touch: tap opens the + menu and descends into a plugin', async ({ gw, window }) => {
-  // Boot already sits at home's root, and every namespace lives on the + menu.
-  // The tap gesture is verified against that portal: tap the + button, tap the
-  // swatch, and the pane descends, pushing a frame for the return trip.
+  // Boot already sits at home's root, and every namespace lives on the + menu,
+  // so the tap gesture is verified against that portal. The descent pushes a
+  // frame for the return trip.
   await gw.plugins();
   const before = await gw.focused();
   const pal = await gw.palette();
@@ -18,7 +18,7 @@ test('touch: tap opens the + menu and descends into a plugin', async ({ gw, wind
   await window.waitForFunction(() => (window as any).__gridwellTest.palette().open, null, {
     timeout: 5_000,
   });
-  // The plugin section is folded on every opening: a finger opens it by
+  // The plugin section is folded on every opening, and a finger opens it by
   // tapping the chevron strip, which is a press like any other.
   const folded = await gw.palette();
   expect(folded.toggle.present, 'the folded section offers its chevron').toBe(true);
@@ -65,8 +65,8 @@ test('touch: long-press-drag from the right edge splits the pane', async ({ gw, 
   const f = await gw.focused();
   const before = (await gw.panes()).length;
   const y = f.y + f.h / 2;
-  // The same geometry as driver.splitFocusedPaneVertical, but by finger: hold in
-  // the right-edge band, which becomes the right button, then drag to mid-pane.
+  // The same geometry as driver.splitFocusedPaneVertical, by finger. A hold in
+  // the right-edge band becomes the right button, then the drag goes mid-pane.
   await longPressDrag(window, { x: f.x + f.w - 5, y }, { x: f.x + f.w * 0.45, y });
   await gw.waitIdle();
   expect((await gw.panes()).length, 'long-press-drag split the pane').toBe(before + 1);
@@ -74,7 +74,7 @@ test('touch: long-press-drag from the right edge splits the pane', async ({ gw, 
 
 test('touch: tapping the previous crumb ascends a text descent (#222)', async ({ gw, window }) => {
   // The ascent gesture is the crumb click, and on touch that is a plain tap on
-  // the second-to-last chain crumb: the canvas translation routes it as the left
+  // the second-to-last chain crumb. The canvas translation routes it as the left
   // mousedown the bar hit-test acts on.
   await gw.enterPlugin('home');
   const f = await gw.focused();
@@ -107,8 +107,8 @@ test('touch: drag moves a tile; two-finger tap ascends a descent', async ({ gw, 
   const created = tileAt(await gw.getGrid(f.gridID), 'text', cx, cy)!;
   expect(created, 'markdown tile created').toBeTruthy();
 
-  // A one-finger drag is a left drag: move the tile one cell right. Cell centers
-  // come from the same hook the mouse specs use.
+  // A one-finger drag is a left drag, so it moves the tile one cell right. Cell
+  // centers come from the same hook the mouse specs use.
   const fromPt = await gw.cellCenter(f.id, cx, cy);
   const toPt = await gw.cellCenter(f.id, cx + 1, cy);
   const s = await window.context().newCDPSession(window);

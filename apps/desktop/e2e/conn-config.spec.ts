@@ -17,15 +17,14 @@ test('one menu row per connection; the picker row is gone', async ({ gw }) => {
   await gw.enterPlugin('home');
   const pls = await gw.plugins();
 
-  // The declared label, not an auto-label. The remote is unreachable here, so
-  // the row lists inert: waiting until the dial is attempted, broken once it
-  // has failed. Which of the two it is at this instant is a race, so the row's
-  // presence is what this test pins.
+  // The label comes from the config. The remote is unreachable here, so the
+  // row reads as waiting until the dial is attempted and broken once it has
+  // failed; which of the two it is at this instant is a race, so this test
+  // pins only the row's presence.
   const rtb = pls.find((p) => p.label === 'rtb');
   expect(rtb, 'the connection is a menu row of its own').toBeTruthy();
   expect(rtb!.uuid.includes('/'), 'a chained namespace identifies it').toBe(true);
 
-  // One icon per configured thing: the transport's own row is gone.
   expect(
     pls.find((p) => p.label === 'connections'),
     'the transport row is replaced by its instances',
@@ -36,10 +35,9 @@ test('clicking a pending connection says WHY, not nothing-to-descend-into', asyn
   gw,
   window,
 }) => {
-  // The descent guard must look the row up by its full id. Resolving through
-  // LocalOf(id) mangles a chained connection uuid, and the click then falls to
-  // the generic "nothing to descend into" instead of the connection's own
-  // status.
+  // The descent guard looks the row up by its full id. Resolving through
+  // rpc.LocalOf mangles a chained connection uuid, and the click then falls to
+  // the generic "nothing to descend into" instead of the connection's status.
   await gw.enterPlugin('home');
   const rtb = (await gw.plugins()).find((p) => p.label === 'rtb')!;
   await gw.clickPluginSwatch('rtb');

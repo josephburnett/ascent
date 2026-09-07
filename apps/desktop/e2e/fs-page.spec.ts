@@ -33,9 +33,9 @@ test('descending an fs image opens it live through the /content/ door', async ({
   expect(cat.servesPage, 'an image file declares serves_page on the wire').toBe(true);
   const versionBefore = Number(cat.version ?? 0);
 
-  // Descend: the one auto-live owner gives serves_page the url verdict, so a
-  // native view opens at the derived door address: token, qualified tile id, and
-  // the load-bearing trailing slash.
+  // shellconn.DecideAutoLive gives serves_page the url verdict, so a native view
+  // opens at the derived door address: token, qualified tile id, and the
+  // trailing slash that relative URLs inside the page depend on.
   await gw.descendCell(Number(cat.x ?? 0), Number(cat.y ?? 0));
   await expect
     .poll(
@@ -50,8 +50,6 @@ test('descending an fs image opens it live through the /content/ door', async ({
     )
     .toMatch(new RegExp(`/content/[0-9a-f]{64}/${cat.id}/$`));
 
-  // Ascend: the view closes and nothing was persisted. No freeze writeback, no
-  // version bump; the row is byte-identical.
   await gw.ascendViaCrumb();
   await expect
     .poll(

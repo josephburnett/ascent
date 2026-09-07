@@ -1,11 +1,11 @@
 import { test, expect } from './fixtures';
 import { tileAt, getGrid } from '../e2e/oracle';
 
-// The trashcan, end to end: a delete parks the tile, keeping its id, under a
-// dated month well in the trash grid, which is a declared root menu entry whose
-// swatch rides the + menu's top row beside its plugin. A delete inside the trash
-// tree destroys for real. Everything crosses the standard API; the host and
-// client know only that this is another root grid with a glyph.
+// A delete parks the tile, keeping its id, under a dated month well in the trash
+// grid. The trash grid is a declared root menu entry whose swatch rides the +
+// menu's top row beside its plugin. A delete inside the trash tree destroys for
+// real. Everything crosses the standard API, and the host and client know only
+// that this is another root grid with a glyph.
 
 test('delete parks in the dated trash; delete there is forever', async ({ gw, serve }) => {
   await gw.enterPlugin('home');
@@ -17,7 +17,7 @@ test('delete parks in the dated trash; delete there is forever', async ({ gw, se
   const doc = tileAt(await gw.getGrid(f.gridID), 'text', cx, cy)!;
   expect(doc).toBeTruthy();
 
-  // Delete: gone from here, but moved rather than destroyed.
+  // The delete moves the tile rather than destroying it.
   await gw.deleteTileCell(cx, cy);
   expect(tileAt(await gw.getGrid(f.gridID), 'text', cx, cy), 'gone from the source grid').toBeUndefined();
 
@@ -31,10 +31,9 @@ test('delete parks in the dated trash; delete there is forever', async ({ gw, se
   await gw.clickPluginSwatch('home · trash');
   const troot = await gw.focused();
 
-  // The bar knows the door you came through: the title is the entry's name —
-  // the instance and the collection, the same name its swatch wears — which is
-  // config-owned and not renamable, and the level's crumb wears the entry's
-  // declared glyph rather than a generic grid face.
+  // The title is the entry's name, the instance and the collection, the same
+  // name its swatch wears. That name is config-owned, so it is not renamable,
+  // and the level's crumb wears the entry's declared glyph.
   await expect.poll(async () => (await gw.barName()).label).toBe('home · trash');
   expect((await gw.barName()).editable, 'a declared entry is not renamable').toBe(false);
   const bar = await gw.bar();
@@ -50,7 +49,7 @@ test('delete parks in the dated trash; delete there is forever', async ({ gw, se
   const parked = (mg.tiles ?? []).find((t) => t.id === doc.id);
   expect(parked, 'the same tile id, parked under the month').toBeTruthy();
 
-  // Descend into the month and delete again: forever this time.
+  // A second delete, inside the trash tree, destroys.
   await gw.descendCell(Number(wells[0].x ?? 0), Number(wells[0].y ?? 0));
   await gw.deleteTileCell(Number(parked!.x ?? 0), Number(parked!.y ?? 0));
   const after = await getGrid(serve.origin, wells[0].childGridId!);

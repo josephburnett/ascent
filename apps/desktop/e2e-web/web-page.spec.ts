@@ -3,11 +3,11 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-// The web-content door, browser side: with no Electron bridge a serves_page tile
-// cannot go live in place, so the descent shows the frozen face and the bar
-// circle opens the derived /content/ address in a new tab. That is the same
-// degradation a url tile gets, over the same code path. The door itself must
-// serve the image bytes sandboxed, with no cookie.
+// The web-content door on a browser host. With no Electron bridge a serves_page
+// tile cannot go live in place, so the descent shows the frozen face and the bar
+// circle opens the derived /content/ address in a new tab, the same degradation
+// a url tile gets over the same code path. The door serves the image bytes
+// sandboxed and with no cookie.
 
 const PNG_1X1 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
@@ -30,17 +30,16 @@ test('an fs image tile: the circle opens the /content/ page in a new tab', async
   expect(cat, 'the fs root grid lists cat.png').toBeTruthy();
   expect(cat.servesPage, 'an image file declares serves_page on the wire').toBe(true);
 
-  // Descend: with no bridge the tile stays frozen, through DecideAutoLive's
-  // browser arm. No dead modal, no error; the pane presents the frozen face.
+  // With no bridge the tile stays frozen, through DecideAutoLive's browser arm.
+  // No dead modal and no error: the pane presents the frozen face.
   await gw.descendCell(Number(cat.x ?? 0), Number(cat.y ?? 0));
   await expect.poll(async () => (await gw.focused()).textFocus).not.toBe('');
 
-  // The frozen face is the whole descent. A page tile is a file whose
-  // presentation is a page, so it has no document body: the rendered overlay
-  // and the rendered/raw toggle both belong to a text DOCUMENT and must stay
-  // hidden here. The overlay only fills once an async body fetch lands (fs
-  // answers an image with a markdown metadata summary, which renders as a
-  // document), so poll a window rather than sampling once.
+  // A page tile has no document body, so the rendered overlay and the
+  // rendered/raw toggle, which belong to a text document, must stay hidden. The
+  // overlay would only fill once an async body fetch lands, since fs answers an
+  // image with a markdown metadata summary, so poll a window rather than
+  // sampling once.
   const rendered = window.locator('#gw-rendered-view');
   const toggle = window.locator('#gw-text-toggle');
   const until = Date.now() + 3_000;
@@ -50,9 +49,8 @@ test('an fs image tile: the circle opens the /content/ page in a new tab', async
     await window.waitForTimeout(100);
   }
 
-  // The circle is the open-in-new-tab affordance, exactly as for a frozen url
-  // tile on a browser host, pointing at the derived door address, which serves
-  // the real image bytes.
+  // The circle opens a new tab, as it does for a frozen url tile on a browser
+  // host, at the derived door address.
   const pal = await gw.palette();
   const [popup] = await Promise.all([
     window.context().waitForEvent('page', { timeout: 10_000 }),
@@ -61,8 +59,8 @@ test('an fs image tile: the circle opens the /content/ page in a new tab', async
   await popup.waitForURL(/\/content\//, { timeout: 10_000 });
   expect(popup.url()).toMatch(new RegExp(`/content/[0-9a-f]{64}/${cat.id}/$`));
 
-  // The page the tab shows is the file: same bytes, image content type, sandboxed
-  // by the door. The token in the path is the whole credential; this popup
+  // The tab shows the file itself: same bytes, image content type, sandboxed by
+  // the door. The token in the path is the whole credential, and this popup
   // carries no auth cookie.
   const res = await popup.request.get(popup.url());
   expect(res.status()).toBe(200);

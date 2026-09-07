@@ -24,11 +24,14 @@ async function seedTile(
   return created.id;
 }
 
-// A workspace whose layout blob holds a text-descended leaf. Re-entering the
-// workspace restores that descent, and the textarea singleton must be rebound
-// with it. Left holding the last tile the user edited outside the workspace, the
-// restored pane displays the wrong document, and the next flush over it, at the
-// workspace bar ascent, persists those foreign bytes as the leaf tile's content.
+// A workspace whose layout blob holds a text-descended leaf restores that
+// descent on re-entry, and the textarea singleton must be rebound with it. Left
+// holding the last tile the user edited outside the workspace, the restored
+// pane displays the wrong document, and the next flush over it, at the
+// workspace bar ascent, persists those foreign bytes as the leaf tile's
+// content.
+
+// workspaceState reads the pane-tile level stack's depth and current tile.
 async function workspaceState(window: any): Promise<{ depth: number; tileID?: string }> {
   return window.evaluate(() => (window as any).__gridwellTest.workspace());
 }
@@ -40,8 +43,7 @@ test('re-entering a workspace rebinds the editor; leaving it never saves a forei
   const cx = Math.round(f.cx);
   const cy = Math.round(f.cy);
 
-  // "Today", the workspace's document, "Routine", the outside document, and the
-  // workspace pane tile.
+  // "Today" is the workspace's document and "Routine" the outside one.
   const todayID = await seedTile(gw, rootGrid, cx - 1, cy, 'today today');
   const routineID = await seedTile(gw, rootGrid, cx, cy + 1, 'routine routine');
   await gw.openPalette();
@@ -49,8 +51,7 @@ test('re-entering a workspace rebinds the editor; leaving it never saves a forei
   const pt = tileAt(await gw.getGrid(rootGrid), 'pane', cx + 1, cy)!;
   expect(pt, 'pane tile created').toBeTruthy();
 
-  // Enter the workspace and descend into Today, so the layout blob records a
-  // text-descended leaf.
+  // Descending into Today makes the layout blob record a text-descended leaf.
   await gw.descendCell(cx + 1, cy);
   await expect.poll(async () => (await workspaceState(window)).depth).toBe(1);
   await gw.descendCell(cx - 1, cy);
@@ -58,9 +59,8 @@ test('re-entering a workspace rebinds the editor; leaving it never saves a forei
     .poll(async () => gw.textareaValue(), { timeout: 10_000 })
     .toBe('today today');
 
-  // Leave the workspace, where the bar ascent flushes and persists the layout
-  // with the descent, then edit Routine outside it, so the singleton is now bound
-  // to Routine.
+  // The bar ascent flushes and persists the layout with the descent. Editing
+  // Routine outside the workspace then binds the singleton to Routine.
   await gw.leaveWorkspace();
   await expect.poll(async () => (await workspaceState(window)).depth).toBe(0);
   await expect
@@ -78,8 +78,8 @@ test('re-entering a workspace rebinds the editor; leaving it never saves a forei
     .toBe('routine routine');
   await gw.ascendViaCrumb(); // ascend out of Routine
 
-  // Re-enter the workspace: the restored leaf is descended into Today and must
-  // show Today's words, not the singleton's leftover Routine buffer.
+  // The restored leaf is descended into Today, so it must show Today's words
+  // rather than the singleton's leftover Routine buffer.
   await gw.descendCell(cx + 1, cy);
   await expect.poll(async () => (await workspaceState(window)).depth).toBe(1);
   await expect
@@ -89,8 +89,7 @@ test('re-entering a workspace rebinds the editor; leaving it never saves a forei
     })
     .toBe('today today');
 
-  // Leave the workspace again: the boundary flush must write nothing foreign into
-  // Today.
+  // The boundary flush on the way out must write nothing foreign into Today.
   const bar2 = await window.evaluate(() => (window as any).__gridwellTest.bar());
   const ws2 = bar2.segments.find((s: any) => s.kind === 'pane');
   await window.mouse.click(ws2.x + 20, bar2.top + bar2.height / 2, { button: 'right' });
