@@ -10,10 +10,10 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
-// The trashcan semantics, pinned where the fact is owned: delete moves the
-// tile to the current month's trash subgrid, with id and links surviving;
-// delete inside the trash tree destroys for real; scratch ephemerals bypass
-// the trash; and month minting is idempotent.
+// The trashcan semantics: delete moves the tile to the current month's trash
+// subgrid with id and links surviving, delete inside the trash tree destroys
+// for real, scratch ephemerals bypass the trash, and month minting is
+// idempotent.
 
 // trashMonthGrid resolves the month well's child grid in the trash root,
 // failing the test if absent.

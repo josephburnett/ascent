@@ -11,20 +11,17 @@ import (
 )
 
 // WriteContent is the single content-bytes write: id-addressed,
-// version-claimed, one complete value. The RPC layer assembles the client
-// stream and calls this exactly once, at clean close, so nothing here runs for
-// a broken stream and the old value stays byte-for-byte intact.
-//
-// Version semantics are kind-determined in the store's one table:
+// version-claimed, one complete value. The RPC layer calls it exactly once, at
+// clean close, so a broken stream leaves the old value byte-for-byte intact.
+// Version semantics are kind-determined:
 //
 //	text → a content edit: bumps version, and alt derives from the first line
 //	pane → a framing-class layout write: never bumps
 //	url  → the address: changing where a tile points bumps
 //
-// A url or shell tile's frozen preview rides SetTile, the atomic freeze, and
-// a well has no local content. A leaf link is refused: the row owns no
-// content, and content operations address the target the caller names
-// explicitly, with reads resolving at the serving node.
+// A frozen preview rides SetTile and a well has no local content. A leaf link
+// is refused: the row owns no content, and a content operation addresses the
+// target the caller names explicitly.
 func (s *Store) WriteContent(ctx context.Context, tileID string, version int64, data []byte) (*gridwellv1.Tile, error) {
 	t, err := s.GetTile(ctx, tileID)
 	if err != nil {
@@ -50,10 +47,9 @@ func (s *Store) WriteContent(ctx context.Context, tileID string, version int64, 
 	}
 }
 
-// writeURLContent sets a url tile's address: the url arm of the one content
-// write. It is version-claimed and version-bumping, because changing where a
-// tile points is a content edit. The address must be a real http or https url
-// — an unconfigured tile is made by CreateURL, never by an empty write — and a
+// writeURLContent sets a url tile's address. It claims and bumps, because
+// changing where a tile points is a content edit. The address must be a real
+// http or https url, an unconfigured tile being made by CreateURL, and a
 // refused write leaves the old address byte-for-byte intact.
 func (s *Store) writeURLContent(ctx context.Context, tileIDStr string, version int64, data []byte) (*gridwellv1.Tile, error) {
 	urlString := strings.TrimSpace(string(data))
@@ -74,8 +70,7 @@ func (s *Store) writeURLContent(ctx context.Context, tileIDStr string, version i
 			return fmt.Errorf("%w: not a url tile", ErrInvalidArgument)
 		}
 		if n.UrlString == urlString {
-			// Re-writing the same address is a true no-op: a no-op write
-			// never mutates.
+			// A no-op write never mutates.
 			out = n
 			return nil
 		}
@@ -90,12 +85,10 @@ func (s *Store) writeURLContent(ctx context.Context, tileIDStr string, version i
 	return out, err
 }
 
-// ReadContent is the single content-bytes read: the body bytes paired with the
-// row version they belong to, read in one call at the owner so a caller can
-// never hold a version apart from its bytes. The media type rides along,
-// because blobs are self-describing. A tile with no blob yet returns empty
-// bytes and its current version. A url tile's content is its address, the
-// mirror of WriteContent's url arm.
+// ReadContent is the single content-bytes read: the bytes paired with the row
+// version they belong to, in one call at the owner, so a caller can never hold
+// a version apart from its bytes. A tile with no blob returns empty bytes and
+// its current version. A url tile's content is its address.
 func (s *Store) ReadContent(ctx context.Context, tileID string) (data []byte, mediaType string, version int64, err error) {
 	t, err := s.GetTile(ctx, tileID)
 	if err != nil {
@@ -115,11 +108,10 @@ func (s *Store) ReadContent(ctx context.Context, tileID string) (data []byte, me
 }
 
 // RenameTile is the versioned user rename: it sets alt_text and latches
-// alt_user so every automatic capture — a url page title, a shell foreground
-// command — defers from then on. The latch arbitration lives in setAltTx,
-// shared with SetTileAlt; this verb adds the optimistic-concurrency claim a
-// user edit owes, checked in the same transaction as the write. Text tiles are
-// refused: their name derives from the first line of their content.
+// alt_user, so every automatic capture defers from then on. setAltTx owns the
+// latch arbitration; this verb adds the claim a user edit owes, checked in the
+// same transaction as the write. Text tiles are refused, their name being
+// derived from the first line of their content.
 func (s *Store) RenameTile(ctx context.Context, tileID string, version int64, alt string) (*gridwellv1.Tile, error) {
 	id, err := parseID(tileID)
 	if err != nil {

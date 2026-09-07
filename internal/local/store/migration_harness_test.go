@@ -11,16 +11,15 @@ import (
 	"github.com/josephburnett/gridwell/internal/eventhub"
 )
 
-// This file is the migration test harness: it builds genuine "old files" from
-// the frozen tablesV1 text, walks them forward with the real production engine
-// (Store.migrateUp), and fingerprints schemas so a migrated DB can be compared
-// to a fresh one. The Test* functions that use it live in migrations_test.go.
+// The migration test harness: it builds genuine old files from the frozen
+// tablesV1 text, walks them forward with the production engine, and
+// fingerprints schemas so a migrated DB compares to a fresh one. The tests
+// that use it live in migrations_test.go.
 
 // ── schema fingerprint (order-insensitive) ───────────────────────────────────
 //
-// colFP and the column/table readers are the production guard's (schema_check.go)
-// — shared so the equivalence tests and the startup check fingerprint columns the
-// same way.
+// colFP and the column readers are schema_check.go's, so the equivalence tests
+// and the startup guard fingerprint columns the same way.
 
 // idxFP is an index's identity: uniqueness + its ordered column list.
 type idxFP struct {
@@ -28,17 +27,17 @@ type idxFP struct {
 	cols   string
 }
 
-// tableFP fingerprints one table: its columns by name, its indexes by name, and
-// how many foreign keys it declares (count is enough for additive evolution).
+// tableFP fingerprints one table: columns by name, indexes by name, and the
+// foreign-key count, which is enough for additive evolution.
 type tableFP struct {
 	columns map[string]colFP
 	indexes map[string]idxFP
 	fkCount int
 }
 
-// schemaFingerprint reads a semantic fingerprint of every user table via PRAGMA
-// introspection. Compared with compareFingerprints, never by raw sqlite_master
-// SQL text (which diverges by construction between inline DDL and ADD COLUMN).
+// schemaFingerprint reads every user table through PRAGMA introspection. Never
+// raw sqlite_master text, which diverges by construction between inline DDL
+// and ADD COLUMN.
 func schemaFingerprint(t *testing.T, db *sql.DB) map[string]tableFP {
 	t.Helper()
 	out := map[string]tableFP{}
@@ -52,9 +51,8 @@ func schemaFingerprint(t *testing.T, db *sql.DB) map[string]tableFP {
 	return out
 }
 
-// userTables / tableColumnsFP are t.Fatal-on-error wrappers over the production
-// readers in schema_check.go, so the fingerprint tests share one column-reading
-// path with the startup guard.
+// userTables and tableColumnsFP wrap the production readers in schema_check.go,
+// so the tests and the startup guard read columns the same way.
 func userTables(t *testing.T, db *sql.DB) []string {
 	t.Helper()
 	names, err := userTableNames(context.Background(), db)
@@ -143,9 +141,8 @@ func foreignKeyCount(t *testing.T, db *sql.DB, table string) int {
 	return n
 }
 
-// compareFingerprints fails t for every divergence between a fresh schema
-// (want) and a migrated one (got), naming the offending table.column so a
-// forgotten inline-DDL edit or migration is immediately diagnosable.
+// compareFingerprints fails for every divergence between a fresh schema and a
+// migrated one, naming the offending table.column.
 func compareFingerprints(t *testing.T, want, got map[string]tableFP) {
 	t.Helper()
 	for name, w := range want {
@@ -185,9 +182,8 @@ func compareFingerprints(t *testing.T, want, got map[string]tableFP) {
 
 // ── building and migrating old DBs ────────────────────────────────────────────
 
-// storeOver wraps an already-open *sql.DB in a Store with deterministic
-// clock/IDs, so the harness can drive real internal methods (bootstrapRoot,
-// migrateUp) against a hand-built file.
+// storeOver wraps an open *sql.DB in a Store with a deterministic clock, so
+// the harness can drive real internal methods against a hand-built file.
 func storeOver(db *sql.DB) *Store {
 	s := &Store{db: db, hub: eventhub.New(eventKey)}
 	seedDeterministic(s)
@@ -195,10 +191,8 @@ func storeOver(db *sql.DB) *Store {
 }
 
 // sessionDDLV1 is the frozen `session` table as every pre-v10 binary created
-// it: one Chromium session per DB. Production stopped creating the table at
-// schema v10 and the v10 migration drops it, but a genuine old file has it,
-// so the harness must still build one that does, or the drop would be tested
-// against a table that was never there.
+// it. A genuine old file has it, so the harness must build one that does, or
+// the v10 drop would be tested against a table that was never there.
 const sessionDDLV1 = `
 CREATE TABLE IF NOT EXISTS session (
     id   INTEGER PRIMARY KEY CHECK (id = 1),
@@ -206,12 +200,10 @@ CREATE TABLE IF NOT EXISTS session (
 );
 `
 
-// connectionsDDLAdHoc is the `connections` table exactly as internal/connection
-// created it before schema v13: its own CREATE TABLE IF NOT EXISTS on the
-// node's shared handle, beside the chain rather than in it. Frozen here for
-// the same reason sessionDDLV1 is — a genuine old file must be built from the
-// text the old binary wrote, never from today's descriptor, or the adoption
-// would be tested against a table the current shape had just created.
+// connectionsDDLAdHoc is the `connections` table exactly as
+// internal/connection created it before v13. Frozen for the same reason
+// sessionDDLV1 is: built from today's descriptor, the adoption would be tested
+// against a table the current shape had just created.
 const connectionsDDLAdHoc = `
 CREATE TABLE IF NOT EXISTS connections (
   name        TEXT    PRIMARY KEY,
@@ -219,9 +211,8 @@ CREATE TABLE IF NOT EXISTS connections (
   deleted     INTEGER NOT NULL DEFAULT 0
 );`
 
-// connRow is one connections row as the tests compare them: every column the
-// table has, so "byte-identical in meaning" is checked in full and not by a
-// sample.
+// connRow is every column the connections table has, so a row is compared in
+// full and not by a sample.
 type connRow struct {
 	name       string
 	remoteRoot string
@@ -250,10 +241,9 @@ func connectionRows(t *testing.T, db *sql.DB) []connRow {
 	return out
 }
 
-// buildDBAtV1 creates a file DB whose tables come from the FROZEN tablesV1 text
-// (never the current tablesDDL()), bootstraps a root grid, and stamps our application_id
-// + user_version=1 — a faithful "DB written by a v1 binary". Returns the open
-// DB (closed via t.Cleanup) and the root grid id.
+// buildDBAtV1 creates a file DB from the frozen tablesV1 text, never the
+// current tablesDDL(), and stamps application_id and user_version=1: a
+// faithful DB written by a v1 binary.
 func buildDBAtV1(t *testing.T, path string) (*sql.DB, string) {
 	t.Helper()
 	ctx := context.Background()
@@ -269,20 +259,17 @@ func buildDBAtV1(t *testing.T, path string) (*sql.DB, string) {
 			t.Fatalf("apply v1 ddl: %v", err)
 		}
 	}
-	// The v1 root is seeded with raw inserts against the v1 columns, not
-	// through bootstrapRoot: the production bootstrap writes the current
-	// grids shape, which does not carry the NOT NULL v1 object_id. A genuine
-	// old file is built from the frozen text, not from today's writer.
+	// Raw inserts against the v1 columns, not bootstrapRoot: the production
+	// bootstrap writes the current grids shape, which does not carry the NOT
+	// NULL v1 object_id.
 	res, err := db.ExecContext(ctx,
 		`INSERT INTO grids (object_id, created_at, updated_at) VALUES ('v1-root', 100, 100)`)
 	if err != nil {
 		t.Fatalf("seed v1 root grid: %v", err)
 	}
 	rootRow := mustID(t, res)
-	// The root framing keys a v1 binary wrote. They are string literals
-	// because the constants are gone: schema v11 moved home's root
-	// framing onto its grid row and retired the keys. A genuine old file
-	// still has them, so the chain must still be fed them.
+	// The root framing keys a v1 binary wrote, as string literals because v11
+	// retired the constants. A genuine old file still has them.
 	for _, kv := range [][2]string{
 		{systemKeyRootGridID, strconv.FormatInt(rootRow, 10)},
 		{"root_view_cx", "0"},
@@ -308,9 +295,8 @@ func buildDBAtV1(t *testing.T, path string) (*sql.DB, string) {
 	return db, strconv.FormatInt(root, 10)
 }
 
-// applyMigrationsUpTo runs the real production engine (migrateUp) over the
-// canonical migration list, stopping at version n. Used to place a DB at a
-// specific historical version for per-migration tests.
+// applyMigrationsUpTo runs migrateUp over the canonical list, stopping at n, to
+// place a DB at a specific historical version.
 func applyMigrationsUpTo(t *testing.T, db *sql.DB, n int) {
 	t.Helper()
 	if err := storeOver(db).migrateUp(context.Background(), migrations, n); err != nil {
@@ -326,8 +312,7 @@ func assertColumn(t *testing.T, db *sql.DB, table, column string) {
 	}
 }
 
-// addColumn builds a migration run-func that executes a single DDL statement —
-// the common ALTER TABLE ADD COLUMN shape.
+// addColumn builds a migration run-func executing a single DDL statement.
 func addColumn(ddl string) func(ctx context.Context, tx *sql.Tx) error {
 	return func(ctx context.Context, tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, ddl)
@@ -337,8 +322,8 @@ func addColumn(ddl string) func(ctx context.Context, tx *sql.Tx) error {
 
 // ── representative v1 data ────────────────────────────────────────────────────
 
-// v1Seed captures the ids and expected values of rows seeded into a v1 DB, so a
-// later verify can assert they survived a migration byte-for-byte.
+// v1Seed captures the ids and values seeded into a v1 DB, so a later verify can
+// assert they survived byte-for-byte.
 type v1Seed struct {
 	textTileID  int64
 	textBlobID  int64
@@ -350,10 +335,8 @@ type v1Seed struct {
 	childGridID int64
 }
 
-// seedV1 inserts one of each data kind the user cares about — a text tile (+its
-// content blob), a url tile, and an interior well (+its child grid) — into the
-// root grid using raw INSERTs against the frozen v1 columns. Raw (not Store
-// methods) so it keeps working unchanged as the live schema grows past v1.
+// seedV1 inserts one of each data kind the user cares about with raw INSERTs
+// against the frozen v1 columns, so it keeps working as the live schema grows.
 func seedV1(t *testing.T, db *sql.DB, rootID string) v1Seed {
 	t.Helper()
 	ctx := context.Background()
@@ -413,8 +396,8 @@ func seedV1(t *testing.T, db *sql.DB, rootID string) v1Seed {
 	return fx
 }
 
-// verifyV1Survived re-reads the seeded rows with raw SELECTs over the v1 columns
-// (so it works at any schema version) and asserts every value is unchanged.
+// verifyV1Survived re-reads the seeded rows over the v1 columns, so it works at
+// any schema version, and asserts every value is unchanged.
 func verifyV1Survived(t *testing.T, db *sql.DB, fx v1Seed) {
 	t.Helper()
 	ctx := context.Background()
@@ -483,10 +466,9 @@ func mustID(t *testing.T, res sql.Result) int64 {
 // ── per-migration fixtures ────────────────────────────────────────────────────
 
 // migrationFixture pins, for one migration, how to seed rows valid at the
-// version BEFORE it and how to verify both the new schema and the survival of
-// those rows after it. Exactly one fixture per migration (enforced by
-// TestMigrationsWellFormed), so each new migration costs one entry — not a
-// bespoke test. Empty while migrations is empty (v1).
+// version before it and how to verify the new schema and their survival after
+// it. Exactly one per migration, enforced by TestMigrationsWellFormed, so a new
+// migration costs one entry rather than a bespoke test.
 type migrationFixture struct {
 	version int
 	seed    func(t *testing.T, db *sql.DB, rootID string)
@@ -495,12 +477,10 @@ type migrationFixture struct {
 
 var migrationFixtures []migrationFixture
 
-// Fixture handle: rows are found again by alt_text. A rebuild migration
-// renumbers nothing but does drop columns, so the handle must be a column
-// that survives every step of the chain.
+// Fixture handle: rows are found again by alt_text, a column that survives
+// every step of the chain.
 func init() {
-	// v2: alt_user. Seed a v1 tile with a name; verify the column arrives
-	// defaulted to 0 and the old row, with its name, survived.
+	// v2: alt_user arrives defaulted to 0 and the old row survives.
 	migrationFixtures = append(migrationFixtures, migrationFixture{
 		version: 2,
 		seed: func(t *testing.T, db *sql.DB, rootID string) {
@@ -525,8 +505,7 @@ func init() {
 			}
 		},
 	})
-	// v3: content_zoom. Seed a v2 tile; verify the column arrives defaulted
-	// to 0 and the row survived.
+	// v3: content_zoom arrives defaulted to 0 and the row survives.
 	migrationFixtures = append(migrationFixtures, migrationFixture{
 		version: 3,
 		seed: func(t *testing.T, db *sql.DB, rootID string) {
@@ -547,8 +526,7 @@ func init() {
 			}
 		},
 	})
-	// v4: url_history. Seed a v3 url tile; verify the column arrives NULL and
-	// the row survived.
+	// v4: url_history arrives NULL and the row survives.
 	migrationFixtures = append(migrationFixtures, migrationFixture{
 		version: 4,
 		seed: func(t *testing.T, db *sql.DB, rootID string) {
@@ -569,15 +547,12 @@ func init() {
 			}
 		},
 	})
-	// v5: the 'pane' kind — the chain's first table-REBUILD migration. Seed
-	// pins the id-reuse trap: DROP TABLE tiles deletes its sqlite_sequence
-	// row, and the copy re-seeds at the max SURVIVING id, so without the
-	// save/restore in rebuildTilesForPaneKind a tile deleted before the
-	// migration would get its id REUSED after it (embeds/deep links/client
-	// caches are keyed by id). Seed a survivor + a higher-id tile that is
-	// then deleted; verify the survivor's row is byte-identical, a fresh
-	// insert mints ABOVE the deleted id, and the new CHECK accepts 'pane'
-	// while still rejecting a malformed well.
+	// v5: the 'pane' kind, the chain's first table rebuild. It pins the
+	// id-reuse trap: DROP TABLE tiles deletes its sqlite_sequence row and the
+	// copy re-seeds at the maximum surviving id, so without the save and
+	// restore a deleted tile's id would come back, and deep links are keyed
+	// by id. The survivor is byte-identical, a fresh insert mints above the
+	// deleted id, and the new CHECK accepts 'pane'.
 	migrationFixtures = append(migrationFixtures, migrationFixture{
 		version: 5,
 		seed: func(t *testing.T, db *sql.DB, rootID string) {
@@ -626,8 +601,7 @@ func init() {
 			if newID <= deletedMax {
 				t.Errorf("id REUSED after rebuild: new id %d <= deleted id %d (sqlite_sequence not restored)", newID, deletedMax)
 			}
-			// The rebuilt CHECK still rejects a malformed row (a well without
-			// a child grid) — the constraint moved, it didn't loosen.
+			// The constraint moved, it did not loosen.
 			if _, err := db.Exec(`INSERT INTO tiles (grid_id, kind, x, y, w, h, alt_text, created_at, updated_at)
 				VALUES (?, 'well', 12, 12, 1, 1, '', 100, 100)`, gridID); err == nil {
 				t.Errorf("rebuilt CHECK accepted a well without child_grid_id")
@@ -644,13 +618,10 @@ func init() {
 		},
 	})
 
-	// v6 (link_target_id, the leaf-link variant — a rebuild because the CHECK
-	// gains the link branch): a v5 url tile crosses intact with link_target_id
-	// NULL (its old meaning: not a link); the new CHECK accepts a url LINK row
-	// (url_string NULL, link_target_id set — the exact shape v5 forbade),
-	// still rejects a bare url with neither url_string nor link, and rejects
-	// a link row that smuggles content (the link branch requires every content
-	// column NULL).
+	// v6: link_target_id, a rebuild because the CHECK gains the link branch. A
+	// v5 url tile crosses intact with link_target_id NULL, its old meaning;
+	// the new CHECK accepts a url link row, the exact shape v5 forbade, and
+	// still rejects a bare url and a link row smuggling content.
 	migrationFixtures = append(migrationFixtures, migrationFixture{
 		version: 6,
 		seed: func(t *testing.T, db *sql.DB, rootID string) {
@@ -687,7 +658,7 @@ func init() {
 				VALUES (?, 'url', 26, 6, 1, 1, 'https://smuggled.example', 'aabbccddeeff00112233445566778899/8', '', 100, 100)`, gridID); err == nil {
 				t.Errorf("CHECK accepted a link row carrying url_string content")
 			}
-			// And a link row on the well kind (wells link via child_grid_id).
+			// A well links through child_grid_id, never link_target_id.
 			if _, err := db.Exec(`INSERT INTO tiles (grid_id, kind, x, y, w, h, link_target_id, alt_text, created_at, updated_at)
 				VALUES (?, 'well', 28, 6, 1, 1, 'aabbccddeeff00112233445566778899/9', '', 100, 100)`, gridID); err == nil {
 				t.Errorf("CHECK accepted link_target_id on a well")
@@ -719,11 +690,10 @@ func init() {
 		},
 	})
 
-	// v8 was the configure_plugin_id rebuild. The column is gone again at
-	// v10, and a rebuild always materializes the current tilesTableDDL, so
-	// what v8 pins is the rebuild's copy list: a v5-era list would silently
-	// reset every post-v5 column. The seed plants a link row and a frozen
-	// url, the two post-v5 facts, and the verify proves both survive.
+	// v8 was the configure_plugin_id rebuild, and the column is gone again at
+	// v10, so what it pins now is the rebuild's copy list: a v5-era list would
+	// silently reset every post-v5 column. A link row and a frozen url are the
+	// two post-v5 facts, and both survive.
 	migrationFixtures = append(migrationFixtures, migrationFixture{
 		version: 8,
 		seed: func(t *testing.T, db *sql.DB, rootID string) {
@@ -756,8 +726,7 @@ func init() {
 			if frozen != 1 {
 				t.Errorf("url_frozen = %d, want the v7 standing freeze to survive the rebuild", frozen)
 			}
-			// A childless well is a CHECK violation — it was for one
-			// generation (v8) the unconfigured plugin well, and is again.
+			// A childless well is a CHECK violation again.
 			if _, err := db.Exec(`INSERT INTO tiles (grid_id, kind, x, y, w, h, alt_text, created_at, updated_at)
 				VALUES (?, 'well', 46, 6, 1, 1, '', 100, 100)`, gridID); err == nil {
 				t.Error("a childless well must violate the CHECK")
@@ -798,13 +767,10 @@ func init() {
 		},
 	})
 
-	// v10 retires dead storage; the chain entry in migrations.go lists what.
-	// The seed plants one of each thing that goes and one of each thing that
-	// must not: a session row, an ordinary well and its child grid, a url
-	// tile carrying framing facts, and a deleted high-id tile for the
-	// rebuild's id-reuse trap. The verify proves the table and both columns
-	// are gone, every surviving row is still there with its facts, the ids of
-	// deleted tiles stay dead, and the tightened well CHECK holds. The
+	// v10 retires the dead storage the chain entry lists. The seed plants one
+	// of each thing that goes and one of each that must not, and the verify
+	// proves the table and both columns are gone, every surviving row keeps
+	// its facts, deleted ids stay dead, and the tightened CHECK holds. The
 	// stale-plugin-well arm has its own test.
 	migrationFixtures = append(migrationFixtures, migrationFixture{
 		version: 10,
@@ -885,11 +851,9 @@ func init() {
 			if nGrid != 1 {
 				t.Error("the well's child grid did not survive the grids column drop")
 			}
-			// (The stale unconfigured plugin well cannot be seeded through
-			// the chain — the v5 rebuild already materialized the v10 tiles
-			// shape, so a chain-built v9 file has no configure_plugin_id
-			// column. TestMigrateV10OverAGenuineV9File builds the
-			// genuine v9 shape and covers that arm.)
+			// A chain-built v9 file has no configure_plugin_id column, the v5
+			// rebuild having materialized the v10 shape, so the stale plugin
+			// well is TestMigrateV10OverAGenuineV9File's.
 			// The id-reuse trap across the v10 rebuild.
 			res, err := db.Exec(`INSERT INTO tiles (grid_id, kind, x, y, w, h, alt_text, created_at, updated_at)
 				VALUES (?, 'shell', 68, 6, 1, 1, 'v10 post', 100, 100)`, wellChild)
@@ -922,13 +886,11 @@ func init() {
 	})
 }
 
-// v11: ONE framing shape. A chain-built v10 file already carries the
-// v11 tiles columns (the v5 rebuild materializes the CURRENT template),
-// so what this fixture can reach is the other three halves of the step:
-// a doorway's framing survives the rebuild untouched, a plugin context's
-// root converts from origin to center, and home's root moves out of the
-// system KV table onto its root GRID row. The view_x → view_cx
-// conversion itself needs a GENUINE v10 file —
+// v11: one framing shape. A chain-built v10 file already carries the v11 tiles
+// columns, so what this fixture reaches is the other three halves: a doorway's
+// framing survives the rebuild untouched, a plugin context's root converts
+// from origin to center, and home's root moves onto its grid row. The view_x
+// conversion needs a genuine v10 file, in
 // TestMigrateV11OverAGenuineV10File.
 func init() {
 	migrationFixtures = append(migrationFixtures, migrationFixture{
@@ -945,8 +907,8 @@ func init() {
 				VALUES (`+rootID+`, 'well', 80, 8, 2, 2, 4.25, -6.5, 0.375, ?, 'v10 framed well', 100, 100)`, child); err != nil {
 				t.Fatalf("seed framed well: %v", err)
 			}
-			// A plugin context's root, stored the old way: the ORIGIN of
-			// the 1×1 synthetic doorway the client framed it through.
+			// A plugin context's root, stored the old way: the origin of the
+			// 1×1 synthetic doorway the client framed it through.
 			if _, err := db.Exec(`INSERT INTO grids (created_at, updated_at, ns, context_key, root_cx, root_cy, root_zoom)
 				VALUES (100, 100, 'p1', 'root', 3, -2, 0.5)`); err != nil {
 				t.Fatalf("seed plugin context root: %v", err)
@@ -1039,20 +1001,13 @@ func init() {
 		},
 	})
 
-	// v12 retires the `listings` table. It stood alone — no CHECK, no
-	// AUTOINCREMENT seed, nothing referencing it — so the step is a plain
-	// drop and the two record tables must come through untouched. The seed
-	// plants a listing row on a real plugin context plus the durable row
-	// beside it; the verify proves the table is gone and that the row the
-	// user can see — its id, its placement, its label, its tombstone —
-	// survived, because that is the memory a dark source reads from.
-	//
-	// This fixture is the genuine-old-file test the drop rule in
-	// internal/local/store/CLAUDE.md asks for. The usual problem, that a
-	// chain-built file at N-1 already has the current shape and so cannot
-	// hold what N drops, does not apply to a table created by a migration
-	// literal: v9 spells `listings` itself, so a chain-built v11 file really
-	// has it and the seed below really plants the retired shape.
+	// v12 retires the `listings` table. It stood alone, so the step is a plain
+	// drop and the record tables come through untouched: the seed plants a
+	// listing row and the durable row beside it, and the verify proves the
+	// table is gone and the row a dark source reads from survived. This is the
+	// genuine-old-file test the drop rule in CLAUDE.md asks for: v9 spells
+	// `listings` in a migration literal, so a chain-built v11 file really has
+	// the retired shape.
 	migrationFixtures = append(migrationFixtures, migrationFixture{
 		version: 12,
 		seed: func(t *testing.T, db *sql.DB, rootID string) {
@@ -1083,8 +1038,7 @@ func init() {
 			if n != 0 {
 				t.Error("the listings table survived v12")
 			}
-			// The node's own memory of what it minted is untouched: the
-			// dark-source answer comes from here now.
+			// The dark-source answer comes from the node's own memory now.
 			var x, y, w, h, tomb int64
 			var label string
 			if err := db.QueryRow(`SELECT x, y, w, h, alt_text, tombstoned FROM tiles WHERE ns = 'p9' AND key = 'notes.md'`).
@@ -1103,13 +1057,11 @@ func init() {
 		},
 	})
 
-	// v13 adopts the `connections` table into the chain. What this fixture
-	// reaches is the CREATE arm: a chain-built v12 file has no connections
-	// table at all, because only a node that ran a transport ever had one,
-	// and a home that never dialled anything must still come out of v13 with
-	// the table the store now materializes. The adopt-an-existing-table arm —
-	// the one that matters for a live home — needs a genuine old file:
-	// TestMigrateV13OverAGenuineV12File.
+	// v13 adopts the `connections` table. This fixture reaches the create arm:
+	// a chain-built v12 file has no connections table, only a node that ran a
+	// transport ever having had one, and it must still come out of v13 with
+	// the table the store materializes. The adopt arm needs a genuine old
+	// file, in TestMigrateV13OverAGenuineV12File.
 	migrationFixtures = append(migrationFixtures, migrationFixture{
 		version: 13,
 		seed: func(t *testing.T, db *sql.DB, rootID string) {
@@ -1124,9 +1076,8 @@ func init() {
 			if got := connectionRows(t, db); len(got) != 0 {
 				t.Errorf("a node that never dialled anything has %d connection rows, want none", len(got))
 			}
-			// The table the transport writes through is there and takes the
-			// three writes it makes: a fresh declaration, a learned landing,
-			// a retirement.
+			// The table takes the three writes the transport makes: a fresh
+			// declaration, a learned landing, a retirement.
 			if _, err := db.Exec(`INSERT OR IGNORE INTO connections (name) VALUES ('rtb')`); err != nil {
 				t.Fatalf("the transport cannot declare a connection after v13: %v", err)
 			}
@@ -1143,9 +1094,8 @@ func init() {
 			if got := connectionRows(t, db); !reflect.DeepEqual(got, want) {
 				t.Errorf("connections after v13 = %+v, want %+v", got, want)
 			}
-			// A name is a primary key: the table can never hold it twice,
-			// because it is the namespace segment references are written
-			// through.
+			// A name is a primary key, being the namespace segment references
+			// are written through.
 			if _, err := db.Exec(`INSERT INTO connections (name) VALUES ('rtb')`); err == nil {
 				t.Error("the adopted table accepted a duplicate connection name")
 			}
@@ -1158,6 +1108,5 @@ func init() {
 	})
 }
 
-// objectIDColumn names the retired provenance column. Spelled once so the
-// v10 fixture's "it is gone" assertions can't drift from each other.
+// objectIDColumn is spelled once so the v10 fixture's assertions cannot drift.
 const objectIDColumn = "object_id"

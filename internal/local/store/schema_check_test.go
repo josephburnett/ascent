@@ -9,13 +9,11 @@ import (
 	"testing"
 )
 
-// TestOpenRejectsLegacyBlobShape covers the disappearing-tile class: an
-// unstamped DB whose blobs table still carries a `size` column that is NOT
-// NULL with no default. The fast path in migrateUp stamps such a DB as v1
-// without checking columns, so without this guard the divergence surfaces
-// only when a blob insert hits the orphaned constraint, which presents as a
-// tile that vanished. Open rejects it up front, naming the offending
-// column.
+// The disappearing-tile class: an unstamped DB whose blobs table still carries
+// a NOT NULL `size` column with no default. The migrateUp fast path stamps
+// such a DB as v1 without checking columns, so without the guard the
+// divergence surfaces as a tile that vanished. Open rejects it up front,
+// naming the column.
 func TestOpenRejectsLegacyBlobShape(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy.db")
 

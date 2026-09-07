@@ -67,12 +67,8 @@ func TestSetShellPreviewStoresAndDedupes(t *testing.T) {
 	}
 }
 
-// TestSetShellPreviewOverwritesFrozenFrame: the frozen frame is a capture,
-// so the freeze path can race other mutations (a concurrent SetShellPreview
-// from a takeover handler, the detach-time title capture) and must simply
-// land — last writer wins, no claim to lose. (version_rule_test.go pins the
-// no-claim/no-bump half; this pins that a second capture replaces the
-// first.)
+// The frozen frame is a capture, so a second one simply replaces the first.
+// version_rule_test.go pins the no-claim, no-bump half.
 func TestSetShellPreviewOverwritesFrozenFrame(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)

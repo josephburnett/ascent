@@ -12,21 +12,13 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
-// TestStoreRowSurvivesTheWire is the SEAM test over the store's scan list and
-// the proto: a row the store wrote, read back through its scan list, encoded
-// the way the Connect JSON codec encodes it, and decoded again must be the
-// identical value.
-//
-// A unit test on either side would not catch the bug this guards: the scan
-// list and the proto are two spellings of the same record, and a field
-// dropped from either one still passes that side's own tests. Here a dropped
-// field changes the value that comes back.
-//
-// The kinds together cover every stored on-wire column: a well carries the
-// framing and the child grid, a url carries the address/preview/history/
-// freeze/zoom, a text carries the body blob and the doc window, and a leaf
-// link carries link_target_id. TestEveryStoredFieldCrossesTheWire below
-// asserts that coverage rather than trusting this comment.
+// The seam over the store's scan list and the proto: a row the store wrote,
+// read back through its scan list, encoded by the Connect JSON codec and
+// decoded again, must be the identical value. A unit test on either side would
+// not catch this, because the scan list and the proto are two spellings of the
+// same record and a field dropped from either still passes that side's own
+// tests. TestEveryStoredFieldCrossesTheWire asserts the fixtures cover every
+// stored on-wire column.
 func TestStoreRowSurvivesTheWire(t *testing.T) {
 	for name, tile := range wireFixtures(t) {
 		t.Run(name, func(t *testing.T) {
@@ -38,12 +30,10 @@ func TestStoreRowSurvivesTheWire(t *testing.T) {
 	}
 }
 
-// TestEveryStoredFieldCrossesTheWire proves the fixtures above are TOTAL over
-// what the store can put on the wire: every pb.Tile field is non-zero in at
-// least one fixture, except the four the store never sets (derived wire-only
-// fields — see the derived-field inventory in ARCHITECTURE.md §7). Without
-// this, a new column could be added, wired through the store, and silently
-// left out of the seam fixture.
+// The fixtures above are total over what the store can put on the wire: every
+// pb.Tile field is non-zero in at least one, except the four the store never
+// sets. Without this a new column could be wired through the store and
+// silently left out of the seam fixture.
 func TestEveryStoredFieldCrossesTheWire(t *testing.T) {
 	// Wire-only fields: derived by the server or the owning plugin, never a
 	// stored column, so no store row can exercise them here.

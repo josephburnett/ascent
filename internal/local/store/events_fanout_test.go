@@ -31,12 +31,9 @@ func TestPublishFansOutToAllSubscribers(t *testing.T) {
 	}
 }
 
-// TestPublishNeverBlocksAndCoalescesSameEntity: a stalled consumer must not
-// stall a writer, and repeat events for the SAME entity coalesce to the latest
-// (the client cache upserts by id, so skipping an intermediate state is
-// indistinguishable from applying it). If publish blocked, this test hangs —
-// the failure mode the old drop-on-overflow guarded against; coalescing keeps
-// the no-block property without the drops.
+// A stalled consumer must not stall a writer, and repeat events for the same
+// entity coalesce to the latest, which the client cache cannot tell from
+// applying every one. If publish blocked, this test hangs.
 func TestPublishNeverBlocksAndCoalescesSameEntity(t *testing.T) {
 	s := newTestStore(t)
 	ch, cancel := s.SubscribeEvents()
@@ -59,10 +56,8 @@ func TestPublishNeverBlocksAndCoalescesSameEntity(t *testing.T) {
 	}
 }
 
-// TestPublishNeverDropsDistinctEntities: the fix for the silent-drop hole.
-// With the old fixed 64-slot buffer, publishing N>64 events to a stalled
-// consumer dropped the excess — a dropped TileChanged left a pane stale until
-// an unrelated event touched the same grid. Distinct entities must ALL arrive.
+// Distinct entities must all arrive: a dropped TileChanged leaves a pane stale
+// until an unrelated event touches the same grid.
 func TestPublishNeverDropsDistinctEntities(t *testing.T) {
 	s := newTestStore(t)
 	ch, cancel := s.SubscribeEvents()
@@ -83,10 +78,9 @@ func TestPublishNeverDropsDistinctEntities(t *testing.T) {
 	}
 }
 
-// TestRemovalNeverMaskedByPendingChange: removals key separately from changes
-// (a cross-grid move emits both for one tile id), so however many changes are
-// pending, the consumer must END at "removed" — never at a stale "changed"
-// that resurrects the tile.
+// Removals key separately from changes, a cross-grid move emitting both for
+// one tile id, so however many changes are pending the consumer ends at
+// removed, never at a stale change that resurrects the tile.
 func TestRemovalNeverMaskedByPendingChange(t *testing.T) {
 	s := newTestStore(t)
 	ch, cancel := s.SubscribeEvents()

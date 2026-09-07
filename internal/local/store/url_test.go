@@ -175,10 +175,8 @@ func TestSetURLStateRefusesNonURLTile(t *testing.T) {
 	}
 }
 
-// TestSetURLStateForksSharedGrid: freezing a URL tile that lives in a
-// shared (cloned) grid must fork the spine so the new address + preview
-// land in this clone's row only. Regression: SetURLState wrote the raw
-// shared row, leaking navigation into every clone.
+// Freezing a url tile in a cloned grid lands the new address and preview in
+// this clone's row only, never leaking navigation into every clone.
 func TestSetURLStateForksSharedGrid(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)

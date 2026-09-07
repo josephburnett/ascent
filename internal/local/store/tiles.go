@@ -12,8 +12,7 @@ import (
 	"github.com/josephburnett/gridwell/internal/doctype"
 )
 
-// urlSchemeAllowed reports whether u is one of the schemes accepted by
-// URL tiles. Only http and https.
+// urlSchemeAllowed accepts only http and https.
 func urlSchemeAllowed(u string) bool {
 	return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://")
 }
@@ -21,11 +20,10 @@ func urlSchemeAllowed(u string) bool {
 // MaxBlobBytes caps a single uploaded text-tile blob size.
 const MaxBlobBytes = 16 * 1024 * 1024
 
-// claimContentVersion loads a tile and verifies the caller's content claim
-// against the row. It is the store's only optimistic-concurrency check, and
-// its only callers are the writes that change the user's content bytes:
-// WriteContent's text and url arms, and RenameTile. "version is the claim for
-// content and nothing else" is enforced by who can reach this function.
+// claimContentVersion verifies the caller's content claim against the row. It
+// is the store's only optimistic-concurrency check, and "version is the claim
+// for content and nothing else" is enforced by who can reach it: WriteContent's
+// text and url arms, and RenameTile.
 func (s *Store) claimContentVersion(ctx context.Context, q gridReader, tileID, claimed int64) (*gridwellv1.Tile, error) {
 	t, err := s.loadTile(ctx, q, tileID)
 	if err != nil {
@@ -38,12 +36,9 @@ func (s *Store) claimContentVersion(ctx context.Context, q gridReader, tileID, c
 	return t, nil
 }
 
-// loadForWrite is the shared preamble for an unclaimed single-tile mutation —
-// framing, a capture, a layout write: load the row and optionally guard its
-// kind. wantKind == "" skips the kind guard, for callers with a multi-kind
-// rule that check the returned tile themselves. No version is consulted:
-// these writes are last-writer-wins, so there is nothing here for a racing
-// capture to conflict with.
+// loadForWrite is the shared preamble for an unclaimed single-tile mutation:
+// load the row and, unless wantKind is "", guard its kind. No version is
+// consulted, because these writes are last-writer-wins.
 func (s *Store) loadForWrite(ctx context.Context, tx *sql.Tx, tileID int64, wantKind string, wrongKindErr error) (*gridwellv1.Tile, error) {
 	n, err := s.loadTile(ctx, tx, tileID)
 	if err != nil {
@@ -56,11 +51,9 @@ func (s *Store) loadForWrite(ctx context.Context, tx *sql.Tx, tileID int64, want
 }
 
 // emitTileChanged reloads tileID and appends a TileChanged event for it. It is
-// the shared tail of every store write that publishes a tile, and the tail of
-// every write that is not a content edit — framing, an automatic capture, a
-// layout move — since none of those may bump the version. The event carries
-// the whole tile, so a capture still reaches every client; it just arrives as
-// last-writer-wins state instead of a new claim. Content writers go through
+// the tail of every write that is not a content edit, since none of those may
+// bump the version; the event still carries the whole tile, so a capture
+// reaches every client as last-writer-wins state. Content writers go through
 // finishContentEdit.
 func (s *Store) emitTileChanged(ctx context.Context, tx *sql.Tx, tileID int64, events *[]*gridwellv1.Event) (*gridwellv1.Tile, error) {
 	out, err := s.loadTile(ctx, tx, tileID)
@@ -71,13 +64,10 @@ func (s *Store) emitTileChanged(ctx context.Context, tx *sql.Tx, tileID int64, e
 	return out, nil
 }
 
-// finishContentEdit is the coda for a user content mutation: bump the tile's
-// version, the optimistic-concurrency key, then publish it through
-// emitTileChanged. Keeping "a user content edit bumps, everything else does
-// not" as a choice between two named helpers, rather than a per-method
-// open-coded bump a new mutation can forget or wrongly add, is what keeps
-// that invariant from drifting. Its callers are exactly the content writes,
-// and version_rule_test.go pins the whole table.
+// finishContentEdit is the coda for a user content mutation: bump the version,
+// then publish through emitTileChanged. Two named helpers rather than a
+// per-method open-coded bump is what keeps "a content edit bumps, everything
+// else does not" from drifting; version_rule_test.go pins the table.
 func (s *Store) finishContentEdit(ctx context.Context, tx *sql.Tx, tileID int64, events *[]*gridwellv1.Event) (*gridwellv1.Tile, error) {
 	if err := bumpTileVersion(ctx, tx, tileID); err != nil {
 		return nil, err
@@ -85,10 +75,9 @@ func (s *Store) finishContentEdit(ctx context.Context, tx *sql.Tx, tileID int64,
 	return s.emitTileChanged(ctx, tx, tileID, events)
 }
 
-// createTile is the shared scaffolding for the Create* methods: sequence
-// validation, overlap check, kind-specific insert, grid version bump, load,
-// publish. The insert closure receives the canonical gridID and the current
-// unix timestamp; it inserts the tile row and returns its id.
+// createTile is the shared scaffolding for the Create* methods. The insert
+// closure receives the canonical gridID and the current timestamp, inserts the
+// row and returns its id.
 func (s *Store) createTile(
 	ctx context.Context,
 	gridIDStr string, x, y, w, h int64,
@@ -103,8 +92,7 @@ func (s *Store) createTile(
 	}
 	var out *gridwellv1.Tile
 	err = s.withMutation(ctx, func(tx *sql.Tx, events *[]*gridwellv1.Event) error {
-		// grid_id is authoritative; no descent path is on the wire. The load
-		// refuses a create into a grid that does not exist.
+		// grid_id is authoritative; no descent path is on the wire.
 		if _, err := s.loadGrid(ctx, tx, gridID); err != nil {
 			return fmt.Errorf("%w: grid %d: %v", ErrInvalidArgument, gridID, err)
 		}
@@ -131,12 +119,9 @@ func (s *Store) createTile(
 	return out, err
 }
 
-// CreateWell creates a new well at (x,y) with footprint (w,h) inside
-// req.GridID. The child grid is created empty with no framing on the well:
-// view_cx, view_cy, and view_zoom are all zero, which means never visited.
-// Label, when set, is stored as the well's alt_text, the user-given name of
-// the grid. Wells have no content to derive an alt from, so this is alt's
-// only writer.
+// CreateWell creates a well owning a fresh empty child grid, with zero framing,
+// which means never visited. Label is stored as alt_text; a well has no content
+// to derive an alt from, so this is that column's only writer for wells.
 func (s *Store) CreateWell(ctx context.Context, gridID string, x, y, w, h int64, label string) (*gridwellv1.Tile, error) {
 	return s.createTile(ctx, gridID, x, y, w, h,
 		func(tx *sql.Tx, gid, now int64) (int64, error) {
@@ -163,17 +148,13 @@ func (s *Store) CreateWell(ctx context.Context, gridID string, x, y, w, h int64,
 		})
 }
 
-// CreateExitWell creates a well tile that is a doorway onto an existing grid
-// rather than the owner of one — a file well, a process well, a mount, or a
-// ctrl + right-drag link onto a grid in this same namespace. Unlike CreateWell
-// it allocates no interior child grid and holds no refcount on the child: the
-// child grid is owned by whoever created it and named by a qualified
-// "<uuid>/<id>" string. Deleting the well removes only the reference, never
-// the backing directory or process, which is a separate gesture on a tile
-// inside the grid. view carries the source's framing when the exit well is a
-// cross-plugin clone of a framed well, so the link previews and descends
-// exactly where the source did. A zero zoom means never visited, so the
-// default view.
+// CreateExitWell creates a well that is a doorway onto an existing grid rather
+// than the owner of one. It allocates no child grid and holds no refcount: the
+// child is owned by whoever created it and named by a qualified "<uuid>/<id>"
+// string, so deleting the well removes only the reference. view carries the
+// source's framing when the well is a cross-plugin clone of a framed one, so
+// the link previews and descends where the source did; zero zoom means never
+// visited.
 func (s *Store) CreateExitWell(ctx context.Context, gridID string, x, y, w, h int64, childGridID, alt string, view rpc.Framing) (*gridwellv1.Tile, error) {
 	if childGridID == "" {
 		return nil, fmt.Errorf("%w: child_grid_id required", ErrInvalidArgument)
@@ -225,9 +206,8 @@ func (s *Store) CreateText(ctx context.Context, gridID string, x, y, w, h int64,
 		})
 }
 
-// insertURLRow inserts one url tile row and returns its id. It is the single
-// place the url INSERT lives, shared by the on-grid CreateURL and the
-// off-grid CreateScratchURL so they cannot drift.
+// insertURLRow is the single place the url INSERT lives, shared by CreateURL
+// and CreateScratchURL so they cannot drift.
 func insertURLRow(ctx context.Context, tx *sql.Tx, gridID, x, y, w, h int64, url string, now int64) (int64, error) {
 	res, err := tx.ExecContext(ctx, `
 		INSERT INTO tiles (grid_id, kind, x, y, w, h,
@@ -240,10 +220,9 @@ func insertURLRow(ctx context.Context, tx *sql.Tx, gridID, x, y, w, h int64, url
 	return res.LastInsertId()
 }
 
-// CreateURL creates a url tile pointing at the given URL. An empty url is the
-// legal unconfigured state — drop first, prompt on first descent — and the
-// address arrives later as the tile's content, through WriteContent's url
-// arm.
+// CreateURL creates a url tile. An empty url is the legal unconfigured state:
+// drop first, prompt on first descent, and the address arrives later through
+// WriteContent's url arm.
 func (s *Store) CreateURL(ctx context.Context, gridID string, x, y, w, h int64, url string) (*gridwellv1.Tile, error) {
 	urlString := strings.TrimSpace(url)
 	if urlString != "" && !urlSchemeAllowed(urlString) {
@@ -255,13 +234,10 @@ func (s *Store) CreateURL(ctx context.Context, gridID string, x, y, w, h int64, 
 		})
 }
 
-// CreateScratchURL creates an ephemeral url tile in the scratch grid, off any
-// visible grid, and returns it: the store side of descending into a url
-// without placing a tile. Unlike CreateURL it takes no descent path and runs
-// no overlap check, because the scratch grid is never rendered, so a tile's
-// position there is meaningless and two visits may share a cell. The result
-// is otherwise a normal, persistent url tile — durable visited-url history,
-// and a resolvable deep link — it just lives off-grid. See ScratchGridID.
+// CreateScratchURL creates a url tile in the scratch grid: descending into a
+// url without placing a tile. It runs no overlap check, because the scratch
+// grid is never rendered and two visits may share a cell. The tile is
+// otherwise normal and persistent. See ScratchGridID.
 func (s *Store) CreateScratchURL(ctx context.Context, url string) (*gridwellv1.Tile, error) {
 	urlString := strings.TrimSpace(url)
 	if !urlSchemeAllowed(urlString) {
@@ -291,11 +267,8 @@ func (s *Store) CreateScratchURL(ctx context.Context, url string) (*gridwellv1.T
 	return out, err
 }
 
-// CreateScratchShell creates an ephemeral shell tile in the scratch grid: the
-// shell twin of CreateScratchURL, off any visible grid, with no descent path
-// and no overlap check. Unlike a placed shell it is deleted on ascent — the
-// client drives that, and the delete kills the tmux session — so nothing
-// persists.
+// CreateScratchShell is CreateScratchURL's shell twin. Unlike a placed shell
+// it is deleted on ascent, which kills the tmux session, so nothing persists.
 func (s *Store) CreateScratchShell(ctx context.Context) (*gridwellv1.Tile, error) {
 	scratch, err := s.ScratchGridID(ctx)
 	if err != nil {
@@ -329,9 +302,8 @@ func (s *Store) CreateScratchShell(ctx context.Context) (*gridwellv1.Tile, error
 	return out, err
 }
 
-// SetTextView updates a text tile's framed-document window and its rendered
-// or text mode. Like SetFraming this is framing, not content: an in-place
-// write that carries no version claim and does not bump the tile version.
+// SetTextView updates a text tile's framed window and its rendered or text
+// mode. Like SetFraming this is framing, not content: no claim, no bump.
 func (s *Store) SetTextView(ctx context.Context, tileIDStr string, textX, textY, textW, textH int64, textMode string) (*gridwellv1.Tile, error) {
 	tileID, err := parseID(tileIDStr)
 	if err != nil {
@@ -346,7 +318,7 @@ func (s *Store) SetTextView(ctx context.Context, tileIDStr string, textX, textY,
 		if n.LinkTargetId != "" {
 			// A link row persists the framed window only: the CHECK keeps
 			// text_mode NULL on a link, because framing is per-link local and
-			// the mode is not. Writing it would fail the whole framing save.
+			// the mode is not.
 			_, err := tx.ExecContext(ctx,
 				`UPDATE tiles SET text_x = ?, text_y = ?, text_w = ?, text_h = ?, updated_at = ? WHERE id = ?`,
 				textX, textY, textW, textH, s.now().Unix(), tileID)
@@ -372,15 +344,12 @@ func (s *Store) SetTextView(ctx context.Context, tileIDStr string, textX, textY,
 }
 
 // DeleteTile is the user's discard gesture, in two stages. A tile on an
-// ordinary grid moves into the trashcan's current-month subgrid — same id,
-// same row, and links keep resolving, because it moved rather than died — and
-// only a tile already inside the trash tree, on the second delete, is
-// destroyed for real, releasing the references it held: its blob, its preview
-// blob, and, for an interior well, its child grid. Scratch-grid tiles always
-// delete for real. An exit well carries a qualified "<uuid>/<id>"
-// child_grid_id that does not parse as a local grid id, so no local child is
-// collected and only the reference is dropped. Tiles inside a plugin's grids
-// are deleted by that plugin, which the server routes to.
+// ordinary grid moves into the trashcan's current-month subgrid, same id and
+// same row, so links keep resolving; a second delete, on a tile already in the
+// trash tree, destroys it and releases its blobs and its interior child grid.
+// Scratch-grid tiles always delete for real. An exit well's qualified
+// child_grid_id does not parse as a local grid id, so only the reference is
+// dropped.
 func (s *Store) DeleteTile(ctx context.Context, req *gridwellv1.DeleteTileRequest) error {
 	tileID, err := parseID(req.TileId)
 	if err != nil {

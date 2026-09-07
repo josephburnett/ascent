@@ -3,8 +3,7 @@ package store
 import "github.com/josephburnett/gridwell/api/gwerr"
 
 // The sentinel-to-class table lives in api/gwerr: the error vocabulary is
-// contract, and the host maps it without importing any store. These aliases
-// keep the store-side names for its own tree.
+// contract. These aliases keep the store-side names.
 
 type ErrorClass = gwerr.ErrorClass
 

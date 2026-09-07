@@ -9,10 +9,8 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
-// TestSwapTileBlob exercises the blob-swap kernel directly: a content change
-// (new blob, old released), a no-op identical write (no churn), and a dedup
-// hit (point at an existing blob row, bumping its refcount instead of
-// inserting a duplicate).
+// The blob-swap kernel directly: a content change, a no-op identical write,
+// and a dedup hit that bumps an existing blob's refcount.
 func TestSwapTileBlob(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
@@ -483,10 +481,8 @@ func TestDeleteGridCascadesBlobs(t *testing.T) {
 	verifyRefcounts(t, s)
 }
 
-// verifyRefcounts asserts the blob refcount invariant globally: every blob's
-// stored refcount equals the number of tile columns that reference it. Grids
-// are not refcounted (owned 1:1 under copy-on-clone), so there's nothing to
-// check for them.
+// verifyRefcounts asserts every blob's stored refcount equals the number of
+// tile columns referencing it. Grids are owned 1:1 and not refcounted.
 func verifyRefcounts(t *testing.T, s *Store) {
 	t.Helper()
 	rows, err := s.db.Query(`SELECT id, refcount FROM blobs`)

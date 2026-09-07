@@ -10,19 +10,12 @@ import (
 )
 
 // PlaceTile is the single placement writeback: placement is one fact,
-// (grid_id, x, y, w, h), and this verb owns all of it. A move is a grid
-// change, a resize a footprint change, and both at once are one write. It is
-// id-addressed; there is no descent path.
-//
-// Placement is layout, not content: no version claim, no version bump. A drag
-// is an explicit act on a tile the user can see, so when two clients race,
-// whoever moved it last moved it, and the tile event reconciles. The one thing
-// a race could corrupt, two tiles in one cell, is refused by the overlap check
-// below, inside this same transaction.
-//
-// Moving a well into its own subtree is refused by walking ancestors of the
-// destination grid, in wellWouldContainItself: a fact the server derives
-// itself rather than trusting a client-supplied path.
+// (grid_id, x, y, w, h), and this verb owns all of it, id-addressed with no
+// descent path. Placement is layout, not content: no claim, no bump, and when
+// two clients race, whoever moved it last moved it. The one thing a race could
+// corrupt, two tiles in one cell, is refused by the overlap check in this same
+// transaction. Moving a well into its own subtree is refused by
+// wellWouldContainItself, walking a chain the server derives itself.
 func (s *Store) PlaceTile(ctx context.Context, req *gridwellv1.PlaceTileRequest) (*gridwellv1.Tile, error) {
 	if req.W <= 0 || req.H <= 0 {
 		return nil, fmt.Errorf("%w: w and h must be positive", ErrInvalidArgument)
@@ -88,14 +81,11 @@ func (s *Store) PlaceTile(ctx context.Context, req *gridwellv1.PlaceTileRequest)
 	return out, err
 }
 
-// wellWouldContainItself refuses placing a well tile inside its own subtree:
-// a destination that is the well's child grid, or any grid beneath it. The
-// check walks up from the destination grid through parent wells. Each interior
-// child grid hangs off exactly one well by construction — wells are created
-// with fresh grids, clones deep-copy, and placement carries the well row whole
-// — so the ancestor chain is a server-derived fact and needs no client path.
-// Non-well tiles and exit wells, whose qualified child_grid_id names another
-// plugin's subtree, have no local subtree and pass trivially.
+// wellWouldContainItself refuses placing a well inside its own subtree, walking
+// up from the destination grid through parent wells. Each interior child grid
+// hangs off exactly one well by construction, so the ancestor chain is a
+// server-derived fact and needs no client path. Non-well tiles and exit wells
+// have no local subtree and pass trivially.
 func (s *Store) wellWouldContainItself(ctx context.Context, tx *sql.Tx, n *gridwellv1.Tile, destGridID int64) error {
 	if !isWellKind(n.Kind) {
 		return nil

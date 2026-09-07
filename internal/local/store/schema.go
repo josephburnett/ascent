@@ -1,46 +1,32 @@
 package store
 
-// This file is the canonical SQLite schema for Gridwell. Single-tenant:
-// there is no users/groups/sessions table. The `system` KV table holds
-// singleton state (root grid id and root viewport framing); the schema
-// version lives in the SQLite header (PRAGMA user_version), not here.
-//
-// Home's rows hold only Gridwell-owned grids. Host-backed content — a
-// filesystem directory, the process table — is projected by a plugin, whose
-// memory lives in the same tables under its own namespace; a well that points
-// at one is an ordinary `well` row whose child_grid_id is a qualified
+// The canonical SQLite schema. The `system` KV table holds singleton state;
+// the schema version lives in the SQLite header, not here. A plugin's memory
+// lives in the same tables under its own namespace, and a well pointing at one
+// is an ordinary `well` row whose child_grid_id is a qualified
 // "<plugin-uuid>/<grid-id>" reference.
 //
-// There are five tile kinds:
-//   - well  (interior): points at a child grid. Blue when the child is in
-//     this same namespace, red — an exit well — when child_grid_id names
+// The five tile kinds:
+//   - well: points at a child grid, in this namespace or, as an exit well,
 //     another.
-//   - text  (interior): a markdown blob.
-//   - url   (interior): an http(s) URL plus a frozen JPEG preview.
-//   - shell (exit):     an interactive shell inside a gridwell-private tmux
-//     session. Live mode attaches the tmux client; freeze captures a JPEG
-//     preview and detaches. The shell and its scrollback live in the tmux
-//     server and persist across ascents and restarts; they are gone only
-//     when the tile is deleted or the host reboots.
-//   - pane  (interior): blob_id holds the serialized split-pane layout, in
-//     the api/panelayout format.
+//   - text: a markdown blob.
+//   - url: an http(s) URL plus a frozen JPEG preview.
+//   - shell: an interactive shell in a gridwell-private tmux session. The
+//     shell and its scrollback live in the tmux server and survive ascents
+//     and restarts; they are gone only when the tile is deleted or the host
+//     reboots.
+//   - pane: blob_id holds the api/panelayout split-pane layout.
 //
-// Well rows carry one framing (view_cx, view_cy, view_zoom) — a float
-// center in the child grid's coordinates plus a pane-size-independent
-// zoom — that is at once the preview frame, the descent target, and the
-// ascent return.
-// Text rows carry a doc-space window (text_x, text_y, text_w, text_h)
-// plus a rendered/text mode plus blob_id (the markdown source). URL rows
-// carry a URL string and preview_blob_id (the last-frozen JPEG captured
-// at close, hash-deduped through the blobs table just like text content).
+// A well row's one framing (view_cx, view_cy, view_zoom) is at once the
+// preview frame, the descent target and the ascent return. A text row carries
+// a doc-space window plus a rendered/text mode plus blob_id. A url row carries
+// the address and preview_blob_id, hash-deduped like text content.
 
 // pragmas are connection-level settings applied once at Open, before any
-// schema or attach. synchronous is connection-scoped (not stored in the file)
-// and defaults to FULL regardless of journal mode, so it must be pinned on
-// every Open. NORMAL is the SQLite-recommended level under WAL: durable
-// against application and OS crashes, and a power loss can lose at most the
-// last not-yet-checkpointed transaction — never corrupt the file — in exchange
-// for far fewer fsyncs on this write-heavy store.
+// schema or attach. synchronous is connection-scoped and defaults to FULL
+// whatever the journal mode, so it must be pinned on every Open. NORMAL under
+// WAL is durable against application and OS crashes; a power loss can lose the
+// last not-yet-checkpointed transaction, never corrupt the file.
 const pragmas = `
 PRAGMA journal_mode=WAL;
 PRAGMA synchronous=NORMAL;
@@ -58,16 +44,11 @@ CREATE TABLE IF NOT EXISTS system (
 -- uses.
 `
 
-// tablesDDL returns the grids, tiles, blobs, and connections DDL for the main
-// database: the always-current schema a fresh Open materializes directly. The
-// grids, tiles, and connections halves are rendered from the column descriptor
-// in columns.go, which is where a column is described. Every column added
-// there must be matched by a migration; TestSchemaEquivalence proves the two
-// agree. The schema-evolution contract is internal/local/store/CLAUDE.md.
-//
-// The tiles table is built by tilesTableDDL so its one DDL source is shared
-// with the CHECK-rebuild migration path (migrations.go): a rebuild creates
-// tiles_new from the same text a fresh Open uses, so the two cannot drift.
+// tablesDDL is the always-current schema a fresh Open materializes. The grids,
+// tiles and connections halves render from the column descriptor in
+// columns.go, and every column added there must be matched by a migration;
+// TestSchemaEquivalence proves the two agree. The contract is CLAUDE.md in
+// this directory.
 func tablesDDL() string {
 	return gridsTableDDL() + blobsTemplate + tilesTableDDL("tiles") + tilesIndexDDL +
 		connectionsTableDDL()
@@ -79,8 +60,7 @@ func gridsTableDDL() string { return createTable("grids", gridsColumns, "") }
 
 // connectionsTableDDL renders the connections table from the column descriptor
 // in columns.go. The store owns this shape; internal/connection owns the
-// queries over it and holds no DDL of its own. One text, shared by the fresh
-// path here and by the v13 migration that adopted the table into the chain.
+// queries and holds no DDL. One text, shared with the v13 migration.
 func connectionsTableDDL() string { return createTable("connections", connectionsColumns, "") }
 
 const blobsTemplate = `
@@ -102,18 +82,15 @@ CREATE TABLE IF NOT EXISTS blobs (
 `
 
 // tilesTableDDL returns the CREATE TABLE for the current tiles shape with the
-// table name parameterized: "tiles" for a fresh Open, "tiles_new" for the
-// rebuild migration, which is the only shape that can change the kind CHECK.
-// The columns come from the descriptor in columns.go, which is also what the
-// SELECT list, the scan, the clone INSERT, and every rebuild copy list read.
+// name parameterized: "tiles" for a fresh Open, "tiles_new" for the rebuild
+// migration, so the two cannot drift. Columns come from columns.go.
 func tilesTableDDL(name string) string {
 	return createTable(name, tilesColumns, tilesCheck)
 }
 
-// tilesCheck is the tiles table's kind CHECK: which columns each kind may and
-// may not hold. It is a per-kind rule over columns, not a column list, so it
-// stays literal text. It is the only part of the table a rebuild migration
-// can change.
+// tilesCheck is which columns each kind may and may not hold. It is a per-kind
+// rule, not a column list, so it stays literal text, and it is the only part
+// of the table a rebuild migration can change.
 const tilesCheck = `    CHECK (
        (link_target_id IS NULL AND (
           -- well: an interior or exit well always has a child grid.
@@ -137,32 +114,27 @@ const tilesCheck = `    CHECK (
     )
 `
 
-// tilesIndexDDL recreates the tiles indexes. It is shared by the fresh path
-// in tablesDDL and by the rebuild migration, for the same no-drift reason as
-// tilesTableDDL.
+// tilesIndexDDL is shared by the fresh path and the rebuild migration, for the
+// same no-drift reason as tilesTableDDL.
 const tilesIndexDDL = `
 CREATE INDEX IF NOT EXISTS idx_tiles_grid_id   ON tiles(grid_id);
 CREATE INDEX IF NOT EXISTS idx_tiles_child     ON tiles(child_grid_id);
 `
 
 // externalsIndexDDL is the v9 pair of partial unique indexes over the
-// plugin-memory columns. They name columns the v9 migration adds, so they
-// cannot ride tablesDDL, which Open applies before migrating an old file.
-// Open creates them after the chain, for fresh and migrated files alike.
+// plugin-memory columns. They name columns v9 adds, so they cannot ride
+// tablesDDL, which Open applies before migrating an old file; Open creates
+// them after the chain instead.
 const externalsIndexDDL = `
 CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_context ON grids(ns, context_key) WHERE ns != '';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tiles_live_key ON tiles(ns, grid_id, key) WHERE ns != '' AND tombstoned = 0;
 `
 
-// tablesV1 is the frozen v1 grids, tiles, and blobs schema: a byte-for-byte
-// copy of the tables at schemaVersion 1. Never edit it. Tests build genuine
-// old files from this text and migrate them forward, so an edit would hide
-// migration bugs. New columns and tables go into the column descriptor in
-// columns.go plus a migration, never here.
-//
-// TestSchemaEquivalence asserts that tablesV1 plus all migrations produces a
-// schema identical to a fresh tablesDDL(), which is the proof that a new DB
-// and an upgraded old DB converge on the same shape.
+// tablesV1 is the frozen schema at schemaVersion 1. Never edit it: tests build
+// genuine old files from this text and migrate them forward, so an edit would
+// hide migration bugs. New columns go into columns.go plus a migration.
+// TestSchemaEquivalence asserts tablesV1 plus every migration equals a fresh
+// tablesDDL(), the proof that a new and an upgraded DB converge.
 const tablesV1 = `
 CREATE TABLE IF NOT EXISTS grids (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

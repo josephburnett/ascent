@@ -37,10 +37,9 @@ func newTestStore(t *testing.T) *Store {
 	return s
 }
 
-// newTestStoreFile opens a file-backed store under t.TempDir and returns it
-// with its path so a test can Close and reopen the same file. File-backed
-// because a ":memory:" DB forces journal_mode=memory, so WAL and the pinned
-// synchronous level — the durability we most need to prove — are inert there.
+// newTestStoreFile opens a file-backed store under t.TempDir with its path, so
+// a test can Close and reopen the same file. A ":memory:" DB forces
+// journal_mode=memory, which makes WAL and the pinned synchronous level inert.
 func newTestStoreFile(t *testing.T) (*Store, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "test.db")
@@ -101,11 +100,8 @@ func TestBootstrapRoot(t *testing.T) {
 	}
 }
 
-// TestRootFramingRoundTrip writes home's root framing through the ONE
-// writer (SetFraming aimed at the root GRID row — schema v11 put it in
-// the same three columns every other root uses) and reads it back
-// EXACTLY: a float column keeps the float, so nothing rounds on the way
-// through the store.
+// Home's root framing goes through the one writer, aimed at the root grid row,
+// and reads back exactly: a float column keeps the float, so nothing rounds.
 func TestRootFramingRoundTrip(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

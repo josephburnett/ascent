@@ -1,36 +1,25 @@
 package store
 
-// The node's memory of a plugin's entries: they live as rows in the same
-// grids and tiles tables as home, under the plugin's namespace, where ns is
-// the plugin id and home is ns = ''. A plugin answers from its source in
-// stable string keys; the node mints the ids, keeps the user's arrangement and
-// framing, and retires keys as tombstones, so an id is never reused and a
-// retired key stays retired. One table and one column vocabulary for placement
-// and framing, whichever namespace a tile belongs to.
+// The node's memory of a plugin's entries: rows in the same grids and tiles
+// tables as home, under the plugin's namespace, where ns is the plugin id and
+// home is ns = ''. A plugin answers from its source in stable string keys; the
+// node mints the ids, keeps the user's arrangement and framing, and retires
+// keys as tombstones. Ids are AUTOINCREMENT and never reused; a retired key's
+// row stays, so a dangling reference stays interpretable, and a recreated key
+// mints a fresh id, which a partial unique index over live rows enforces.
+// Plugin rows are unversioned and emit no store events: the plugin's listing
+// is the truth.
 //
-// Identity: ids are AUTOINCREMENT and never reused. A retired key's row stays,
-// so a dangling reference stays interpretable, and a recreated key mints a
-// fresh id, which a partial unique index over live rows only enforces. Plugin
-// rows are unversioned, version 0 on the wire, and emit no store events: the
-// plugin's own listing is the truth.
+// These rows are the whole of what the durable file keeps about a plugin's
+// entries. What a source last answered is cache: a connection's answers live
+// in cache.db (internal/sourcecache) and a plugin's own memory of its source
+// in its state_dir.
 //
-// These rows are the node's own facts, and they are the whole of what the
-// durable file keeps about a plugin's entries: the id it minted for a key,
-// where the user put it, how it is framed, and the tombstone of a key that
-// went away. What a source last answered — listings, bodies, previews — is
-// cache: a connection's answers live in cache.db, in internal/sourcecache, and
-// a plugin's own memory of its source lives in its state_dir. Neither is here.
-//
-// A row exists only once the user has made a durable fact about an entry —
-// moved it, resized it, framed it, or pointed a reference at it. Listing
-// writes nothing: Overlay is a read-only JOIN of the plugin's entries with
-// whatever rows exist, and an entry with no row is answered at a DERIVED
-// placement, by the same algorithm Mint stores. So a dark source costs only
-// the rows' worth: the adapter overlays an empty non-authoritative listing
-// and the TOUCHED rows answer, unchanged, stamped stale — an untouched entry
-// has no row and is simply absent until the source speaks again. Remembering
-// what a source last answered in full is the cache's job, one layer up, and it
-// takes that job for a connection only.
+// A row exists only once the user has made a durable fact about an entry.
+// Listing writes nothing: Overlay is a read-only join, and an entry with no
+// row is answered at a placement derived by the same algorithm Mint stores. So
+// a dark source answers from the touched rows, unchanged and stamped stale,
+// and an untouched entry is simply absent until the source speaks again.
 
 import (
 	"context"
@@ -52,14 +41,12 @@ func (s *Store) Namespace(ns string) *Namespace {
 	return &Namespace{s: s, ns: ns}
 }
 
-// SQL exposes the store's one database handle for the node's other
-// tables (the transport's connections): SQLite is single-writer per
-// file and this handle runs one connection, so a second handle on the
-// same file would meet an instant SQLITE_BUSY.
+// SQL exposes the store's one database handle for the node's other tables.
+// SQLite is single-writer per file and this handle runs one connection, so a
+// second handle on the same file would meet an instant SQLITE_BUSY.
 func (s *Store) SQL() *sql.DB { return s.db }
 
-// Entry is one plugin listing row, as the engine needs it — a mirror of
-// the plugin Entry without a proto dependency.
+// Entry mirrors the plugin Entry without a proto dependency.
 type Entry struct {
 	Key          string
 	Kind         string
@@ -75,9 +62,8 @@ type Hint struct{ X, Y, W, H int64 }
 
 // ExtTile is one joined entry: the plugin's content facts over the user's
 // stored arrangement. ID is the minted row id, or 0 when the entry has no row
-// yet and X/Y/W/H are therefore DERIVED. The caller names every such tile by
-// its KEY either way — the row is where the arrangement lives, never a name
-// handed out (pluginhost.tileAddr).
+// and X/Y/W/H are therefore derived. The caller names every such tile by its
+// key either way; see pluginhost.tileAddr.
 type ExtTile struct {
 	ID          int64
 	Key         string
@@ -98,12 +84,10 @@ type ExtTile struct {
 	ChildGridID int64
 }
 
-// DefaultGridWidth is the auto-place wrap width for first-sighted
-// entries with no hint.
+// DefaultGridWidth is the auto-place wrap width for an entry with no hint.
 const DefaultGridWidth int64 = 8
 
-// ContextID resolves a context key to its minted grid id, minting on
-// first sight.
+// ContextID resolves a context key to its grid id, minting on first sight.
 func (n *Namespace) ContextID(key string) (int64, error) {
 	var id int64
 	err := n.s.db.QueryRow(`SELECT id FROM grids WHERE ns = ? AND context_key = ?`, n.ns, key).Scan(&id)
@@ -132,9 +116,9 @@ func (n *Namespace) ContextKey(gridID int64) (string, error) {
 	return key, err
 }
 
-// TileKey resolves a minted tile id to its (grid id, plugin key).
-// Retired rows still resolve — a dangling reference stays interpretable;
-// the caller decides what retirement means (reads: gone).
+// TileKey resolves a minted tile id to its (grid id, plugin key). A retired
+// row still resolves, so a dangling reference stays interpretable; the caller
+// decides what retirement means.
 func (n *Namespace) TileKey(tileID int64) (gridID int64, key string, tombstoned bool, err error) {
 	var tomb int64
 	err = n.s.db.QueryRow(`SELECT grid_id, key, tombstoned FROM tiles WHERE id = ? AND ns = ?`, tileID, n.ns).
@@ -145,18 +129,14 @@ func (n *Namespace) TileKey(tileID int64) (gridID int64, key string, tombstoned 
 	return gridID, key, tomb != 0, err
 }
 
-// Overlay joins one plugin listing with the stored arrangement and WRITES
-// NOTHING. It is the one join: minted rows contribute their id, placement and
-// framing; the listing contributes every content fact (label, kind, url,
-// serves-page), so a renamed file needs no writeback; and an entry with no row
-// is answered at a placement derived here, by the same algorithm Mint stores
-// when the entry is first touched. Rows the listing does not mention — a dark
-// source, or a non-authoritative pass — follow at the end, answering from
-// their stored snapshot, which is what makes a touched tile survive an outage.
-//
-// gridID may be 0: a context nobody has touched has no grid row, so there is
-// nothing to overlay and every entry is derived. The order is the listing's,
-// then the unmatched rows by id.
+// Overlay joins one plugin listing with the stored arrangement and writes
+// nothing. Minted rows contribute their id, placement and framing; the listing
+// contributes every content fact, so a renamed file needs no writeback; and an
+// entry with no row is answered at a placement derived here, by the algorithm
+// Mint stores when the entry is first touched. Rows the listing does not
+// mention follow at the end, answering from their stored snapshot, which is
+// what makes a touched tile survive an outage. gridID may be 0: a context
+// nobody has touched has no grid row, so every entry is derived.
 func (n *Namespace) Overlay(gridID int64, entries []Entry) ([]ExtTile, error) {
 	rows := map[string]ExtTile{}
 	var stored []ExtTile
@@ -170,9 +150,8 @@ func (n *Namespace) Overlay(gridID int64, entries []Entry) ([]ExtTile, error) {
 			rows[r.Key] = r
 		}
 	}
-	// Occupancy: the full footprints of every minted row. A derived
-	// placement flows around what the user has arranged; a row never moves
-	// because its neighbours changed.
+	// A derived placement flows around what the user has arranged; a row
+	// never moves because its neighbours changed.
 	occupied := map[[2]int64]bool{}
 	for _, r := range stored {
 		occupyRect(occupied, r.X, r.Y, r.W, r.H)
@@ -181,18 +160,15 @@ func (n *Namespace) Overlay(gridID int64, entries []Entry) ([]ExtTile, error) {
 	matched := map[string]bool{}
 	out := make([]ExtTile, 0, len(entries)+len(stored))
 	for _, e := range entries {
-		// EVERY entry takes a slot in the flow, minted or not, and a minted
-		// row then overrides its own slot. That is what keeps a neighbour
-		// still: if a minted entry gave up its slot, every entry after it in
-		// the listing would shift by a cell the moment the user dragged it,
-		// and dragging one tile would rearrange the room. It leaves a hole
-		// where the tile used to be, which is exactly what dragging a tile
-		// out of a row of tiles does.
+		// Every entry takes a slot in the flow, minted or not, and a minted
+		// row then overrides its own slot. If a minted entry gave up its
+		// slot, every entry after it would shift by a cell the moment the
+		// user dragged it, and dragging one tile would rearrange the room.
 		x, y, w, h := derivePlacement(occupied, &cur, e.Hint)
 		if r, ok := rows[e.Key]; ok {
 			matched[e.Key] = true
 			// The row owns identity, placement and framing; the listing owns
-			// the content facts, read fresh every time.
+			// the content facts.
 			r.Kind, r.Label = entryKind(e), e.Label
 			out = append(out, r)
 			continue
@@ -217,10 +193,10 @@ func entryKind(e Entry) string {
 	return e.Kind
 }
 
-// derivePlacement is the auto-place rule, and the ONLY one: a hint seeds a
-// first placement, otherwise the entry takes the next free cell in reading
-// order. Overlay derives with it and Mint stores exactly what Overlay derived,
-// so touching a tile never moves it.
+// derivePlacement is the one auto-place rule: a hint seeds a first placement,
+// otherwise the entry takes the next free cell in reading order. Overlay
+// derives with it and Mint stores what Overlay derived, so touching a tile
+// never moves it.
 func derivePlacement(occupied map[[2]int64]bool, cur *cursor, hint *Hint) (x, y, w, h int64) {
 	w, h = 1, 1
 	if hint != nil {
@@ -240,10 +216,9 @@ func derivePlacement(occupied map[[2]int64]bool, cur *cursor, hint *Hint) (x, y,
 
 // Mint writes the row an entry has earned: the id, the placement it was
 // already being answered at, and a snapshot of the content facts for the
-// outage case. It is the one INSERT, called once per entry, by the one caller
-// that decides a durable fact has been made (pluginhost.Adapter.mint). An
-// entry that already has a live row returns that row's id and writes nothing,
-// so minting is idempotent.
+// outage case. It is the one INSERT, called by pluginhost.Adapter.mint when a
+// durable fact has been made. An entry that already has a live row returns
+// that row's id and writes nothing.
 func (n *Namespace) Mint(gridID int64, e Entry, childGridID int64, x, y, w, h int64) (int64, error) {
 	if id, ok, err := n.LiveTileID(gridID, e.Key); err != nil || ok {
 		return id, err
@@ -267,17 +242,13 @@ func (n *Namespace) Mint(gridID int64, e Entry, childGridID int64, x, y, w, h in
 	return res.LastInsertId()
 }
 
-// Refresh updates the CONTENT SNAPSHOT a row keeps — the kind, the label, the
-// address — to what the listing just said. The snapshot is not what a listed
-// entry reads by (Overlay takes those facts from the entry itself); it is only
-// what the row answers with when the source cannot be reached, so this keeps
-// the outage answer current with the last thing the source actually said.
-//
-// It writes only where a value genuinely differs, so a steady listing writes
-// nothing at all and a renamed file costs exactly one UPDATE. child_grid_id is
-// deliberately not refreshed: it is a stored REFERENCE, and re-pointing one
-// because a listing came back differently is how a link starts naming
-// something the user never linked.
+// Refresh updates the content snapshot a row keeps to what the listing just
+// said. The snapshot is only what the row answers with when the source cannot
+// be reached, since Overlay takes a listed entry's facts from the entry
+// itself. It writes only where a value differs, so a steady listing writes
+// nothing. child_grid_id is deliberately not refreshed: it is a stored
+// reference, and re-pointing one because a listing came back differently is
+// how a link starts naming something the user never linked.
 func (n *Namespace) Refresh(gridID int64, entries []Entry) error {
 	if gridID == 0 || len(entries) == 0 {
 		return nil
@@ -308,10 +279,9 @@ func (n *Namespace) Refresh(gridID int64, entries []Entry) error {
 	return nil
 }
 
-// Sweep retires the rows of a grid whose keys an AUTHORITATIVE listing did not
+// Sweep retires the rows of a grid whose keys an authoritative listing did not
 // mention: the source says they are gone, so the ids they minted retire and
-// never come back. Only rows are swept — an untouched entry has nothing to
-// sweep, it simply stops appearing. Nothing is written when nothing vanished.
+// never come back. An untouched entry has nothing to sweep.
 func (n *Namespace) Sweep(gridID int64, present map[string]bool) error {
 	rows, err := n.tiles(gridID)
 	if err != nil {
@@ -328,8 +298,8 @@ func (n *Namespace) Sweep(gridID int64, present map[string]bool) error {
 	return nil
 }
 
-// LookupContext resolves a context key to its grid row id WITHOUT minting one:
-// the read half of ContextID, for the join, which must not write.
+// LookupContext is ContextID without the mint, for the join, which must not
+// write.
 func (n *Namespace) LookupContext(key string) (int64, bool, error) {
 	var id int64
 	err := n.s.db.QueryRow(`SELECT id FROM grids WHERE ns = ? AND context_key = ?`, n.ns, key).Scan(&id)
@@ -342,9 +312,8 @@ func (n *Namespace) LookupContext(key string) (int64, bool, error) {
 	return id, true, nil
 }
 
-// LiveTileID resolves (grid, plugin key) to the live row minted for it, if
-// there is one. It is TileKey's inverse and the join's canonicalization: an
-// entry with a row is named by that row's id, never by its key.
+// LiveTileID is TileKey's inverse: an entry with a row is named by that row's
+// id, never by its key.
 func (n *Namespace) LiveTileID(gridID int64, key string) (int64, bool, error) {
 	if gridID == 0 {
 		return 0, false, nil
@@ -383,8 +352,8 @@ func (n *Namespace) tiles(gridID int64) ([]ExtTile, error) {
 	return out, rows.Err()
 }
 
-// exec runs a single-row UPDATE on a LIVE row of this namespace, mapping
-// zero rows to ErrNotFound (a retired row refuses mutation).
+// exec runs a single-row UPDATE on a live row of this namespace, mapping zero
+// rows to ErrNotFound: a retired row refuses mutation.
 func (n *Namespace) exec(set string, tileID int64, args ...any) error {
 	args = append(args, tileID, n.ns)
 	res, err := n.s.db.Exec(`UPDATE tiles SET `+set+` WHERE id = ? AND ns = ? AND tombstoned = 0`, args...)
@@ -401,15 +370,13 @@ func (n *Namespace) exec(set string, tileID int64, args ...any) error {
 	return nil
 }
 
-// Place is the placement writeback: (x, y, w, h), same grid always.
-// Unversioned.
+// Place is the placement writeback; the grid never changes.
 func (n *Namespace) Place(tileID, x, y, w, h int64) error {
 	return n.exec(`x = ?, y = ?, w = ?, h = ?`, tileID, x, y, w, h)
 }
 
-// SetFraming persists framing into this namespace's memory — the ONE
-// writer of the one shape (framing.go), tile or root. Exactly one of
-// tileID and rootGridID is non-zero.
+// SetFraming persists framing into this namespace's memory, the one writer of
+// the one shape (framing.go). Exactly one of tileID and rootGridID is set.
 func (n *Namespace) SetFraming(tileID, rootGridID int64, f rpc.Framing) error {
 	k, err := updateFraming(context.Background(), n.s.db, n.ns, tileID, rootGridID, f, n.s.now().UnixNano())
 	if err != nil {
@@ -435,14 +402,14 @@ func (n *Namespace) SetContentZoom(tileID int64, zoom float64) error {
 	return n.exec(`content_zoom = ?`, tileID, zoom)
 }
 
-// Retire tombstones one tile row directly — the delete-gesture path.
+// Retire tombstones one tile row: the delete-gesture path.
 func (n *Namespace) Retire(tileID int64) error {
 	return n.exec(`tombstoned = 1`, tileID)
 }
 
-// RootFraming reads a ROOT grid's framing — the row that owns it when
-// there is no doorway tile. ok=false = never visited (no row value, or a
-// zero zoom: the one convention framing.go documents).
+// RootFraming reads a root grid's framing, the row that owns it when there is
+// no doorway tile. ok=false means never visited: no value, or a zero zoom, the
+// convention framing.go documents.
 func (n *Namespace) RootFraming(gridID int64) (f rpc.Framing, ok bool, err error) {
 	var ncx, ncy, nzoom sql.NullFloat64
 	err = n.s.db.QueryRow(`SELECT root_cx, root_cy, root_zoom FROM grids WHERE id = ? AND ns = ?`, gridID, n.ns).

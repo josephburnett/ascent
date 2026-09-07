@@ -13,14 +13,12 @@ import (
 // searchDefaultLimit caps a query that doesn't bring its own limit.
 const searchDefaultLimit = 20
 
-// Search implements home's side of the one find verb. The shared grammar,
-// rpc.ParseSearchQuery, decides the mode: id: is the exact locate, the tile
-// plus its containing-well chain, and free text matches tile names (alt_text)
-// and text bodies case-insensitively, with names ranking above bodies. Every
-// result is a place: a tile plus its path. Ephemeral scratch-grid tiles never
-// surface, because a result is a promise you can go there and they die on
-// ascent. A query that matches nothing returns empty results, never an
-// error.
+// Search implements home's side of the one find verb. rpc.ParseSearchQuery
+// decides the mode: id: is the exact locate, and free text matches names and
+// text bodies case-insensitively, names ranking above bodies. Every result is
+// a tile plus its path. Scratch-grid tiles never surface, because a result is
+// a promise you can go there and they die on ascent. Matching nothing returns
+// empty results, never an error.
 func (s *Store) Search(ctx context.Context, query string, limit int) ([]*gridwellv1.SearchResult, error) {
 	if limit <= 0 {
 		limit = searchDefaultLimit
@@ -65,8 +63,7 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]*gridwel
 		return nil
 	}
 
-	// Name hits first, through instr rather than LIKE, so there is no
-	// pattern-escaping trap.
+	// instr rather than LIKE, so there is no pattern-escaping trap.
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, alt_text FROM tiles
 		 WHERE ns = '' AND alt_text != '' AND instr(lower(alt_text), ?) > 0
@@ -100,7 +97,6 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]*gridwel
 		}
 	}
 
-	// Body hits: the text blob a text tile owns.
 	rows, err = s.db.QueryContext(ctx,
 		`SELECT t.id, CAST(b.data AS TEXT) FROM tiles t
 		 JOIN blobs b ON t.blob_id = b.id
@@ -133,9 +129,8 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]*gridwel
 	return out, nil
 }
 
-// searchScratchGrid resolves the scratch grid's unqualified id string for the
-// surface filter. "" matches no row's grid, and is returned when the id is
-// unresolvable.
+// searchScratchGrid resolves the scratch grid's unqualified id for the surface
+// filter. "" matches no row's grid, and is returned when it is unresolvable.
 func (s *Store) searchScratchGrid(ctx context.Context) string {
 	id, err := s.ScratchGridID(ctx)
 	if err != nil {
@@ -165,9 +160,8 @@ func searchSnippet(text, needle string) string {
 }
 
 // wellChainFor returns the containing-well chain for tile t, outermost first,
-// and empty for a tile at a root. The upward walk is the same server-derived
-// parent chain wellWouldContainItself trusts: each interior child grid hangs
-// off exactly one well by construction.
+// and empty for a tile at a root. It is the same server-derived parent chain
+// wellWouldContainItself trusts.
 func (s *Store) wellChainFor(ctx context.Context, t *gridwellv1.Tile) ([]*gridwellv1.Tile, error) {
 	grid, err := parseID(t.GridId)
 	if err != nil {
@@ -197,7 +191,6 @@ func (s *Store) wellChainFor(ctx context.Context, t *gridwellv1.Tile) ([]*gridwe
 	}
 }
 
-// reverse flips the collected leaf-first walk into outermost-first order.
 func reverse(ts []*gridwellv1.Tile) {
 	for i, j := 0, len(ts)-1; i < j; i, j = i+1, j-1 {
 		ts[i], ts[j] = ts[j], ts[i]

@@ -19,11 +19,8 @@ func blobExists(t *testing.T, s *Store, id int64) bool {
 	return n > 0
 }
 
-// TestCloneShellCarriesScreenshot: a PTY can't be forked, so cloning a
-// shell with a frozen preview must carry the preview blob (the screenshot)
-// to the clone and bump that blob's refcount. Regression: CloneTile had no
-// shell case, so the clone landed with preview_blob_id NULL and the blob
-// refcount under-counted.
+// A PTY cannot be forked, so cloning a shell with a frozen preview carries the
+// preview blob to the clone and bumps that blob's refcount.
 func TestCloneShellCarriesScreenshot(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
@@ -59,10 +56,8 @@ func TestCloneShellCarriesScreenshot(t *testing.T) {
 	verifyRefcounts(t, s)
 }
 
-// TestCloneCopiesShellPreviewBlob: cloning a well whose child grid holds a
-// shell-with-preview deep-copies the shell row, which references the same
-// immutable preview blob, so its refcount must rise to 2. cloneSubtree must
-// bump the preview blob for every copied tile that holds one.
+// cloneSubtree bumps the preview blob for every copied tile that holds one, so
+// a deep copy of a shell-with-preview leaves that blob at refcount 2.
 func TestCloneCopiesShellPreviewBlob(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)

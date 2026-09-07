@@ -285,10 +285,8 @@ func TestSetFraming(t *testing.T) {
 	}
 }
 
-// TestFramingKeepsClonesAtSharedVersion: re-framing one clone of a well
-// (descend, pan/zoom, ascend) must not bump the version, so the clones
-// still satisfy "share a version until one is edited" even though their
-// stored framing has diverged. A real content edit is what bumps it.
+// Re-framing one clone of a well must not bump the version, so the clones
+// still share a version even though their stored framing has diverged.
 func TestFramingKeepsClonesAtSharedVersion(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)
@@ -444,11 +442,9 @@ func TestDeleteTileCascadesNonEmptyWell(t *testing.T) {
 	}
 }
 
-// TestDeleteTileIgnoresStaleClaim: the delete gesture is the user's, on a
-// tile they can see, and it is recoverable (the row moves to the trash). A
-// version that moved under it — a page title capture on the very tile being
-// discarded — must not turn the gesture into an error the user has to
-// re-issue. There is no claim.
+// The delete gesture is the user's, on a tile they can see, and recoverable,
+// so a version that moved under it must not turn the gesture into an error the
+// user has to re-issue. There is no claim.
 func TestDeleteTileIgnoresStaleClaim(t *testing.T) {
 	s := newTestStore(t)
 	root := rootID(t, s)

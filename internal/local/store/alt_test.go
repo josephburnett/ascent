@@ -5,10 +5,8 @@ import (
 	"testing"
 )
 
-// A user-set name, from the rename gesture, owns alt_text: the automatic
-// captures — a url's page title on freeze, a shell's foreground command on
-// detach — must never overwrite it. The latch is the alt_user column, and
-// SetTileAlt's user flag is its only writer.
+// A user-set name owns alt_text, and an automatic capture must never overwrite
+// it. The latch is the alt_user column, written only by SetTileAlt's user flag.
 
 func TestUserRenameWinsOverCaptures(t *testing.T) {
 	s := newTestStore(t)
