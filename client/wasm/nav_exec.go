@@ -8,9 +8,8 @@ package main
 // Nothing here decides anything; client/nav does.
 
 import (
-	"context"
-
 	"github.com/josephburnett/gridwell/client/errsurface"
+	"github.com/josephburnett/gridwell/client/inflight"
 	"github.com/josephburnett/gridwell/client/nav"
 	"github.com/josephburnett/gridwell/client/transition"
 )
@@ -266,7 +265,13 @@ func (a *App) navAwait(e nav.Effect) {
 	case nav.RequestGetTile:
 		id := e.Request.ID
 		go func() {
-			tile, err := a.cl.GetTile(context.Background(), id)
+			// Claim-free — the machine waits on its own answer — but bounded
+			// like every other client RPC: a read the network swallows would
+			// leave the continuation owed forever, and the gesture that asked
+			// stuck with nothing said.
+			ctx, cancel := inflight.Bounded()
+			defer cancel()
+			tile, err := a.cl.GetTile(ctx, id)
 			if err != nil {
 				// The continuation retires either way, so a leaf whose
 				// reference no longer resolves leaves nothing owed. Whether
@@ -310,8 +315,11 @@ func (a *App) navAwait(e nav.Effect) {
 		go func() {
 			// The bytes go straight back to the machine, which owns the codec
 			// call: a layout is not a document, so it never seeds the text
-			// overlay and is not cached as a body.
-			data, _, _, err := a.cl.ReadContent(context.Background(), id)
+			// overlay and is not cached as a body. Claim-free and bounded,
+			// like the GetTile above.
+			ctx, cancel := inflight.Bounded()
+			defer cancel()
+			data, _, _, err := a.cl.ReadContent(ctx, id)
 			if err != nil {
 				a.runNav(a.nav.Resume(tok, nav.Result{Err: rpcErrText(err)}, a.navWorldCommon()))
 				return
@@ -321,7 +329,12 @@ func (a *App) navAwait(e nav.Effect) {
 	case nav.RequestSearch:
 		req := e.Request
 		go func() {
-			res, err := a.cl.Search(context.Background(), req.Query, req.Scope, int32(req.Limit))
+			// Claim-free and bounded: a search the network swallows resolves
+			// as "no result" on the deadline, which is the same answer the
+			// machine already handles, instead of a walk that never resumes.
+			ctx, cancel := inflight.Bounded()
+			defer cancel()
+			res, err := a.cl.Search(ctx, req.Query, req.Scope, int32(req.Limit))
 			if err != nil || len(res) == 0 {
 				a.runNav(a.nav.Resume(tok, nav.Result{}, a.navWorldCommon()))
 				return

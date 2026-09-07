@@ -10,6 +10,7 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/caps"
 	"github.com/josephburnett/gridwell/client/errsurface"
+	"github.com/josephburnett/gridwell/client/inflight"
 	"github.com/josephburnett/gridwell/client/pane"
 	"github.com/josephburnett/gridwell/client/shellconn"
 	"github.com/josephburnett/gridwell/client/urlnorm"
@@ -164,7 +165,14 @@ func (a *App) probeShellSessionAlive(tileID string, then func(alive bool)) {
 	}
 	a.shellAliveProbing[tileID] = waiters
 	go func() {
-		res, err := a.cl.ShellSessionAlive(context.Background(), &rpc.ShellSessionAliveRequest{TileID: tileID})
+		// Bounded, and the probe's own dedupe entry depends on it: the
+		// waiters below are released when this returns, so a probe the
+		// network swallows would hold the entry for the life of the page and
+		// every later probe would be deduped away against it — the refresh
+		// control never appearing, a restore never attaching, nothing said.
+		ctx, cancel := inflight.Bounded()
+		defer cancel()
+		res, err := a.cl.ShellSessionAlive(ctx, &rpc.ShellSessionAliveRequest{TileID: tileID})
 		// Everyone parked on this flight, then clear it so a future
 		// probe can retry.
 		done := a.shellAliveProbing[tileID]

@@ -892,8 +892,17 @@ func (a *App) bootstrap() {
 	backoff := time.Second
 	var plugins rpc.PluginList
 	for {
-		var err error
-		plugins, err = a.cl.Handshake(context.Background())
+		// Bounded, so the backoff loop is what it says it is: an unbounded
+		// handshake the network swallows never returns, so there is no next
+		// attempt and no notice — the landing page stays empty and silent
+		// until a manual reload.
+		err := func() error {
+			ctx, cancel := inflight.Bounded()
+			defer cancel()
+			var err error
+			plugins, err = a.cl.Handshake(ctx)
+			return err
+		}()
 		if err == nil {
 			a.resolveErr("rpc:Handshake")
 			break
