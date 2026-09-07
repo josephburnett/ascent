@@ -73,7 +73,7 @@ func paletteItemGhostNode(item paletteItem) *gridwellv1.Tile {
 	if pr, ok := primitiveFor(item.primitive); ok {
 		return pr.ghost
 	}
-	return nil
+	return &gridwellv1.Tile{}
 }
 
 // clickTemplate runs the bare-click behavior of the palette item a template

@@ -57,13 +57,15 @@ func (m *Machine) descend(g Gesture, w World) Plan {
 	// settle window, while the viewport still belongs to the place it
 	// describes. One place asks, so no door can forget.
 	pl.add(Effect{Kind: EffFlushFraming})
+	// The getter, so a gesture with no door names no kind and plans nothing,
+	// rather than dereferencing one.
 	switch {
-	case rpc.IsWorkspaceKind(g.Door.Kind):
+	case rpc.IsWorkspaceKind(g.Door.GetKind()):
 		pl.add(Effect{Kind: EffEnterLevel, PaneID: p.ID, TileID: g.Door.Id,
 			Tile: g.Door})
-	case rpc.IsContentDescentKind(g.Door.Kind):
+	case rpc.IsContentDescentKind(g.Door.GetKind()):
 		m.descendContent(p, g.Door, w, &pl)
-	case rpc.IsWellKind(g.Door.Kind):
+	case rpc.IsWellKind(g.Door.GetKind()):
 		m.descendGrid(p, g.Door, w, &pl)
 	}
 	return pl.plan()

@@ -506,8 +506,9 @@ func (a *App) onMouseDown(this js.Value, args []js.Value) any {
 		curScreenY:    sy,
 		// Default source = the focused pane's leaf grid; overridden
 		// below if we land on a child preview tile.
-		srcGridID:   a.gridIDForPane(p),
-		srcCellSize: parentCell,
+		srcGridID:    a.gridIDForPane(p),
+		srcCellSize:  parentCell,
+		snapshotTile: &gridwellv1.Tile{},
 	}
 	if n != nil {
 		// "Pull out of well" gesture: cursor is on an open well; if a

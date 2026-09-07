@@ -41,7 +41,7 @@ type Input struct {
 	Descent bool
 	// URLDescent is whether that tile presents as web content, which is a url
 	// tile or a serves_page tile (rpc.WebContent).
-	URLDescent bool
+	URLDescent   bool
 	ShellDescent bool
 	// URLLive is whether a native url view is placed on this pane.
 	URLLive bool
