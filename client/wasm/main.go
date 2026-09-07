@@ -750,7 +750,10 @@ type dragState struct {
 	// (dragdrop.Intent.Creates) commits only through the right-button release
 	// path; the left-button move-commit refuses it, so a stray non-right
 	// release cannot silently turn a copy or a link into a move.
-	intent        dragdrop.Intent
+	intent dragdrop.Intent
+	// snapshotTile is never nil: a press that grabbed no tile — a pan, a
+	// bare click — carries an empty row, so the drop rules read a zero
+	// footprint instead of dereferencing nothing.
 	snapshotTile  *gridwellv1.Tile
 	originScreenX float64
 	originScreenY float64
