@@ -11,16 +11,15 @@ import (
 	"github.com/josephburnett/gridwell/internal/node"
 )
 
-// backupTestHome builds a real home the way serve does — node.BuildConfig
-// mints the id and creates the home store — and returns the home path and
-// its root grid id.
+// backupTestHome builds a real home the way serve does and returns the home
+// path and its root grid id.
 func backupTestHome(t *testing.T) (home string, rootID string) {
 	t.Helper()
 	home = t.TempDir()
 	t.Setenv("GRIDWELL_HOME", home)
 	cfgPath := filepath.Join(home, "server.yaml")
-	// A plugin entry that has never served, so it has no memory rows yet.
-	// A backup must not abort on it.
+	// A plugin that has never served has no memory rows; a backup must not
+	// abort on it.
 	if err := os.WriteFile(cfgPath, []byte("plugins:\n  - kind: gitlab\n    label: todos\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -39,9 +38,8 @@ func backupTestHome(t *testing.T) (home string, rootID string) {
 	return home, rootID
 }
 
-// TestBackupSnapshotsHome: the backup mirrors the home layout, and the
-// copied database opens through the full store contract — application_id,
-// user_version, schema check — with the same identity, so a restored home is
+// The backup mirrors the home layout and the copied database opens through
+// the full store contract with the same identity, so a restored home is
 // byte-meaningful, not just byte-shaped.
 func TestBackupSnapshotsHome(t *testing.T) {
 	home, rootID := backupTestHome(t)
@@ -82,9 +80,7 @@ func TestBackupSnapshotsHome(t *testing.T) {
 	_ = home
 }
 
-// TestBackupRefusesOverwrite: a destination already holding a backup is
-// refused. Overwriting a previous snapshot must be the user's explicit
-// call.
+// Overwriting a previous snapshot must be the user's explicit call.
 func TestBackupRefusesOverwrite(t *testing.T) {
 	_, _ = backupTestHome(t)
 	dest := filepath.Join(t.TempDir(), "snap")
@@ -96,7 +92,7 @@ func TestBackupRefusesOverwrite(t *testing.T) {
 	}
 }
 
-// TestBackupUsage: no args is a usage error, not a panic or a default dest.
+// No args is a usage error, not a panic or a default dest.
 func TestBackupUsage(t *testing.T) {
 	if code := RunBackup(nil); code != 2 {
 		t.Errorf("no-arg exit = %d, want 2", code)

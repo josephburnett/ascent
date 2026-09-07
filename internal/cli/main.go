@@ -5,8 +5,7 @@ import (
 	"os"
 )
 
-// Main is the CLI dispatch: serve, status, backup, clear-browser-data,
-// version. Returns the process exit code.
+// Main dispatches a subcommand and returns the process exit code.
 func Main(args []string) int {
 	if len(args) < 1 {
 		usage()

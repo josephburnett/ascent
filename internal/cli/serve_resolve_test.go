@@ -9,8 +9,8 @@ import (
 	"github.com/josephburnett/gridwell/internal/config"
 )
 
-// Every kind is a plugin, and every plugin is a subprocess: each entry
-// resolves to a gridwell-plugin-<kind> binary, and a missing one is named.
+// Each plugin entry resolves to a gridwell-plugin-<kind> binary, and a
+// missing one is named.
 func TestKindsResolvePluginBinaries(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "gridwell-plugin-fs"), []byte("#!/bin/sh\n"), 0o755); err != nil {
@@ -37,11 +37,9 @@ func TestKindsResolvePluginBinaries(t *testing.T) {
 	}
 }
 
-// What a built binary looks like on disk is two platform facts, and both are
-// pure functions of GOOS so the Windows answers are checkable from a Linux
-// dev box — the release builds for Windows and nobody runs the suite there.
-// Get either wrong and every plugin is unresolvable on the Windows artifact,
-// which no test on this host would otherwise see.
+// The two platform facts about a built binary are pure functions of GOOS, so
+// the Windows answers are checkable from a Linux dev box. Get either wrong
+// and every plugin is unresolvable on the Windows artifact.
 func TestBinaryShapePerPlatform(t *testing.T) {
 	for _, tc := range []struct {
 		goos   string

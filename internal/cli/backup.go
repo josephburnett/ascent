@@ -14,19 +14,13 @@ import (
 )
 
 // RunBackup snapshots a whole Gridwell home — the database plus the loose
-// durable files config.DurableFiles names — into a destination directory,
-// from which a home can be reconstituted by plain copy.
+// durable files config.DurableFiles names — into a destination directory.
 //
 //	gridwell backup <dest>
 //
-// The database is copied with SQLite's VACUUM INTO, which produces a
-// consistent, compacted snapshot even while a live server holds the file
-// under WAL, so no downtime is needed. The layout mirrors the home
-// (<dest>/server.yaml, <dest>/gridwell.db), so restore is deliberately
-// dumb: stop the server, copy the backup's contents over the home or point
-// GRIDWELL_HOME at it, and start. The database's own open-time contract —
-// application_id and user_version, in internal/dbformat — re-verifies
-// integrity on first use of a restored copy.
+// VACUUM INTO is consistent while a live server holds the file under WAL, so
+// no downtime is needed, and the layout mirrors the home, so restore is a
+// plain copy over the home or a GRIDWELL_HOME pointed at the backup.
 func RunBackup(args []string) int {
 	if len(args) != 1 || strings.HasPrefix(args[0], "-") {
 		fmt.Fprintln(os.Stderr, "usage: gridwell backup <dest-dir>")
@@ -62,10 +56,9 @@ func RunBackup(args []string) int {
 	return 0
 }
 
-// backupHome writes the snapshot. It is split from RunBackup so the whole
-// procedure is unit-testable against a synthetic home. The destination must
-// not already contain a Gridwell backup: deleting or overwriting an
-// existing snapshot is the user's explicit call.
+// backupHome writes the snapshot, split from RunBackup so the procedure is
+// unit-testable. A destination that already holds a backup is refused:
+// overwriting one is the user's explicit call.
 func backupHome(home, cfgPath string, cfg *config.ServerConfig, dest string) error {
 	if _, err := os.Stat(filepath.Join(dest, "server.yaml")); err == nil {
 		return fmt.Errorf("destination %s already holds a backup (server.yaml exists); choose a fresh directory", dest)
@@ -91,14 +84,12 @@ func backupHome(home, cfgPath string, cfg *config.ServerConfig, dest string) err
 	if cfg.ID == "" {
 		return fmt.Errorf("%s names no id — the home has never served; nothing to back up", cfgPath)
 	}
-	// One database: home content, every plugin's memory, the connections.
-	// The source cache, cache.db, is disposable and stays out.
+	// cache.db is disposable and stays out.
 	if err := snap(config.DBFile(home), config.DBFile(dest), true); err != nil {
 		return err
 	}
 
-	// The loose durable files, server.yaml last: it is the completion
-	// marker.
+	// server.yaml last: it is the completion marker.
 	files := config.DurableFiles(home)
 	for i := len(files) - 1; i >= 0; i-- {
 		src := files[i]
@@ -119,9 +110,8 @@ func backupHome(home, cfgPath string, cfg *config.ServerConfig, dest string) err
 	return nil
 }
 
-// vacuumInto opens src read-only and writes a consistent, compacted snapshot
-// to dst through SQLite's VACUUM INTO. It is safe against a
-// concurrently-writing server under WAL, because the snapshot is a
+// vacuumInto writes a consistent compacted snapshot of src to dst. It is
+// safe against a concurrently-writing server, because VACUUM INTO is a
 // point-in-time transaction.
 func vacuumInto(src, dst string) error {
 	db, err := sql.Open("sqlite", src)
@@ -131,7 +121,7 @@ func vacuumInto(src, dst string) error {
 	defer db.Close()
 	db.SetMaxOpenConns(1)
 	// VACUUM INTO refuses to overwrite, and the fresh-directory check above
-	// makes a pre-existing dst a real error worth surfacing verbatim.
+	// makes a pre-existing dst a real error.
 	if _, err := db.Exec(`VACUUM INTO ?`, dst); err != nil {
 		return fmt.Errorf("vacuum into %s: %w", dst, err)
 	}
