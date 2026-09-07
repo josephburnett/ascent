@@ -14,18 +14,15 @@ import (
 // A URL tile in the grid view always shows its cached preview JPEG, written
 // back at the ascent freeze. Live-tab presence is not tile state.
 
-// drawImageContain draws img into the (x,y,w,h) rect with object-fit: contain
-// semantics: black bars fill the rect, then the image is uniformly scaled to
-// fit and centered, so bars remain on at most one axis. A preview is always
-// shown whole, never cover-cropped, so a radically different aspect ratio
-// still reads as what it is. Every raster preview draw flows through here.
+// drawImageContain draws img with object-fit: contain semantics. A preview is
+// always shown whole, never cover-cropped, so a radically different aspect
+// ratio still reads as what it is.
 func drawImageContain(c js.Value, img js.Value, x, y, w, h float64) {
 	c.Set("fillStyle", "#000")
 	c.Call("fillRect", x, y, w, h)
 	iw := img.Get("naturalWidth").Float()
 	ih := img.Get("naturalHeight").Float()
-	// The fit rect is the pure preview.ContainDstRect; a degenerate
-	// image/dest falls back to a stretch draw.
+	// A degenerate image or dest falls back to a stretch draw.
 	dx, dy, dw, dh, ok := preview.ContainDstRect(iw, ih, x, y, w, h)
 	if !ok {
 		c.Call("drawImage", img, x, y, w, h)
@@ -34,17 +31,15 @@ func drawImageContain(c js.Value, img js.Value, x, y, w, h float64) {
 	c.Call("drawImage", img, dx, dy, dw, dh)
 }
 
-// pagePreviewBlobID is the cache and fetch key for a serves_page tile's
-// preview. Page tiles have no preview_blob_id: the owning plugin derives the
-// frozen face from the content itself (fs serves a thumbnail of the file), so
-// there is no server-side generation counter to key freshness by. A fixed
-// sentinel means fetch once per session and keep until reload.
+// pagePreviewBlobID is the cache key for a serves_page tile's preview. Page
+// tiles have no preview_blob_id, because the owning plugin derives the frozen
+// face from the content itself, so there is no generation counter to key
+// freshness by. A fixed sentinel fetches once per session.
 const pagePreviewBlobID = -1
 
-// previewBlobKey resolves the urlPreview cache key for a tile: the stored
-// preview blob id when there is one, the page sentinel for a serves_page
-// tile, 0 (= no preview, no fetch) otherwise. The one keying rule for every
-// preview draw and fetch.
+// previewBlobKey resolves the urlPreview cache key for a tile, 0 meaning no
+// preview and no fetch. The one keying rule for every preview draw and
+// fetch.
 func previewBlobKey(n *gridwellv1.Tile) int64 {
 	if n.PreviewBlobId != 0 {
 		return n.PreviewBlobId
@@ -55,13 +50,9 @@ func previewBlobKey(n *gridwellv1.Tile) int64 {
 	return 0
 }
 
-// drawPreviewFace paints a content tile's frozen face into (x, y, w, h): the
-// kind's fill, then the cached preview image letterboxed whole into the rect.
-// blobID is the tile's preview key — previewBlobKey for anything with a
-// server-side generation counter, the raw PreviewBlobID for a shell. fallback
-// runs instead when nothing is cached: it kicks the fetch and paints whatever
-// stands in meanwhile. One owner of "cached preview or stand-in", so no tile
-// kind can drift into its own answer.
+// drawPreviewFace paints a content tile's frozen face, running fallback when
+// nothing is cached. One owner of "cached preview or stand-in", so no tile
+// kind drifts into its own answer.
 func (a *App) drawPreviewFace(n *gridwellv1.Tile, x, y, w, h float64, fill string, blobID int64, fallback func()) {
 	a.cctx.Set("fillStyle", fill)
 	a.cctx.Call("fillRect", x, y, w, h)
@@ -74,9 +65,8 @@ func (a *App) drawPreviewFace(n *gridwellv1.Tile, x, y, w, h float64, fill strin
 	fallback()
 }
 
-// drawPreviewPlaceholder paints the muted monospace name a grid tile shows
-// while its preview image is still loading, or when the plugin serves none.
-// Nothing on a tile too small to read a label.
+// drawPreviewPlaceholder paints the name a grid tile shows while its preview
+// loads, and nothing on a tile too small to read a label.
 func (a *App) drawPreviewPlaceholder(label string, x, y, w, h float64) {
 	if w <= 20 || h <= 20 {
 		return
@@ -86,23 +76,18 @@ func (a *App) drawPreviewPlaceholder(label string, x, y, w, h float64) {
 	a.cctx.Call("fillText", label, x+8, y+18, w-16)
 }
 
-// drawURLTileInPane renders a URL tile that is the pane's current place: the
-// user descended into it. The pane's inner rect (x, y, w, h) gets the cached
-// preview image letterboxed to fit. While a live view is attached, mirror
-// frames flow into the same urlPreview cache, so this draw call reflects
-// them.
+// drawURLTileInPane renders the URL tile a pane is descended into. Mirror
+// frames from a live view flow into the same urlPreview cache, so this draw
+// reflects them.
 func (a *App) drawURLTileInPane(n *gridwellv1.Tile, x, y, w, h float64) {
-	// When live, the native WebContentsView paints over this content box;
-	// the JPEG drawn here is the fallback shown while the view is parked
-	// during a gesture, and the frozen preview otherwise. Its bounds are
-	// tracked by syncURLViews, not from this draw path.
-
+	// The native view paints over this box, so the JPEG here shows while it
+	// is parked during a gesture. Bounds are syncURLViews'.
 	withClip(a.cctx, x, y, w, h, func() {
 		a.drawPreviewFace(n, x, y, w, h, colorFileInnerBg, previewBlobKey(n), func() {
 			a.fetchURLPreview(rpc.ContentID(n), previewBlobKey(n))
 			label := n.UrlString
 			if label == "" {
-				label = n.AltText // a page tile has no address; its name says what it is
+				label = n.AltText // a page tile has no address
 			}
 			a.cctx.Set("fillStyle", colorMuted)
 			a.cctx.Set("font", "16px monospace")
@@ -111,12 +96,9 @@ func (a *App) drawURLTileInPane(n *gridwellv1.Tile, x, y, w, h float64) {
 	})
 }
 
-// drawPageTile renders a serves_page tile in the parent grid view — the
-// text-kind arm of drawNodeWithPreview: the plugin-derived preview image
-// letterboxed into the footprint, so an image file looks like the image,
-// inside the text family's border, because it is a file and only its
-// presentation is web content. Falls back to the file name while the
-// thumbnail loads, or when the plugin serves none.
+// drawPageTile draws the plugin-derived preview inside the text family's
+// border, because a page tile is a file and only its presentation is web
+// content.
 func (a *App) drawPageTile(n *gridwellv1.Tile, x, y, w, h float64, selected, outside, dashed bool) {
 	withClip(a.cctx, x, y, w, h, func() {
 		a.drawPreviewFace(n, x, y, w, h, colorFileInnerBg, previewBlobKey(n), func() {
@@ -132,16 +114,9 @@ func (a *App) drawPageTile(n *gridwellv1.Tile, x, y, w, h float64, selected, out
 	})
 }
 
-// drawShellTileInPane renders a shell tile that is the pane's current place
-// (the user descended into it). Mirrors drawURLTileInPane:
-// the cached freeze-frame JPEG letterboxes into the pane; when no
-// preview is loaded yet the fetch is kicked off and a hint paints the
-// stored cwd so the user sees *something* while the JPEG decodes.
-//
-// When a live shell stream is attached to the pane, the xterm.js DOM
-// overlay sits on top of this canvas — the JPEG underneath becomes
-// invisible, but painting it costs ~nothing and avoids a flash if the
-// overlay hasn't been positioned yet for the current frame.
+// drawShellTileInPane is drawURLTileInPane's twin. A live xterm overlay sits
+// on top of it, but painting underneath avoids a flash before the overlay is
+// positioned for the frame.
 func (a *App) drawShellTileInPane(p *pane.Pane, n *gridwellv1.Tile, x, y, w, h float64) {
 	withClip(a.cctx, x, y, w, h, func() {
 		a.cctx.Set("fillStyle", colorShellFill)
@@ -149,13 +124,9 @@ func (a *App) drawShellTileInPane(p *pane.Pane, n *gridwellv1.Tile, x, y, w, h f
 
 		if cached, ok := a.views.urlPreview.Get(rpc.ContentID(n), n.PreviewBlobId); ok {
 			if img, ok := previewImage(cached); ok {
-				// Stand-in geometry, not letterbox: the live xterm canvas sits
-				// top-left at integer-cell size, so the snapshot goes back
-				// exactly there. Contain-fit would center it and scale it by
-				// the leftover cell fraction, visibly shifting the terminal
-				// every time the overlay parks. shellStandinRect is the one
-				// owner of this rect, and the e2e hook reads the same
-				// function.
+				// Stand-in geometry, not letterbox: the live xterm canvas
+				// sits top-left at integer-cell size, and contain-fit would
+				// shift the terminal every time the overlay parks.
 				if dx, dy, dw, dh, ok := a.shellStandinRect(img, x, y); ok {
 					a.cctx.Call("drawImage", img, dx, dy, dw, dh)
 				}
@@ -163,28 +134,22 @@ func (a *App) drawShellTileInPane(p *pane.Pane, n *gridwellv1.Tile, x, y, w, h f
 		} else if n.PreviewBlobId != 0 {
 			a.fetchURLPreview(rpc.ContentID(n), n.PreviewBlobId)
 		} else if !a.hasShellStream(p.ID) {
-			// No preview yet and no live stream: the pre-refresh state. Show
-			// the shell glyph so the descent reads as a frozen shell rather
-			// than a blank box.
+			// No preview and no live stream: show the glyph so the descent
+			// reads as a frozen shell rather than a blank box.
 			drawShellGlyph(a.cctx, x, y, w, h, colorShellBorder)
 		}
 	})
 }
 
-// drawShellTile renders a shell tile in the parent grid view. Same
-// pattern as drawURLTile: cached JPEG covers the cell when available,
-// otherwise a placeholder shows the cwd path on a dark fill. The outline
-// is the shell orange — bash runs outside Gridwell's data world. Reuses
-// urlPreview as the JPEG cache; the cache is keyed by tile id so URL and
-// shell tiles can share a single decode pool.
+// drawShellTile is drawURLTile for a shell. The outline is the shell orange,
+// because bash runs outside Gridwell's data world.
 func (a *App) drawShellTile(n *gridwellv1.Tile, x, y, w, h float64, selected, dashed bool) {
 	withClip(a.cctx, x, y, w, h, func() {
 		a.drawPreviewFace(n, x, y, w, h, colorShellFill, n.PreviewBlobId, func() {
 			if n.PreviewBlobId != 0 {
 				a.fetchURLPreview(rpc.ContentID(n), n.PreviewBlobId)
 			} else if w > 20 && h > 20 {
-				// No preview yet, because a palette drop never refreshed:
-				// paint the shell glyph so the swatch reads as a shell rather
+				// A palette drop never refreshed, so paint the glyph rather
 				// than a blank box.
 				drawShellGlyph(a.cctx, x, y, w, h, colorShellBorder)
 			}
@@ -194,11 +159,7 @@ func (a *App) drawShellTile(n *gridwellv1.Tile, x, y, w, h float64, selected, da
 	})
 }
 
-// drawURLTile renders a URL tile in the parent grid view. Layers:
-//  1. dark-grey background (matches the file inner-bg used elsewhere)
-//  2. the cached preview JPEG letterboxed into the tile footprint, or a
-//     placeholder showing the URL text if no preview is loaded yet
-//  3. the tile outline + selection highlight
+// drawURLTile renders a URL tile in the parent grid view.
 func (a *App) drawURLTile(n *gridwellv1.Tile, x, y, w, h float64, selected, dashed bool) {
 	withClip(a.cctx, x, y, w, h, func() {
 		a.drawPreviewFace(n, x, y, w, h, colorFileInnerBg, n.PreviewBlobId, func() {
@@ -210,12 +171,9 @@ func (a *App) drawURLTile(n *gridwellv1.Tile, x, y, w, h float64, selected, dash
 	})
 }
 
-// previewImage is the wasm-side cast: the cache stores a preview.Image
-// interface, but the canvas drawing helpers want a raw HTMLImageElement
-// (js.Value) to hand to drawImage. Every Get call site funnels through this
-// helper, so the cast lives in one place. Returns false when the entry's
-// underlying type is not a *preview.JSImage, which the only Decoder
-// registered with this cache never produces.
+// previewImage is the one cast from the cache's preview.Image to the js.Value
+// drawImage wants. False when the entry is not a *preview.JSImage, which this
+// cache's only Decoder never produces.
 func previewImage(img preview.Image) (js.Value, bool) {
 	ji, ok := img.(*preview.JSImage)
 	if !ok || ji == nil {
@@ -224,12 +182,9 @@ func previewImage(img preview.Image) (js.Value, bool) {
 	return ji.Val(), true
 }
 
-// fetchURLPreview asynchronously requests the JPEG for the given
-// tile, decodes it into the preview cache, and triggers a redraw on
-// completion. Idempotent: short-circuits if a fetch is already in
-// flight, or if a cached entry is already valid for blobID. blobID
-// is the tile's current PreviewBlobID — passed through so the cache
-// can detect a server-side update and re-fetch on the next call.
+// fetchURLPreview requests the JPEG for a tile and decodes it into the
+// preview cache. blobID is the tile's current PreviewBlobId, so the cache
+// detects a server-side update and re-fetches.
 func (a *App) fetchURLPreview(tileID string, blobID int64) {
 	if blobID == 0 {
 		return
@@ -240,17 +195,15 @@ func (a *App) fetchURLPreview(tileID string, blobID int64) {
 	if a.views.urlPreview.KnownEmpty(tileID, blobID) {
 		return // the server already answered "no preview" for this blob
 	}
-	// tileID is the content id: a leaf link's TARGET, which may live in a
-	// namespace this node no longer declares. Never ask one — the answer is
-	// known, and asking would put its verdict on the error strip.
+	// tileID is the content id, a leaf link's target, which may live in a
+	// namespace this node no longer declares. Asking would put its verdict
+	// on the error strip.
 	if a.deadNamespace(tileID) {
 		return
 	}
-	// The dedupe claim is client/inflight's, like every other deduped read:
-	// bounded and cancellable, so a request the network swallows gives up
-	// instead of holding this tile's id — and its face — for the life of the
-	// page. The preview cache remembers decoded images; it does not remember
-	// who is asking.
+	// The dedupe claim is client/inflight's and bounded, so a request the
+	// network swallows cannot hold this tile's face for the life of the
+	// page.
 	ctx, done, ok := a.fetch.previewFetch.Begin(tileID)
 	if !ok {
 		return
@@ -259,9 +212,8 @@ func (a *App) fetchURLPreview(tileID string, blobID int64) {
 		defer done()
 		jpeg, err := a.cl.GetTilePreview(ctx, tileID)
 		if err != nil {
-			// A plugin that serves no previews answers Unimplemented: a
-			// capability property, so the tile shows its label. Anything
-			// else surfaces.
+			// Unimplemented is a capability property, so the tile shows its
+			// label.
 			if !isUnimplemented(err) {
 				a.surfaceRPCError("GetTilePreview", err)
 				return // transient — the next draw may retry
@@ -270,9 +222,8 @@ func (a *App) fetchURLPreview(tileID string, blobID int64) {
 			return
 		}
 		if len(jpeg) == 0 {
-			// A completed answer settles the cache (PutEmpty). Leaving the
-			// miss unrecorded re-fires this fetch on every draw: one RPC
-			// per non-decodable tile per frame, forever.
+			// Leaving the miss unrecorded would re-fire this fetch on every
+			// draw, one RPC per non-decodable tile per frame.
 			a.views.urlPreview.PutEmpty(tileID, blobID)
 			return
 		}
@@ -281,8 +232,7 @@ func (a *App) fetchURLPreview(tileID string, blobID int64) {
 }
 
 // shellStandinRect is the one owner of where a shell snapshot draws inside a
-// pane: preview.StandinDstRect at the current device pixel ratio. The in-pane
-// draw and the e2e testhook (thShellStandin) both read it, so the spec
+// pane. The in-pane draw and the e2e testhook both read it, so the spec
 // asserts the exact rect the renderer uses.
 func (a *App) shellStandinRect(img js.Value, x, y float64) (dx, dy, dw, dh float64, ok bool) {
 	dpr := a.win.Get("devicePixelRatio").Float()
