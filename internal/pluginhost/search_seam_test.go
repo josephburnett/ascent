@@ -73,7 +73,7 @@ func TestSearchThroughTheAdapterAnswersMintedPlaces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := cl.GetGrid(ctx, pl.Plugins[0].RootGridID)
+	root, err := cl.GetGrid(ctx, plugintest.LandingOf(t, pl.Plugins[0]))
 	if err != nil {
 		t.Fatal(err)
 	}

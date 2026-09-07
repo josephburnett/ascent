@@ -20,6 +20,7 @@ import (
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/internal/plugin"
+	"github.com/josephburnett/gridwell/internal/plugintest"
 )
 
 // pagesNS is the registry key for the pages plugin in these tests.
@@ -42,7 +43,7 @@ func pagesServer(t *testing.T) (*httptest.Server, *gridwellv1.GetGridResponse) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grid, err := cl.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	grid, err := cl.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +196,7 @@ func TestPagesPluginFaceComesFromThePlugin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grid, err := cl.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	grid, err := cl.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 	if err != nil {
 		t.Fatal(err)
 	}

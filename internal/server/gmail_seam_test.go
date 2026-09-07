@@ -185,28 +185,27 @@ func gmailStack(t *testing.T) (hs *httptest.Server, cl namespace.Namespace, info
 	return hs, cl, info, g, stateDir
 }
 
-// The plugin's landing grid is the inbox and Starred rides the (+) menu — and
-// both list. The mapping from a declared context to a servable grid id is the
-// adapter's, so a plugin unit test cannot see it: it would find Starred
-// declared and never learn whether it opens anything.
+// The plugin's two collections are two (+) menu entries — no landing grid, no
+// privileged one — and both list. The mapping from a declared context to a
+// servable grid id is the adapter's, so a plugin unit test cannot see it: it
+// would find both declared and never learn whether either opens anything.
 func TestGmailPluginDeclaresAndListsBothCollections(t *testing.T) {
 	_, cl, info, _, _ := gmailStack(t)
 	ctx := t.Context()
 
-	if info.RootGridId == "" {
-		t.Fatal("the gmail plugin declared no landing grid; its row on the (+) menu would enter nothing")
+	if info.RootGridId != "" {
+		t.Fatalf("a plugin is not a place; it named a grid of its own: %q", info.RootGridId)
 	}
-	if len(info.MenuEntries) != 1 || info.MenuEntries[0].Label != "starred" {
-		t.Fatalf("menu entries = %v, want starred alone", info.MenuEntries)
+	if len(info.MenuEntries) != 2 || info.MenuEntries[0].Label != "inbox" ||
+		info.MenuEntries[1].Label != "starred" {
+		t.Fatalf("menu entries = %v, want inbox and starred", info.MenuEntries)
 	}
-	starred := info.MenuEntries[0]
-	// The root is already the plugin's own row on that menu, so no entry may
-	// name it again.
-	if starred.GridId == "" || starred.GridId == info.RootGridId {
-		t.Fatalf("the starred entry opens %q, and the landing grid is %q", starred.GridId, info.RootGridId)
+	starred := info.MenuEntries[1]
+	if starred.GridId == "" || starred.GridId == info.MenuEntries[0].GridId {
+		t.Fatalf("the two collections must open two grids: %v", info.MenuEntries)
 	}
 
-	inbox, err := cl.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	inbox, err := cl.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.MenuEntries[0].GridId})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +248,7 @@ func TestGmailPluginDeclaresAndListsBothCollections(t *testing.T) {
 // tile and never sees the email.
 func TestGmailPluginServesAMessageThroughTheContentDoor(t *testing.T) {
 	hs, cl, info, _, _ := gmailStack(t)
-	inbox, err := cl.GetGrid(t.Context(), &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	inbox, err := cl.GetGrid(t.Context(), &gridwellv1.GetGridRequest{GridId: info.MenuEntries[0].GridId})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,7 +278,7 @@ func TestGmailPluginServesAMessageThroughTheContentDoor(t *testing.T) {
 // node's, the reading and the caching are the plugin's.
 func TestGmailPluginReadsItsCredentialPathsAndCachesNoSecret(t *testing.T) {
 	_, cl, info, g, stateDir := gmailStack(t)
-	if _, err := cl.GetGrid(t.Context(), &gridwellv1.GetGridRequest{GridId: info.RootGridId}); err != nil {
+	if _, err := cl.GetGrid(t.Context(), &gridwellv1.GetGridRequest{GridId: info.MenuEntries[0].GridId}); err != nil {
 		t.Fatal(err)
 	}
 

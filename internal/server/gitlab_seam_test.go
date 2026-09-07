@@ -98,7 +98,7 @@ func TestGitLabTodosThroughTheStack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	root, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestTrashingATodoKeepsItsRowItsPlacementAndItsLinks(t *testing.T) {
 	var todosRoot string
 	for _, p := range pl.Plugins {
 		if p.UUID == "ug1" {
-			todosRoot = p.RootGridID
+			todosRoot = plugintest.LandingOf(t, p)
 		}
 	}
 	if todosRoot == "" {

@@ -100,7 +100,7 @@ func TestProcPluginSweepAndPlacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootGrid := pl.Plugins[0].RootGridID
+	rootGrid := plugintest.LandingOf(t, pl.Plugins[0])
 	g, err := v2.GetGrid(ctx, rootGrid)
 	if err != nil {
 		t.Fatal(err)
@@ -156,7 +156,7 @@ func TestRetiredKeyStaysRetiredWithoutIdBurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root := pl.Plugins[0].RootGridID
+	root := plugintest.LandingOf(t, pl.Plugins[0])
 	if _, err := v2.GetGrid(ctx, root); err != nil {
 		t.Fatal(err) // pass 1: mint the live rows
 	}

@@ -94,7 +94,7 @@ func fsGrid(t *testing.T, cl *rpc.Client, fsRoot string, n int) string {
 	}
 	for _, p := range lp.Plugins {
 		if p.UUID == fsPluginUUID {
-			return p.RootGridID
+			return plugintest.LandingOf(t, p)
 		}
 	}
 	t.Fatal("no fs plugin in the handshake")

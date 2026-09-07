@@ -89,8 +89,15 @@ func New(cp pluginv1.PluginClient, mem *store.Namespace, sup Supervisor) *Adapte
 	return &Adapter{cp: cp, mem: mem, sup: sup, subs: map[int]chan *gridwellv1.Event{}}
 }
 
-// Info translates the plugin handshake, minting the root context's grid id
-// and reading its persisted viewport from the store.
+// Info translates the plugin handshake, resolving each declared collection's
+// context to a grid id and reading that grid's persisted viewport from the
+// store.
+//
+// The node declares no root of its own for a plugin. A plugin is not a place:
+// it contributes doorways, one menu entry per collection, and the node has no
+// landing to choose among them. root_context is retired on the plugin door
+// (api/plugin/v1/plugin.proto), and a plugin that still answers one gets the
+// one compat derivation below.
 func (a *Adapter) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwellv1.InfoResponse, error) {
 	ci, err := a.cp.Info(ctx, &pluginv1.InfoRequest{})
 	if err != nil {
@@ -118,7 +125,7 @@ func (a *Adapter) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwel
 		Watch:    true,
 		Writable: false,
 	}
-	for _, m := range ci.MenuEntries {
+	for _, m := range declaredEntries(ci) {
 		// A menu entry names one of the plugin's collections: the context it
 		// targets becomes a grid id the node can serve, and the framing the
 		// node remembers for that grid rides along, so re-entering the
@@ -136,15 +143,25 @@ func (a *Adapter) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwel
 		}
 		resp.MenuEntries = append(resp.MenuEntries, out)
 	}
-	if ci.RootContext != "" {
-		id, err := a.canonicalGridID(ci.RootContext)
-		if err != nil {
-			return nil, err
-		}
-		resp.RootGridId = id
-		resp.RootViewCx, resp.RootViewCy, resp.RootViewZoom = a.contextFraming(ci.RootContext)
-	}
 	return resp, nil
+}
+
+// declaredEntries is the collections a plugin declares, and the ONE place
+// root_context is still read. A plugin written before collections were
+// declared answers a root_context and no menu entries; its root is its single
+// collection, so it becomes one entry, wearing the plugin's own name and face
+// because it declares neither of its own. A plugin that declares entries has
+// said what its collections are, and its root_context — if it still sends one
+// — gets no privilege among them, because there is no privileged collection.
+//
+// The derivation is here rather than in the plugin, because retiring a wire
+// field is the node's job: a third-party binary built against the old proto
+// keeps presenting without being rebuilt.
+func declaredEntries(ci *pluginv1.InfoResponse) []*pluginv1.MenuEntry {
+	if len(ci.MenuEntries) > 0 || ci.RootContext == "" {
+		return ci.MenuEntries
+	}
+	return []*pluginv1.MenuEntry{{Id: ci.RootContext, Context: ci.RootContext}}
 }
 
 // contextFraming is the framing the node remembers for one context's grid,

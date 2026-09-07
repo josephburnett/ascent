@@ -72,40 +72,37 @@ func heyStack(t *testing.T) (*httptest.Server, namespace.Namespace, *gridwellv1.
 	return hs, cl, info
 }
 
-// The plugin's landing grid is the Imbox and its other two collections ride
-// the (+) menu — and every one of the three lists its own emails. The mapping
-// from a declared context to a servable grid id is the adapter's, so a plugin
-// unit test cannot see it: it would find the entries declared and never learn
-// whether any of them opens anything.
+// The plugin's three collections are three (+) menu entries — no landing
+// grid, no privileged one — and every one of them lists its own emails. The
+// mapping from a declared context to a servable grid id is the adapter's, so
+// a plugin unit test cannot see it: it would find the entries declared and
+// never learn whether any of them opens anything.
 func TestHeyPluginDeclaresAndListsEveryCollection(t *testing.T) {
 	_, cl, info := heyStack(t)
 	ctx := t.Context()
 
-	if info.RootGridId == "" {
-		t.Fatal("the hey plugin declared no landing grid; its row on the (+) menu would enter nothing")
+	if info.RootGridId != "" {
+		t.Fatalf("a plugin is not a place; it named a grid of its own: %q", info.RootGridId)
 	}
-	if len(info.MenuEntries) != 2 {
-		t.Fatalf("menu entries = %v, want reply later and set aside", info.MenuEntries)
+	if len(info.MenuEntries) != 3 {
+		t.Fatalf("menu entries = %v, want imbox, reply later and set aside", info.MenuEntries)
 	}
-	// The root is already the plugin's own row on that menu, so no entry may
-	// name it again.
 	for _, m := range info.MenuEntries {
 		if m.GridId == "" {
 			t.Errorf("menu entry %q opens no grid", m.Label)
 		}
-		if m.GridId == info.RootGridId {
-			t.Errorf("menu entry %q opens the landing grid, which is already the plugin's row", m.Label)
-		}
 	}
-	if info.MenuEntries[0].Label != "reply later" || info.MenuEntries[1].Label != "set aside" {
-		t.Errorf("menu labels = %q, %q", info.MenuEntries[0].Label, info.MenuEntries[1].Label)
+	if info.MenuEntries[0].Label != "imbox" || info.MenuEntries[1].Label != "reply later" ||
+		info.MenuEntries[2].Label != "set aside" {
+		t.Errorf("menu labels = %q, %q, %q", info.MenuEntries[0].Label,
+			info.MenuEntries[1].Label, info.MenuEntries[2].Label)
 	}
 
-	// Every collection lists, the two menu ones through their mapped ids.
+	// Every collection lists, each through its mapped id.
 	for _, c := range []struct{ grid, holds string }{
-		{info.RootGridId, "Lunch plans"},
-		{info.MenuEntries[0].GridId, "Conference talk"},
-		{info.MenuEntries[1].GridId, "Lease renewal"},
+		{info.MenuEntries[0].GridId, "Lunch plans"},
+		{info.MenuEntries[1].GridId, "Conference talk"},
+		{info.MenuEntries[2].GridId, "Lease renewal"},
 	} {
 		g, err := cl.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: c.grid})
 		if err != nil {
@@ -118,7 +115,7 @@ func TestHeyPluginDeclaresAndListsEveryCollection(t *testing.T) {
 	// the whole client rests on: a url tile's own address wins over
 	// serves_page, so an email declared kind "url" would hand the node an
 	// address it does not have and the email would never be served.
-	root, err := cl.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	root, err := cl.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.MenuEntries[0].GridId})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +141,7 @@ func TestHeyPluginDeclaresAndListsEveryCollection(t *testing.T) {
 // and never sees the email.
 func TestHeyPluginServesAnEmailThroughTheContentDoor(t *testing.T) {
 	hs, cl, info := heyStack(t)
-	root, err := cl.GetGrid(t.Context(), &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	root, err := cl.GetGrid(t.Context(), &gridwellv1.GetGridRequest{GridId: info.MenuEntries[0].GridId})
 	if err != nil {
 		t.Fatal(err)
 	}

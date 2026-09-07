@@ -52,7 +52,7 @@ func listedBy(t *testing.T, entries ...*pluginv1.Entry) (*gridwellv1.Grid, []*gr
 	if err != nil {
 		t.Fatal(err)
 	}
-	resp, err := a.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	resp, err := a.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 	if err != nil {
 		return nil, nil, err
 	}

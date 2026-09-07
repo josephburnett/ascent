@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/josephburnett/gridwell/api/rpc"
+	"github.com/josephburnett/gridwell/internal/plugintest"
 )
 
 // A grid keeps its name after its well is touched. The touch mints rows — the
@@ -30,7 +31,7 @@ func TestATouchedWellsChildGridKeepsItsName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootGrid := pl.Plugins[0].RootGridID
+	rootGrid := plugintest.LandingOf(t, pl.Plugins[0])
 
 	wellByName := func(name string) rpc.Tile {
 		t.Helper()

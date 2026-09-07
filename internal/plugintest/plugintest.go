@@ -35,7 +35,9 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/josephburnett/gridwell/api/compose"
+	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	pluginv1 "github.com/josephburnett/gridwell/api/gen/plugin/v1"
+	"github.com/josephburnett/gridwell/api/rpc"
 )
 
 // Loopback serves impl over an in-memory gRPC connection and returns the
@@ -146,4 +148,32 @@ func withStateDir(t *testing.T, cfg map[string]string) map[string]string {
 		out["state_dir"] = t.TempDir()
 	}
 	return out
+}
+
+// Landing is the grid a plugin's single declared collection serves: what a
+// test descends into for a plugin that has exactly one. A plugin declares no
+// root of its own — it contributes doorways, one menu entry per collection —
+// so there is no RootGridId to read, and a plugin with several collections
+// has no single landing, which is why this fails rather than picking.
+func Landing(t *testing.T, info *gridwellv1.InfoResponse) string {
+	t.Helper()
+	if info.RootGridId != "" {
+		t.Fatalf("this row names a grid of its own (%q) — it is a node, not a plugin", info.RootGridId)
+	}
+	if len(info.MenuEntries) != 1 {
+		t.Fatalf("%d collections declared, want exactly one to land in: %+v", len(info.MenuEntries), info.MenuEntries)
+	}
+	return info.MenuEntries[0].GridId
+}
+
+// LandingOf is Landing over a handshake's menu row.
+func LandingOf(t *testing.T, pl rpc.PluginInfo) string {
+	t.Helper()
+	if pl.RootGridID != "" {
+		t.Fatalf("row %q names a grid of its own (%q) — it is a node, not a plugin", pl.Label, pl.RootGridID)
+	}
+	if len(pl.MenuEntries) != 1 {
+		t.Fatalf("row %q declares %d collections, want exactly one to land in", pl.Label, len(pl.MenuEntries))
+	}
+	return pl.MenuEntries[0].GridID
 }

@@ -91,7 +91,7 @@ func TestAPluginSubprocessCrashSurfacesAndRespawns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootGrid := pl.Plugins[0].RootGridID
+	rootGrid := plugintest.LandingOf(t, pl.Plugins[0])
 	if _, err := cl.GetGrid(ctx, rootGrid); err != nil {
 		t.Fatal(err)
 	}

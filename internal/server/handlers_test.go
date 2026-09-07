@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 
 	"github.com/josephburnett/gridwell/api/rpc"
+	"github.com/josephburnett/gridwell/client/door"
 	"github.com/josephburnett/gridwell/internal/local/store"
 	"github.com/josephburnett/gridwell/internal/namespace"
 	"github.com/josephburnett/gridwell/internal/plugin"
@@ -160,9 +161,11 @@ func TestMountFsPlugin(t *testing.T) {
 }
 
 // mountByClone mounts a plugin into a grid the way the UI does: drag the
-// plugin's menu row = CreateWell with the plugin's qualified root as the
-// child (an exit-well LINK), labeled with the row's label
-// (client/wasm createPluginLinkAtCell).
+// plugin's + menu swatch = CreateWell with the doorway's qualified grid as
+// the child (an exit-well LINK), labeled with the swatch's label
+// (client/wasm createPluginLinkAtCell). Which swatches a row contributes is
+// door.PlacesOf, the client's own rule, so this drags what the user drags.
+// Every plugin under test here declares one collection, so there is one.
 func mountByClone(t *testing.T, cl *rpc.Client, pluginUUID, destGrid string, x, y int64) *rpc.Tile {
 	t.Helper()
 	ctx := context.Background()
@@ -170,15 +173,16 @@ func mountByClone(t *testing.T, cl *rpc.Client, pluginUUID, destGrid string, x, 
 	if err != nil {
 		t.Fatalf("Handshake: %v", err)
 	}
-	var row rpc.PluginInfo
+	var places []door.Place
 	for _, p := range lp.Plugins {
 		if p.UUID == pluginUUID {
-			row = p
+			places = door.PlacesOf(p)
 		}
 	}
-	if row.RootGridID == "" {
-		t.Fatalf("mount %s: no rooted menu row in %+v", pluginUUID, lp.Plugins)
+	if len(places) != 1 {
+		t.Fatalf("mount %s: %d swatches in %+v, want one", pluginUUID, len(places), lp.Plugins)
 	}
+	row := places[0].Plugin
 	tile, err := cl.CreateWell(ctx, &rpc.CreateWellRequest{
 		GridID: destGrid, X: x, Y: y, W: 1, H: 1,
 		ChildGridID: row.RootGridID, Label: row.Label,
@@ -495,7 +499,7 @@ func TestPluginGridCarriesHomeScratch(t *testing.T) {
 	if homeScratch == "" {
 		t.Fatal("home advertised no scratch grid")
 	}
-	fsRoot := hs.Plugins[1].RootGridID
+	fsRoot := plugintest.LandingOf(t, hs.Plugins[1])
 	g, err := cl.GetGrid(ctx, fsRoot)
 	if err != nil {
 		t.Fatalf("GetGrid fs root: %v", err)

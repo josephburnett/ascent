@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
+	"github.com/josephburnett/gridwell/internal/plugintest"
 	"github.com/josephburnett/gridwell/internal/plugintest/gitlabfake"
 )
 
@@ -48,7 +49,7 @@ func TestGitLabPluginServesFromItsStateDirAfterARestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	root, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +76,7 @@ func TestGitLabPluginServesFromItsStateDirAfterARestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root2, err := client2.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info2.RootGridId})
+	root2, err := client2.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info2)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +117,7 @@ func TestGitLabPluginWithoutAStateDirStillServes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	root, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 	if err != nil {
 		t.Fatal(err)
 	}

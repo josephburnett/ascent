@@ -20,6 +20,7 @@ import (
 	"github.com/josephburnett/gridwell/internal/local/store"
 	"github.com/josephburnett/gridwell/internal/namespace"
 	"github.com/josephburnett/gridwell/internal/plugin"
+	"github.com/josephburnett/gridwell/internal/plugintest"
 )
 
 // The /content/ door crosses every seam at once: HTTP URL grammar → token
@@ -106,7 +107,7 @@ func contentDoorServer(t *testing.T, password string) (hs *httptest.Server, tile
 	if err != nil {
 		t.Fatal(err)
 	}
-	grid, err := fsClient.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	grid, err := fsClient.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +213,7 @@ func TestContentDoorResolvesLeafLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grid, err := fsClient.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	grid, err := fsClient.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -285,7 +286,7 @@ func TestContentDoorThroughAConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	grid, err := farNode.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	grid, err := farNode.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,13 +350,15 @@ func TestHandshakeCarriesTokensAndRootView(t *testing.T) {
 	if pl.ContentToken == AuthToken(testPassword) {
 		t.Errorf("content token must never equal the auth token (domain separation)")
 	}
-	root := pl.Plugins[0]
-	if root.RootGridID == "" || root.RootViewZoom != 0 {
-		t.Fatalf("fresh root = %+v, want a root grid with zoom 0 (never set)", root)
+	// The fs plugin's one declared collection is the doorway this frames: a
+	// plugin is not a place, so there is no root of its own to aim at.
+	if len(pl.Plugins[0].MenuEntries) != 1 || pl.Plugins[0].MenuEntries[0].ViewZoom != 0 {
+		t.Fatalf("fresh row = %+v, want one collection never visited (zoom 0)", pl.Plugins[0])
 	}
+	landing := plugintest.LandingOf(t, pl.Plugins[0])
 
 	path, body := rpc.SetFramingBeacon(&rpc.SetFramingRequest{
-		RootGridID: root.RootGridID, Framing: rpc.Framing{Cx: 3, Cy: 4, Zoom: 0.5},
+		RootGridID: landing, Framing: rpc.Framing{Cx: 3, Cy: 4, Zoom: 0.5},
 	})
 	res, err := hs.Client().Post(hs.URL+path, "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -369,9 +372,9 @@ func TestHandshakeCarriesTokensAndRootView(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := pl2.Plugins[0]
-	if got.RootViewCx != 3 || got.RootViewCy != 4 || got.RootViewZoom != 0.5 {
-		t.Errorf("root view after beacon = (%v,%v,%v), want (3,4,0.5)",
-			got.RootViewCx, got.RootViewCy, got.RootViewZoom)
+	got := pl2.Plugins[0].MenuEntries[0]
+	if got.ViewCx != 3 || got.ViewCy != 4 || got.ViewZoom != 0.5 {
+		t.Errorf("doorway view after beacon = (%v,%v,%v), want (3,4,0.5)",
+			got.ViewCx, got.ViewCy, got.ViewZoom)
 	}
 }

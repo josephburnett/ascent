@@ -14,6 +14,7 @@ import (
 	"github.com/josephburnett/gridwell/internal/local"
 	"github.com/josephburnett/gridwell/internal/local/store"
 	"github.com/josephburnett/gridwell/internal/plugin"
+	"github.com/josephburnett/gridwell/internal/plugintest"
 )
 
 // Cross-plugin gesture semantics: LEFT-drag
@@ -484,7 +485,7 @@ func TestLinkDirWellFromFsPlugin(t *testing.T) {
 
 	// GetGrid materializes the directory's tiles (the user is dragging a
 	// visible tile from the rendered fs grid).
-	g, err := cl.GetGrid(ctx, fsUUID+"/"+info.RootGridId)
+	g, err := cl.GetGrid(ctx, fsUUID+"/"+plugintest.Landing(t, info))
 	if err != nil {
 		t.Fatalf("GetGrid (fs root): %v", err)
 	}

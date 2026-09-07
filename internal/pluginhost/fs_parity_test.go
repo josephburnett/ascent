@@ -98,7 +98,7 @@ func TestPluginServesTouchedRowsWhenSourceDark(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootGrid := pl.Plugins[0].RootGridID
+	rootGrid := plugintest.LandingOf(t, pl.Plugins[0])
 	before, err := v2.GetGrid(ctx, rootGrid)
 	if err != nil {
 		t.Fatal(err)
@@ -163,7 +163,7 @@ func TestDeleteRetiresOnTheWire(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootGrid := pl.Plugins[0].RootGridID
+	rootGrid := plugintest.LandingOf(t, pl.Plugins[0])
 	g, err := v2.GetGrid(ctx, rootGrid)
 	if err != nil {
 		t.Fatal(err)
@@ -245,7 +245,7 @@ func TestFSPluginPlacementAndFramingPersist(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootGrid := pl.Plugins[0].RootGridID
+	rootGrid := plugintest.LandingOf(t, pl.Plugins[0])
 	g, err := v2.GetGrid(ctx, rootGrid)
 	if err != nil {
 		t.Fatal(err)
@@ -310,7 +310,7 @@ func TestFSPluginSweepRemovesOnlyTheDead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootGrid := pl.Plugins[0].RootGridID
+	rootGrid := plugintest.LandingOf(t, pl.Plugins[0])
 	before, err := v2.GetGrid(ctx, rootGrid)
 	if err != nil {
 		t.Fatal(err)
@@ -372,7 +372,7 @@ func TestFSPluginTextViewPersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rootGrid := pl.Plugins[0].RootGridID
+	rootGrid := plugintest.LandingOf(t, pl.Plugins[0])
 	g, err := v2.GetGrid(ctx, rootGrid)
 	if err != nil {
 		t.Fatal(err)
@@ -422,4 +422,37 @@ func TestFSPluginTextViewPersists(t *testing.T) {
 		return
 	}
 	t.Fatal("notes.md vanished from the listing")
+}
+
+// The shipped fs binary, through the adapter and a full server: it declares
+// its collection and no place of its own, and that declaration is what opens.
+// Only the seam sees this — the plugin declares a context key and never learns
+// whether it resolves, and the node resolves an id and never learns what the
+// plugin meant by it. It is also the whole of issue #281: a plugin with
+// collections and no root is healthy, and the collection is the doorway.
+func TestAnEntriesOnlyPluginPresentsAndServes(t *testing.T) {
+	root := seedTree(t)
+	cl := pluginNode(t, root)
+	ctx := context.Background()
+	pl, err := cl.Handshake(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := pl.Plugins[0]
+	if row.RootGridID != "" {
+		t.Errorf("a plugin is not a place; it named a grid of its own: %q", row.RootGridID)
+	}
+	if row.InfoError != "" {
+		t.Errorf("declaring no place of its own is not a failure: %q", row.InfoError)
+	}
+	if len(row.MenuEntries) != 1 || row.MenuEntries[0].GridID == "" {
+		t.Fatalf("row = %+v, want its one collection, resolved to a grid", row)
+	}
+	g, err := cl.GetGrid(ctx, row.MenuEntries[0].GridID)
+	if err != nil {
+		t.Fatalf("the declared collection does not serve: %v", err)
+	}
+	if len(g.Tiles) == 0 {
+		t.Errorf("the collection listed nothing; the tree has files in it")
+	}
 }

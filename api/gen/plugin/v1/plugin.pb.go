@@ -133,9 +133,17 @@ type InfoResponse struct {
 	Kind        string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"` // e.g. "fs", "proc", "mail"
 	DisplayName string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
 	Glyph       string                 `protobuf:"bytes,3,opt,name=glyph,proto3" json:"glyph,omitempty"` // declared glyph vocabulary; "" = the generic globe
-	// root_context is the key of the plugin's landing context ("" = the
-	// plugin has no landing grid; its entries appear only through
-	// declarations/search).
+	// root_context is RETIRED. The field number is kept forever rather than
+	// reused. A plugin is not a place: it contributes doorways, one
+	// menu_entries row per collection, and the node has no landing to choose
+	// among them. Leave it empty and declare your collections.
+	//
+	// The node reads it in exactly one case, so a binary built against the
+	// older proto keeps presenting without a rebuild: a plugin that answers a
+	// root_context and NO menu_entries gets one derived entry onto it, wearing
+	// the plugin's own name and face. Declare both and the entries win
+	// outright — the root gets no privilege, because there is no privileged
+	// collection.
 	RootContext string `protobuf:"bytes,4,opt,name=root_context,json=rootContext,proto3" json:"root_context,omitempty"`
 	// watch: the plugin implements Watch (live change events).
 	Watch bool `protobuf:"varint,5,opt,name=watch,proto3" json:"watch,omitempty"`
@@ -143,9 +151,11 @@ type InfoResponse struct {
 	// entries. Presentation writes never reach a plugin, so this is
 	// purely a content capability.
 	Writable bool `protobuf:"varint,6,opt,name=writable,proto3" json:"writable,omitempty"`
-	// menu_entries: the plugin's declared (+) menu additions, stamped by the
-	// node onto every grid it serves for this plugin. Keyed by context
-	// instead of grid id.
+	// menu_entries: the plugin's collections, one row each — this is how a
+	// plugin is reached. Each becomes a (+) menu swatch, and the node stamps
+	// them onto every grid it serves for this plugin. Keyed by context instead
+	// of grid id. Declaring none is legal and means the plugin contributes
+	// nothing to the menu; it is not an error.
 	MenuEntries []*MenuEntry `protobuf:"bytes,7,rep,name=menu_entries,json=menuEntries,proto3" json:"menu_entries,omitempty"`
 	// host_content: this plugin's contexts PROJECT host state — a directory
 	// tree, the process table — rather than holding content of their own.
@@ -247,10 +257,10 @@ func (x *InfoResponse) GetHostContent() bool {
 	return false
 }
 
-// MenuEntry mirrors the gridwell.v1 shape with contexts for targets: an
-// extra plugin root the node stamps onto every grid it serves for this
-// plugin. 5 and 6 were kind and param_schema, the creation-entry half; the
-// node never saw one.
+// MenuEntry mirrors the gridwell.v1 shape with contexts for targets: one of
+// the plugin's collections, which the node stamps onto every grid it serves
+// for this plugin. 5 and 6 were kind and param_schema, the creation-entry
+// half; the node never saw one.
 type MenuEntry struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`

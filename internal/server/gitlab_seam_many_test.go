@@ -10,6 +10,7 @@ import (
 
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	pluginv1 "github.com/josephburnett/gridwell/api/gen/plugin/v1"
+	"github.com/josephburnett/gridwell/internal/plugintest"
 	"github.com/josephburnett/gridwell/internal/plugintest/gitlabfake"
 )
 
@@ -50,7 +51,7 @@ func TestGitLabManyWeeksThroughPaginatedAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	root, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +68,7 @@ func TestGitLabManyWeeksThroughPaginatedAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lst, err := cp.List(ctx, &pluginv1.ListRequest{Context: pinfo.GetRootContext()})
+	lst, err := cp.List(ctx, &pluginv1.ListRequest{Context: pinfo.GetMenuEntries()[0].GetContext()})
 	if err != nil {
 		t.Fatal(err)
 	}

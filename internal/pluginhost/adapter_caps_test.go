@@ -123,7 +123,7 @@ func TestGridWearsThePluginsDeclarations(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resp, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+			resp, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -101,7 +101,7 @@ func TestDeleteRetiresOnlyWhatTheSourceSaysIsGone(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			before, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+			before, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -141,7 +141,7 @@ func TestDeleteRetiresOnlyWhatTheSourceSaysIsGone(t *testing.T) {
 			// And the next listing still names the entry BY THAT ROW: an entry
 			// answered at a derived address again is a fresh identity, which is
 			// what breaks every stored reference to it.
-			after, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+			after, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: plugintest.Landing(t, info)})
 			if err != nil {
 				t.Fatal(err)
 			}

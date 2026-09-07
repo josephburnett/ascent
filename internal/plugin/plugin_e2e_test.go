@@ -58,10 +58,11 @@ func TestSubprocessPlugin_FS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info through the adapter: %v", err)
 	}
-	if info.Kind != "fs" || info.RootGridId == "" {
+	if info.Kind != "fs" {
 		t.Fatalf("bad Info: %+v", info)
 	}
-	g, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: info.RootGridId})
+	landing := plugintest.Landing(t, info)
+	g, err := client.GetGrid(ctx, &gridwellv1.GetGridRequest{GridId: landing})
 	if err != nil {
 		t.Fatalf("GetGrid: %v", err)
 	}
@@ -78,7 +79,7 @@ func TestSubprocessPlugin_FS(t *testing.T) {
 		t.Fatal("hello.md not projected")
 	}
 	if _, err := client.PlaceTile(ctx, &gridwellv1.PlaceTileRequest{
-		TileId: hello.Id, GridId: info.RootGridId, X: 4, Y: 1, W: 2, H: 2,
+		TileId: hello.Id, GridId: landing, X: 4, Y: 1, W: 2, H: 2,
 	}); err != nil {
 		t.Fatalf("PlaceTile: %v", err)
 	}
