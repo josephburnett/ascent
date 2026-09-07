@@ -31,9 +31,8 @@ func drain(t *testing.T, ch <-chan ev, want int) []ev {
 	return out
 }
 
-// Distinct entities are never dropped for a stalled subscriber; the same
-// entity coalesces to its latest state; an unkeyable event ("") is never
-// coalesced.
+// Distinct entities are never dropped, the same entity coalesces to its latest
+// state, and an unkeyable event ("") never coalesces.
 func TestHubCoalescesPerKeyAndDropsNothing(t *testing.T) {
 	h := New(func(e ev) string { return e.key })
 	ch, cancel := h.Subscribe()
@@ -52,8 +51,7 @@ func TestHubCoalescesPerKeyAndDropsNothing(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		h.Publish(ev{key: "same", n: i})
 	}
-	// Distinct tiles interleaved: the coalesced entity keeps its first
-	// slot, later entities follow.
+	// The coalesced entity keeps its first slot and later entities follow.
 	h.Publish(ev{key: "other", n: 1})
 	h.Publish(ev{key: "same", n: 99})
 	got = drain(t, ch, 2)
@@ -72,8 +70,7 @@ func TestHubCoalescesPerKeyAndDropsNothing(t *testing.T) {
 	}
 }
 
-// Cancel closes the stream, detaches the subscriber, and is safe to call
-// twice, as with a deferred cancel after an explicit one.
+// Calling cancel twice is safe, as with a deferred cancel after an explicit one.
 func TestCancelClosesAndIsIdempotent(t *testing.T) {
 	h := New(func(e ev) string { return e.key })
 	ch, cancel := h.Subscribe()
