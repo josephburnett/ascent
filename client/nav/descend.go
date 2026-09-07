@@ -14,51 +14,37 @@ import (
 	"github.com/josephburnett/gridwell/client/zoomtrans"
 )
 
-// The descent verb.
-//
-// Physically there is one gesture — go through a doorway. The place model
-// says the same thing (client/pane, place.go): a descent pushes a frame. The
-// data model's ownership boundaries — a well, a link into another namespace,
-// a content tile — are wire declarations on the doorway tile, read in one
-// switch. They do not become separate descent verbs.
+// The descent verb: one gesture, and one switch over the doorway tile's wire
+// declarations. A well, a link into another namespace and a content tile do
+// not become separate descent verbs.
 
-// descend takes the pane through the doorway tile. Which kind of frame it
-// pushes is the tile's declaration, never the call site's. A well or a link
-// pushes a grid frame; a text, url, shell or page tile pushes a content
-// frame, because the tile is the place; and a pane tile descends the window a
-// level instead, its place being a whole tree.
+// descend takes the pane through the doorway tile. Which frame it pushes is
+// the tile's declaration, never the call site's, and a pane tile descends the
+// window a level instead, its place being a whole tree.
 func (m *Machine) descend(g Gesture, w World) Plan {
 	var pl planner
 	p, ok := w.Pane(g.PaneID)
 	if !ok || w.Door == nil {
 		return pl.plan()
 	}
-	// A dead link is not a doorway: it points into a namespace this node does
-	// not declare, so there is nothing on the other side to descend into. It
-	// does nothing, quietly — the tile is already drawn dead, and that is the
-	// answer. A notice here would be the error this state replaced, repeated
-	// on every click. It stops in front of the framing flush because nothing
-	// about the pane's place changes.
+	// A dead link has nothing on the other side and the tile is already drawn
+	// dead, so a notice would be the error this state replaced. It stops
+	// before the framing flush because the pane's place does not change.
 	if w.Door.DeadLink {
 		return pl.plan()
 	}
-	// A descent that arrives while this pane is still animating a previous
-	// one lands that one first: its frame push happened, and the segments
-	// below are computed from the place it left, not from the outgoing
-	// animation's scratch viewport. Stacking a visit over a live descent is
-	// exactly this case — which is why the rest of the plan waits for a fresh
-	// world.
+	// A descent arriving mid-animation lands that one first, so the segments
+	// below compute from the place it left rather than from the outgoing
+	// animation's scratch viewport.
 	pl.add(Effect{Kind: EffCancelTransition, PaneID: p.ID})
 	if w.Animating[p.ID] {
 		pl.then(g)
 		return pl.plan()
 	}
-	// The pane is about to change place: flush framing still inside the
-	// settle window, while the viewport still belongs to the place it
+	// Flush framing while the viewport still belongs to the place it
 	// describes. One place asks, so no door can forget.
 	pl.add(Effect{Kind: EffFlushFraming})
-	// The getter, so a gesture with no door names no kind and plans nothing,
-	// rather than dereferencing one.
+	// The getter, so a gesture with no door names no kind and plans nothing.
 	switch {
 	case rpc.IsWorkspaceKind(g.Door.GetKind()):
 		pl.add(Effect{Kind: EffEnterLevel, PaneID: p.ID, TileID: g.Door.Id,
@@ -71,26 +57,14 @@ func (m *Machine) descend(g Gesture, w World) Plan {
 	return pl.plan()
 }
 
-// descendGrid plans the two-segment transition into a well's child grid, with
-// the grid frame pushed at the swap.
-//
-// Phases:
-//
-//	A. Combined pan+zoom in parent to (wellCenter, OvertakeZoom).
-//	B. Atomic install of the calibrated child state at the frame push.
-//	C. (Optional) animate the child to the well's stored ViewZoom so
-//	   re-descent lands at the same zoom the user left at. Only fires when
-//	   well.ViewZoom > 0; the default for never-entered wells is 0
-//	   (calibrated zoom).
-//
-// Total time is split between A and C proportional to motion distance so
-// neither feels rushed. C is zero-length when ViewZoom is unset.
+// descendGrid plans the transition into a well's child grid: a pan and zoom to
+// the well at Overtake, the frame push, then an ease to the stored ViewZoom so
+// a re-descent lands where the user left. The time is split by motion
+// distance, and the second segment is zero-length when ViewZoom is unset.
 func (m *Machine) descendGrid(p PaneView, well *gridwellv1.Tile, w World, pl *planner) {
 	if well.ChildGridId == "" {
-		// A link tile whose target is not available: a broken plugin, or
-		// a connection whose remote has not answered yet. Say why
-		// instead of silently doing nothing; pluginhealth owns the wording,
-		// and the gatherer has already asked it.
+		// A link whose target is not available says why rather than doing
+		// nothing. pluginhealth owns the wording and the gatherer asked it.
 		if n := w.Door.Health; n != nil {
 			pl.add(Effect{Kind: EffReport, Severity: n.Severity,
 				Source: n.Source, Message: n.Message})
@@ -107,28 +81,22 @@ func (m *Machine) descendGrid(p PaneView, well *gridwellv1.Tile, w World, pl *pl
 	mid, swap, final := zoomtrans.Descent(from, wl, r.W, r.H, w.CellPx)
 	base := p.Stack.Clone()
 	if w.Door.IsLink {
-		// A link crosses into another id space: a plugin link tile, a mounted
-		// well, a cross-plugin clone. The frame carries the target grid id —
-		// the one place that fact is authoritative — so every path id below
-		// it stays within one namespace, and the ascent pops back onto this
-		// very tile without searching the parent grid for a well whose child
-		// matches the anchor.
+		// A link crosses into another id space, so the frame carries the target
+		// grid id: every path id below stays in one namespace, and the ascent
+		// pops back onto this tile without searching the parent grid.
 		next.GridID = well.ChildGridId
 		// The + menu comes back with you, just as you left it.
 		base.MenuOpen = w.MenuOpenOn == p.ID
 		pl.add(Effect{Kind: EffCloseMenu})
 		// The synthetic well an in-grid + menu descent goes through rounds
-		// the launcher tile's position; recentre the parent zoom on the exact
-		// footprint center so the descent lands square on it.
+		// the launcher's position, so recentre on the exact footprint.
 		mid.Cx = float64(well.X) + float64(well.W)/2
 		mid.Cy = float64(well.Y) + float64(well.H)/2
 	}
 	pl.add(Effect{Kind: EffFetchGrid, GridID: well.ChildGridId})
 
-	// The place each segment plays in: the parent zoom happens where the pane
-	// already is, and the child segment plays in the pushed frame. Because
-	// segments install snapshots, the parent frame keeps the viewport the
-	// user actually left it at.
+	// Segments install snapshots, so the parent frame keeps the viewport the
+	// user left it at while the child segment plays in the pushed frame.
 	child := base.Clone()
 	child.Push(next)
 
@@ -143,15 +111,12 @@ func (m *Machine) descendGrid(p PaneView, well *gridwellv1.Tile, w World, pl *pl
 	}
 
 	pl.add(Effect{Kind: EffStartTransition, PaneID: p.ID, Segments: []transition.Segment{
-		// A: parent pan+zoom toward the well/footprint center at Overtake.
 		{
 			Place:  &base,
 			FromCx: from.Cx, FromCy: from.Cy, FromZoom: from.Zoom,
 			ToCx: mid.Cx, ToCy: mid.Cy, ToZoom: mid.Zoom,
 			DurationMs: durations[0],
 		},
-		// C: after the frame push, ease the child zoom out to the stored
-		// ratio (zero-length when swap == final).
 		{
 			Place:  &child,
 			FromCx: swap.Cx, FromCy: swap.Cy, FromZoom: swap.Zoom,
@@ -161,15 +126,10 @@ func (m *Machine) descendGrid(p PaneView, well *gridwellv1.Tile, w World, pl *pl
 	}})
 }
 
-// descendContent plans a pane's zoom into a content tile (text, url, shell,
-// page) as a single concurrent pan+zoom motion, with the content frame pushed
-// at the landing. Unlike a grid descent nothing is appended to the path — the
-// tile lives in the current grid as a leaf — and the meaningful screen area in
-// live mode is the inner box (textarea region), not the full pane, so the
-// descent targets the fit zoom that makes the footprint fill it. At the frame
-// push the footprint screen size is the inner box, and the live TextZoom is
-// reconstructed from the tile's intrinsic ViewZoom ratio for visual
-// continuity.
+// descendContent plans one pan-and-zoom into a content tile, pushing the frame
+// at the landing. Nothing is appended to the path, the tile being a leaf of
+// the current grid, and the target is the fit zoom for the inner box, the
+// meaningful screen area when live.
 func (m *Machine) descendContent(p PaneView, file *gridwellv1.Tile, w World, pl *planner) {
 	r := p.Rect
 	foot := pane.Footprint{X: file.X, Y: file.Y, W: file.W, H: file.H}
@@ -179,17 +139,12 @@ func (m *Machine) descendContent(p PaneView, file *gridwellv1.Tile, w World, pl 
 		target = p.Zoom
 	}
 
-	// Eagerly fetch the blob so it's likely cached by the time the transition
-	// lands. URL tiles don't have a blob; their preview path goes through the
-	// url preview instead — and so does a serves_page tile's (its descent is
-	// the page, not the document body).
+	// Fetch the blob eagerly so it is likely cached when the transition
+	// lands. A url or serves_page tile has none: its descent is the page.
 	if rpc.TextDocument(file) {
-		// Source-backed bodies (fs files, the proc @info tile) are host
-		// state, not versioned content: their version is always 0, so a cache
-		// entry from the first open would match forever and the descent would
-		// show stale bytes however the file changed on disk. Every open
-		// re-reads — it is all read-only — so drop before fetching, or the
-		// fetch does not refetch.
+		// A source-backed body is host state, not versioned content: its
+		// version is always 0, so a cache entry from the first open would
+		// match forever. Drop before fetching, or the fetch does not refetch.
 		if w.Door.ReadOnly {
 			pl.add(Effect{Kind: EffDropTileContent, ContentID: rpc.ContentID(file)})
 			pl.add(Effect{Kind: EffFetchGrid, PaneID: p.ID})
@@ -198,11 +153,9 @@ func (m *Machine) descendContent(p PaneView, file *gridwellv1.Tile, w World, pl 
 	}
 
 	base := p.Stack.Clone()
-	// Stacking a visit over a live descent (a url opened from a shell): the
-	// animation plays in the grid behind the current content, since a content
-	// frame's viewport is already in that grid's coordinates, while the frame
-	// itself stays on the stack, so one ascent lands right back on it. No
-	// stash, no second stack.
+	// Stacking a visit over a live descent animates in the grid behind the
+	// current content, whose coordinates its viewport already uses, and leaves
+	// the frame on the stack so one ascent lands back on it.
 	animBase := base.Clone()
 	if animBase.Content {
 		animBase.Pop()
@@ -213,9 +166,9 @@ func (m *Machine) descendContent(p PaneView, file *gridwellv1.Tile, w World, pl 
 		float64(file.TextX), float64(file.TextY)))
 	wasContent := base.Content
 
-	// The descent-time row travels on the continuation BY VALUE: an ephemeral
-	// scratch-grid tile is in no cached grid, so a cache lookup at transition
-	// end would miss it and silently skip going live.
+	// The descent-time row travels by value: an ephemeral scratch tile is in
+	// no cached grid, so a lookup at transition end would miss it and
+	// silently skip going live.
 	tok := m.mint(cont{
 		Guard:  Guard{Kind: GuardPaneExists, PaneID: p.ID},
 		Step:   stepDescendContentLand,
@@ -226,8 +179,6 @@ func (m *Machine) descendContent(p PaneView, file *gridwellv1.Tile, w World, pl 
 	})
 	pl.add(Effect{Kind: EffStartTransition, PaneID: p.ID, Land: tok,
 		Segments: []transition.Segment{
-			// Single combined pan+zoom segment: pan to the file center while
-			// simultaneously zooming to the overtake target.
 			{
 				Place:  &animBase,
 				FromCx: p.Cx, FromCy: p.Cy, FromZoom: p.Zoom,
@@ -236,15 +187,13 @@ func (m *Machine) descendContent(p PaneView, file *gridwellv1.Tile, w World, pl 
 			},
 		}})
 	if wasContent {
-		// The outgoing content's overlay goes now: the animation plays over
-		// the grid behind it.
+		// The animation plays over the grid behind the outgoing content.
 		pl.add(Effect{Kind: EffRefreshOverlay})
 	}
 }
 
 // descentTextMode applies textedit.DescentMode, the one owner, to the
-// descent-time row. cursorURL is the restore path's extra input (an address
-// that encodes a text cursor), which a gesture descent never has.
+// descent-time row. A gesture descent never has the restore path's cursor URL.
 func descentTextMode(file *gridwellv1.Tile, readOnly bool) string {
 	return textedit.DescentMode(textedit.ModeInput{
 		TextDocument: rpc.TextDocument(file), ReadOnly: readOnly,
@@ -252,16 +201,10 @@ func descentTextMode(file *gridwellv1.Tile, readOnly bool) string {
 	})
 }
 
-// reEngage re-applies the auto-live verdict to a pane that is already sitting
-// in a content descent: the restore paths' arm of the one go-live owner. A
-// reload, a pane-tile install, and an ascent landing back onto a content frame
-// stacked under a deeper visit all reach it.
-//
-// The row is read first, and unconditionally — it is not necessarily cached at
-// restore time, and the refetch is what makes a link's target and a tile that
-// moved resolve at all. The answer then runs under the one moved-on rule: the
-// user may have gone elsewhere while the read was in flight, and where they
-// went is never overridden.
+// reEngage re-applies the auto-live verdict to a pane already in a content
+// descent. The row is read first and unconditionally, since it may not be
+// cached at restore time and the refetch is what resolves a link's target and
+// a tile that moved. The answer runs under the moved-on rule.
 func (m *Machine) reEngage(g Gesture, w World) Plan {
 	var pl planner
 	tok := m.mint(cont{
@@ -275,14 +218,10 @@ func (m *Machine) reEngage(g Gesture, w World) Plan {
 	return pl.plan()
 }
 
-// followLink resolves a url link's target row and places the live view on it.
-// The url string, the session partition, the history and the freeze writeback
-// all belong to the tile that OWNS the content, and that row lives in a
-// foreign grid the client has likely never loaded — so it is read, and the
-// view places when the answer lands. The read is asynchronous, so it runs
-// under the one moved-on rule: the pane may have closed, ascended, or
-// descended elsewhere, and a late placement would put a native surface over a
-// pane that no longer shows that tile.
+// followLink resolves a url link's target row and places the live view on it,
+// because the url, the session partition, the history and the freeze writeback
+// all belong to the row that owns the content, in a grid the client has likely
+// never loaded. The read runs under the moved-on rule.
 func (m *Machine) followLink(g Gesture, w World) Plan {
 	var pl planner
 	tok := m.mint(cont{
@@ -295,24 +234,18 @@ func (m *Machine) followLink(g Gesture, w World) Plan {
 	return pl.plan()
 }
 
-// healStale re-derives a restored pane's path when its stored (anchor, path)
-// no longer leads to the descended tile's grid: the tile moved, since its id
-// is immutable but its path is not. A scoped `id:` Search, the one find verb,
-// answers with the current containing-well chain.
-//
-// It reports whether the search was started; when it is, the go-live verdict
-// rides the answer instead, so a heal always precedes the re-engagement it
-// changes the place under.
+// healStale re-derives a restored pane's path when it no longer leads to the
+// descended tile's grid, the tile's id being immutable and its path not. It
+// reports whether the search was started, and when it was the go-live verdict
+// rides the answer, so a heal precedes the re-engagement it moves.
 func (m *Machine) healStale(paneID string, tile *gridwellv1.Tile, w World, pl *planner) bool {
 	p, ok := w.Pane(paneID)
 	if !ok {
 		return false
 	}
-	// An ephemeral descent is deliberately focused off the pane's grid: the
-	// scratch tile rides above whatever place the pane frames. The path is not
-	// stale — the tile is elsewhere by design — and healing would re-anchor
-	// the pane into the scratch grid. Not-known-yet counts as ephemeral here,
-	// because the re-anchor is a durable write.
+	// An ephemeral descent rides above whatever place the pane frames, so
+	// healing would re-anchor it into the scratch grid. Not known yet counts
+	// as ephemeral, because the re-anchor is a durable write.
 	if eph, known := scratch.Ephemeral(p.Scratch, tile.GridId); eph || !known {
 		return false
 	}
@@ -332,10 +265,9 @@ func (m *Machine) healStale(paneID string, tile *gridwellv1.Tile, w World, pl *p
 	return true
 }
 
-// landHealed re-anchors the pane at the owning root with the fresh path, so
-// the descent binds and the crumbs show a true path from the root. The layout
-// persister derives the corrected layout from the live tree on its next tick,
-// so the heal persists with no dedicated writer.
+// landHealed re-anchors the pane at the owning root with the fresh path. The
+// layout persister derives the corrected layout from the live tree on its next
+// tick, so the heal persists with no dedicated writer.
 func landHealed(paneID string, tile *gridwellv1.Tile, wells []*gridwellv1.Tile, pl *planner) {
 	anchor := tile.GridId
 	path := make([]string, 0, len(wells))
@@ -346,8 +278,8 @@ func landHealed(paneID string, tile *gridwellv1.Tile, wells []*gridwellv1.Tile, 
 		}
 	}
 	st := pane.StackAt(anchor, path, tile.Id)
-	// Centre the healed viewport on the tile in its new grid, so ascending out
-	// of the descent lands looking at the tile, not a stale offset.
+	// Centre on the tile in its new grid, so ascending lands looking at it
+	// rather than at a stale offset.
 	st.Cx = float64(tile.X) + float64(tile.W)/2
 	st.Cy = float64(tile.Y) + float64(tile.H)/2
 	pl.add(Effect{Kind: EffInstallPlace, PaneID: paneID, Stack: &st})
@@ -355,19 +287,13 @@ func landHealed(paneID string, tile *gridwellv1.Tile, wells []*gridwellv1.Tile, 
 	pl.add(Effect{Kind: EffScheduleURLUpdate})
 }
 
-// autoLiveOnDescent applies the shellconn.DecideAutoLive verdict for the
-// just-descended tile: open the url view, attach or create the shell PTY,
-// probe an unknown shell session first, or stay frozen — text, browser hosts,
-// dead sessions. It is the one auto-live owner, and the refresh affordances
-// are the retry for the cases it stays frozen on.
-//
-// The caller has already established that the pane is descended in tile: the
-// descent's landing installs that very place one effect earlier, and the
-// restore path re-checks with a DescendedIn guard before it resumes.
+// autoLiveOnDescent applies shellconn.DecideAutoLive to the just-descended
+// tile. It is the one auto-live owner, and the refresh affordance is the retry
+// wherever it stays frozen.
 func (m *Machine) autoLiveOnDescent(paneID string, tile *gridwellv1.Tile, w World, pl *planner) {
-	// The shell facts key by the content id, so a link attaches its target's
-	// session: the same reads the refresh button's visibility does, so the
-	// two decisions cannot disagree about a dead session.
+	// The shell facts key by content id, so a link attaches its target's
+	// session. The refresh button's visibility reads the same, so the two
+	// cannot disagree about a dead session.
 	cid := rpc.ContentID(tile)
 	switch shellconn.DecideAutoLive(
 		rpc.WebContent(tile), tile.Kind == rpc.KindShell,
@@ -381,8 +307,7 @@ func (m *Machine) autoLiveOnDescent(paneID string, tile *gridwellv1.Tile, w Worl
 		pl.add(Effect{Kind: EffOpenStream, PaneID: paneID, TileID: tile.Id,
 			Stream: StreamShell})
 	case shellconn.AutoLiveProbeShell:
-		// The probe is async and the user may move on: the continuation
-		// carries the one guard that says so.
+		// The probe is async and the user may move on.
 		tok := m.mint(cont{
 			Guard:  Guard{Kind: GuardDescendedIn, PaneID: paneID, TileID: tile.Id},
 			Step:   stepProbedShell,

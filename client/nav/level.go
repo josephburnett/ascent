@@ -11,30 +11,25 @@ import (
 	"github.com/josephburnett/gridwell/client/transition"
 )
 
-// The second axis: a pane tile's place is a whole tree of panes, so it is the
-// window that descends into one, not a pane. The vocabulary is the frame
-// stack's — Push descends, Pop ascends (client/pane, levels.go) — and every
-// level stays alive while it is parked.
-//
-// A descent has two async halves that must join before the swap: the zoom
-// animation and the row-plus-layout fetch. They are two arms of one barrier,
-// so neither half knows about the other and nothing polls for the second.
+// The second axis: a pane tile's place is a whole tree, so the window descends
+// into one, not a pane, and every level stays alive while parked. A descent's
+// animation and its fetch are two arms of one barrier, so neither knows about
+// the other and nothing polls.
 
-// levelData is one level being opened: what the fetch arm learns, and what the
-// install needs when the arms join. It travels on the continuation because
-// none of it is re-readable at join time — the origin pane's place is by then
+// levelData is one level being opened. It travels on the continuation because
+// none of it is re-readable at join time: the origin pane's place is by then
 // the animation's landing, and the decoded tree is nowhere else.
 type levelData struct {
-	// Boot marks the ?w= restore: no animation to join, no outer tree to
-	// park, and a landing on the pane tile's own grid rather than a capture.
+	// Boot marks the ?w= restore: no animation to join, no outer tree to park,
+	// and a landing on the pane tile's own grid rather than a capture.
 	Boot bool
 	// PaneID is the origin pane ("" on boot) and Origin its place, put back
 	// before the outer tree is parked so ascent restores what the user left.
 	PaneID string
 	Origin pane.Stack
-	// TileID is the tile whose layout this level is — the pane link's target
-	// once the link has been followed. IDPrefix namespaces the pane ids this
-	// level mints and decodes, since stacked trees are all alive at once.
+	// TileID is the tile whose layout this level is, the pane link's target
+	// once followed. IDPrefix namespaces the pane ids this level mints, since
+	// stacked trees are all alive at once.
 	TileID   string
 	IDPrefix string
 	Barrier  BarrierID
@@ -50,8 +45,7 @@ type levelData struct {
 }
 
 // enterLevel descends the window into a pane tile: a zoom into the tile's
-// footprint, like every descent, racing the layout fetch, with the swap at
-// whichever finishes last.
+// footprint racing the layout fetch, with the swap at whichever finishes last.
 func (m *Machine) enterLevel(g Gesture, w World) Plan {
 	var pl planner
 	p, ok := w.Pane(g.PaneID)
@@ -60,23 +54,18 @@ func (m *Machine) enterLevel(g Gesture, w World) Plan {
 	}
 	pt := g.Door
 	ld := &levelData{
-		PaneID: p.ID,
-		// The origin pane's place, for the organize-this default and for the
-		// byte-identical viewport restore under the animation.
+		PaneID:   p.ID,
 		Origin:   p.Stack.Clone(),
 		TileID:   pt.Id,
 		IDPrefix: "w" + strconv.Itoa(w.LevelDepth+1) + ":",
 	}
 	ld.Barrier = m.mintBarrier(p.ID, 2, ld)
 
-	// The animation arm. A never-arranged tile animates as its face becoming
-	// the level outline — an expanding rect, with the content never moving —
-	// instead of the zoom, which would read as a jarring descend-and-return
-	// over an unchanged view: the first descent captures the window layout, so
-	// you keep looking at exactly what you had. The transition still runs, and
-	// still times the descent. The CACHED row picks the animation and the
-	// fresh row picks the tree; they disagree only across the stale-cache
-	// window, where either combination is harmless.
+	// The animation arm. A never-arranged tile expands its face into the level
+	// outline instead of zooming, because the first descent captures the
+	// window layout and a zoom over an unchanged view reads as a stutter. The
+	// cached row picks the animation and the fresh row the tree, which differ
+	// only across the stale-cache window, harmlessly.
 	here := p.Stack.Clone()
 	seg := transition.Segment{
 		Place:  &here,
@@ -86,8 +75,8 @@ func (m *Machine) enterLevel(g Gesture, w World) Plan {
 	}
 	expand := pt.BlobId == 0
 	if !expand {
-		// The zoom: pan to the tile's centre while zooming until its footprint
-		// fills the pane box, so the preview grows into the live tree.
+		// Pan to the tile's centre while zooming until its footprint fills the
+		// pane box, so the preview grows into the live tree.
 		cx, cy := pane.Footprint{X: pt.X, Y: pt.Y, W: pt.W, H: pt.H}.Center()
 		target := panebox.FitZoom(p.Rect, pt.W, pt.H, w.TextSideInset, w.CellPx)
 		if target < p.Zoom {
@@ -105,20 +94,17 @@ func (m *Machine) enterLevel(g Gesture, w World) Plan {
 	return pl.plan()
 }
 
-// bootLevel restores the innermost pane tile from a reload (?w=). The outer
-// tree is nil by design: nesting membership is session-only, like the outer
-// frames of a pane's place. There is no animation, so there is no barrier
-// either — the fetch arm installs on its own.
+// bootLevel restores the innermost pane tile from a reload. The outer tree is
+// nil by design, nesting membership being session-only. With no animation
+// there is no barrier: the fetch arm installs on its own.
 func (m *Machine) bootLevel(tileID string, pl *planner) {
 	m.awaitLevelTile(&levelData{Boot: true, TileID: tileID, IDPrefix: "w1:"}, pl)
 }
 
-// awaitLevelTile reads the level's row. It is refetched rather than taken from
-// the cache: a stale BlobID of 0 — another client's first arrange whose echo
-// has not landed here yet — would install the writable default, and the
-// persister could then overwrite the fresh arrangement, since layout writes
-// carry no version bump to conflict on. One RPC closes the window to genuine
-// concurrent edits.
+// awaitLevelTile reads the level's row, refetched rather than cached: a stale
+// BlobID of 0 would install the writable default and let the persister
+// overwrite a fresh arrangement, layout writes carrying no version to conflict
+// on.
 func (m *Machine) awaitLevelTile(ld *levelData, pl *planner) {
 	tok := m.mint(cont{Guard: Guard{Kind: GuardAlways}, Step: stepLevelTile,
 		Barrier: ld.Barrier, PaneID: ld.PaneID, Level: ld})
@@ -126,7 +112,6 @@ func (m *Machine) awaitLevelTile(ld *levelData, pl *planner) {
 		Request: Request{Kind: RequestGetTile, ID: ld.TileID}})
 }
 
-// levelTile classifies the row the fetch arm read.
 func (m *Machine) levelTile(c cont, r Result, pl *planner) Plan {
 	ld := c.Level
 	if !r.OK || r.Tile == nil {
@@ -135,8 +120,8 @@ func (m *Machine) levelTile(c cont, r Result, pl *planner) Plan {
 	t := r.Tile
 	if rpc.LeafLink(t) && !ld.Followed {
 		// A pane link opens the target's arrangement, the one shared layout,
-		// and the persister then writes back through the target id too: the
-		// same read-through rule as every other content door.
+		// and the persister writes back through the target id: the same
+		// read-through rule as every other content door.
 		ld.Followed = true
 		ld.TileID = rpc.ContentID(t)
 		m.awaitLevelTile(ld, pl)
@@ -149,10 +134,9 @@ func (m *Machine) levelTile(c cont, r Result, pl *planner) Plan {
 	}
 	ld.Tile = t
 	if t.BlobId == 0 {
-		// Never arranged. A descent captures the window layout as it stands at
-		// the swap — deferred to install time so the encode reads the tree
-		// after the origin pane's place is back. A boot restore has no window
-		// worth capturing and opens on the tile's containing grid instead.
+		// Never arranged. A descent captures the window layout at the swap,
+		// deferred to install time so the encode reads the tree after the
+		// origin pane's place is back; a boot restore has none worth capturing.
 		if ld.Boot {
 			ld.Tree = m.levelFallbackTree(ld)
 		} else {
@@ -167,9 +151,9 @@ func (m *Machine) levelTile(c cont, r Result, pl *planner) Plan {
 	return pl.plan()
 }
 
-// levelBody decodes the layout blob. A blob that cannot be read opens the
-// default READ-ONLY: the session must never overwrite a blob it could not
-// read, since downgrading a newer format would rewrite history.
+// levelBody decodes the layout blob. An unreadable blob opens the default
+// read-only: overwriting a blob this session could not read would downgrade a
+// newer format.
 func (m *Machine) levelBody(c cont, r Result, pl *planner) Plan {
 	ld := c.Level
 	if !r.OK {
@@ -190,9 +174,9 @@ func (m *Machine) levelBody(c cont, r Result, pl *planner) Plan {
 	return m.levelReady(ld, pl)
 }
 
-// levelFallbackTree is the single-pane default: the pane tile's containing
-// grid centred on the tile for a boot restore, and the origin pane's own place
-// for a descent, so an unreadable blob leaves you looking at where you were.
+// levelFallbackTree is the single-pane default: the pane tile's grid centred
+// on the tile for a boot restore, the origin pane's own place for a descent,
+// so an unreadable blob leaves you looking at where you were.
 func (m *Machine) levelFallbackTree(ld *levelData) *pane.Tree {
 	if ld.Boot {
 		t := ld.Tile
@@ -203,8 +187,8 @@ func (m *Machine) levelFallbackTree(ld *levelData) *pane.Tree {
 		ld.Origin.Cx, ld.Origin.Cy, ld.Origin.Zoom)
 }
 
-// levelReady reports the fetch arm: a boot restore installs at once, and a
-// descent installs when the animation has landed too.
+// levelReady reports the fetch arm. A boot restore installs at once; a descent
+// waits for the animation.
 func (m *Machine) levelReady(ld *levelData, pl *planner) Plan {
 	if ld.Boot {
 		m.installLevelData(ld, pl)
@@ -216,9 +200,9 @@ func (m *Machine) levelReady(ld *levelData, pl *planner) Plan {
 	return pl.plan()
 }
 
-// levelFailed surfaces a read that did not answer and reports the arm as
-// failed. The descent then puts the origin viewport back — but only once the
-// animation has landed, or the pane would snap back mid-zoom.
+// levelFailed surfaces a read that did not answer and fails the arm. The
+// descent puts the origin viewport back only once the animation has landed, or
+// the pane would snap back mid-zoom.
 func (m *Machine) levelFailed(ld *levelData, label string, r Result, pl *planner) Plan {
 	pl.add(Effect{Kind: EffReport, Severity: errsurface.Error,
 		Source: "rpc:" + label, Message: label + " failed: " + r.Err})
@@ -231,17 +215,15 @@ func (m *Machine) levelFailed(ld *levelData, label string, r Result, pl *planner
 	return pl.plan()
 }
 
-// installLevel is the joined step: the origin pane's place goes back, and then
-// either the swap or nothing at all, when the fetch failed.
+// installLevel is the joined step: the origin pane's place goes back, then the
+// swap, or nothing when the fetch failed.
 func (m *Machine) installLevel(b *barrier, pl *planner) {
 	ld := b.Level
 	if ld == nil {
 		return
 	}
-	// The animation left the origin pane zoomed into the tile: put its true
-	// place back before the outer tree is parked or captured, so ascent
-	// restores exactly what the user left. On the failed path that is the
-	// whole plan.
+	// The animation left the origin pane zoomed into the tile, so its true
+	// place goes back before the outer tree is parked or captured.
 	st := ld.Origin.Clone()
 	pl.add(Effect{Kind: EffInstallPlace, PaneID: ld.PaneID, Stack: &st})
 	if b.Failed {
@@ -250,47 +232,39 @@ func (m *Machine) installLevel(b *barrier, pl *planner) {
 	m.installLevelData(ld, pl)
 }
 
-// installLevelData plans the swap itself: the outer level's animations land,
-// its layout flushes, and the new tree takes over with the outer one parked
-// alive behind it.
+// installLevelData plans the swap: the outer level's animations land, its
+// layout flushes, and the new tree takes over with the outer one parked alive.
 func (m *Machine) installLevelData(ld *levelData, pl *planner) {
-	// The outer tree is about to stop being drawn: land every animation it
-	// still has, so no pane is parked on an animation's scratch place for as
-	// long as this level lasts.
+	// Land every animation the outer tree still has, so no pane is parked on
+	// an animation's scratch place for as long as this level lasts.
 	pl.add(Effect{Kind: EffCancelTransition})
 	pl.add(Effect{Kind: EffCloseMenu})
-	// Entering a nested level: flush the current one's layout first. Its tree
-	// is about to sit un-drawn in a level for an unbounded time, and the
-	// debounce must not still be holding its latest arrangement. A no-op at
-	// depth 0.
+	// The current level's tree is about to sit un-drawn for an unbounded time,
+	// so the debounce must not still hold its latest arrangement.
 	pl.add(Effect{Kind: EffFlushLayout})
 	lvl := pane.Level{
 		OriginPane: ld.PaneID,
 		TileID:     ld.Tile.Id,
-		// Where the pane tile sits, off the row this descent already read: the
-		// close-all landing when no tree was parked, and so the face the bar's
-		// root crumb wears there instead of an anonymous square.
+		// Where the pane tile sits: the close-all landing when no tree was
+		// parked, and the face the bar's root crumb wears there.
 		GridID: ld.Tile.GridId,
 		// Raw alt text: the bar substitutes the generic label at draw time, so
-		// the crumb rename can round-trip an empty name honestly.
+		// a crumb rename round-trips an empty name honestly.
 		Name:     ld.Tile.AltText,
 		ReadOnly: ld.ReadOnly,
 	}
 	pl.add(Effect{Kind: EffInstallLevel, PaneID: ld.PaneID, TileID: ld.Tile.Id,
 		Level: &lvl, Tree: ld.Tree, Baseline: ld.Data, KeepOuter: !ld.Boot,
 		Capture: ld.Capture, IDPrefix: ld.IDPrefix})
-	// The installed tree's focused leaf may be text-descended, from a restored
-	// text_focus: rebind the textarea singleton to it, or the overlay keeps
-	// showing, and scroll-tracking against, whatever tile it was bound to
-	// before the swap.
+	// The installed tree's focused leaf may be text-descended, so the textarea
+	// singleton rebinds or the overlay keeps tracking its pre-swap tile.
 	pl.add(Effect{Kind: EffRefreshOverlay})
 	pl.add(Effect{Kind: EffScheduleURLUpdate})
 }
 
-// leaveLevels leaves one pane-tile level and hands the rest back: the pane-tile
-// axis of the same pop whose pane-frame axis is ascend(). Each hop flushes the
-// layout one last time, freezes and forgets the inner leaves, pops, and
-// restores the outer tree verbatim with focus back on the origin pane.
+// leaveLevels leaves one pane-tile level and hands the rest back: the
+// pane-tile axis of the pop whose pane-frame axis is ascend. Each hop restores
+// the outer tree verbatim with focus on the origin pane.
 func (m *Machine) leaveLevels(g Gesture, w World) Plan {
 	var pl planner
 	if g.Count <= 0 || w.LevelTop == nil {
@@ -298,19 +272,17 @@ func (m *Machine) leaveLevels(g Gesture, w World) Plan {
 	}
 	top := *w.LevelTop
 	pl.add(Effect{Kind: EffFlushLayout})
-	// The inner tree is about to be dropped: land its animations before the
-	// subtree flush reads each leaf's viewport, or a scratch viewport becomes
-	// the pane's durable framing.
+	// Land the inner tree's animations before the subtree flush reads each
+	// leaf's viewport, or a scratch viewport becomes durable framing.
 	pl.add(Effect{Kind: EffCancelTransition})
 	pl.add(Effect{Kind: EffCloseMenu})
 	pl.add(Effect{Kind: EffFlushDroppedSubtree})
 	outer := top.OuterTree != nil
 	pop := Effect{Kind: EffPopLevel, OriginPane: top.OriginPane, TileID: top.TileID}
 	if !outer {
-		// A level with no parked tree, from a boot restore, falls back to a
-		// fresh pane at the pane tile's containing grid — the same degradation
-		// an ascent has after a reload. The grid is the level's own fact, the
-		// row the descent read, so the landing is right on the first frame.
+		// A level with no parked tree falls back to a fresh pane at the pane
+		// tile's containing grid, which is the level's own fact off the row
+		// the descent read, so the landing is right on the first frame.
 		pop.GridID = top.GridID
 		if pop.GridID == "" {
 			pop.GridID = w.Home
@@ -320,17 +292,15 @@ func (m *Machine) leaveLevels(g Gesture, w World) Plan {
 	if !outer {
 		pl.add(Effect{Kind: EffFetchGrid, GridID: pop.GridID})
 	}
-	// The landing reads the tree the pop just installed — which pane is
-	// focused, where it sits, how big it is — so it is planned against a world
-	// gathered after it.
+	// The landing reads the tree the pop just installed, so it is planned
+	// against a world gathered after it.
 	pl.then(Gesture{Kind: GestureLandLevel, PaneID: top.OriginPane,
 		TileID: top.TileID, Outer: outer, Animate: g.Count == 1, Count: g.Count - 1})
 	return pl.plan()
 }
 
 // landLevel finishes one hop: the return animation onto the pane tile's
-// footprint, or the post-reload landing's re-centre, and then the next hop or
-// the tail.
+// footprint, or the post-reload re-centre, then the next hop or the tail.
 func (m *Machine) landLevel(g Gesture, w World) Plan {
 	var pl planner
 	if g.Outer {
@@ -344,15 +314,11 @@ func (m *Machine) landLevel(g Gesture, w World) Plan {
 		pl.then(Gesture{Kind: GestureLeaveLevels, Count: g.Count})
 		return pl.plan()
 	}
-	// Same rebind as an install: the restored outer tree's focused pane may
-	// itself be text-descended, and the singleton must follow the swap.
+	// The restored tree's focused pane may be text-descended too.
 	pl.add(Effect{Kind: EffRefreshOverlay})
-	// The restored outer leaves never froze — the boundary keeps every level
-	// alive — so for a still-running pane this is a no-op, the stream openers
-	// being idempotent. It matters for the panes that lost their surface to
-	// the one-surface rule while a higher level held the same tile: the holder
-	// just closed, so the surface is free again and the pane re-engages,
-	// through the one owner of that decision.
+	// The restored leaves never froze, so this is a no-op for a still-running
+	// pane. It matters for one that lost its surface to the one-surface rule
+	// while a higher level held the same tile: that holder just closed.
 	for _, p := range w.Panes {
 		if id := p.Stack.ContentID(); id != "" {
 			pl.add(Effect{Kind: EffReEngage, PaneID: p.ID, TileID: id})
@@ -362,10 +328,8 @@ func (m *Machine) landLevel(g Gesture, w World) Plan {
 	return pl.plan()
 }
 
-// animateLevelReturn plays the ascent's zoom-out: the origin pane starts
-// zoomed into the pane tile's footprint, the reverse of the descent's end, and
-// animates back to its restored viewport. Skipped, for an instant landing,
-// when the tile row is not in the cached grid: there is nothing to zoom out
+// animateLevelReturn plays the ascent's zoom-out, the reverse of the descent's
+// end. Skipped when the tile row is not cached: there is nothing to zoom out
 // of.
 func (m *Machine) animateLevelReturn(g Gesture, w World, pl *planner) {
 	p, ok := w.Pane(g.PaneID)
@@ -391,10 +355,9 @@ func (m *Machine) animateLevelReturn(g Gesture, w World, pl *planner) {
 }
 
 // recentreLevelLanding centres the post-reload landing on the pane tile the
-// window just came out of. Only the centring needs the row, and reading it is
-// asynchronous, so the pane keeps the landing grid until the answer comes: a
-// user who has already navigated wins over the late fetch, which is what the
-// untouched guard says.
+// window came out of. Only the centring needs the row, so the pane keeps the
+// landing grid until the read answers and the untouched guard lets a user who
+// navigated meanwhile win.
 func (m *Machine) recentreLevelLanding(g Gesture, w World, pl *planner) {
 	p, ok := w.Pane(w.Focus)
 	if !ok {
@@ -410,7 +373,6 @@ func (m *Machine) recentreLevelLanding(g Gesture, w World, pl *planner) {
 		Request: Request{Kind: RequestGetTile, ID: g.TileID}})
 }
 
-// levelRecentre applies that landing once the row has been read.
 func (m *Machine) levelRecentre(c cont, r Result, w World, pl *planner) {
 	if !r.OK || r.Tile == nil {
 		pl.add(Effect{Kind: EffReport, Severity: errsurface.Error,

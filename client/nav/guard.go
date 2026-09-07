@@ -2,28 +2,21 @@ package nav
 
 import "github.com/josephburnett/gridwell/client/pane"
 
-// A guard is what must still be true when an async answer lands. It is
-// evaluated against the FRESH snapshot, so it is a projection of pane.Stack
-// computed at resume and stored nowhere — not a second copy of "where is this
-// pane", which a generation counter would be.
-//
-// The existing moved-on checks were never one rule. They are different
-// preconditions per path: still descended in this tile; still sitting
-// untouched at this anchor; still the top level. The closed set below is
-// those checks, spelled once.
+// A guard is what must still be true when an async answer lands, evaluated
+// against the fresh snapshot: a projection of pane.Stack computed at resume
+// and stored nowhere, rather than a second copy of where the pane is. The
+// moved-on checks differ per path, and this is their closed set.
 type GuardKind int
 
 const (
-	// GuardAlways holds unconditionally.
-	GuardAlways GuardKind = iota
-	// GuardPaneExists: the pane is still in the tree. PaneID.
-	GuardPaneExists
-	// GuardDescendedIn: the pane is still descended in this tile —
+	GuardAlways     GuardKind = iota // holds unconditionally
+	GuardPaneExists                  // the pane is still in the tree: PaneID
+	// GuardDescendedIn: the pane is still descended in this tile, by
 	// pane.StillDescended. PaneID, TileID.
 	GuardDescendedIn
 	// GuardPaneUntouched: the pane still sits at this anchor with nothing
-	// pushed on it — the post-reload level landing's re-centre guard.
-	// PaneID, Anchor.
+	// pushed on it, the post-reload level landing's re-centre guard. PaneID,
+	// Anchor.
 	GuardPaneUntouched
 )
 
@@ -36,7 +29,7 @@ type Guard struct {
 }
 
 // holds evaluates the guard against a fresh snapshot. False retires the
-// continuation and the plan is empty: that is the whole moved-on rule.
+// continuation and the plan is empty.
 func (g Guard) holds(w World) bool {
 	switch g.Kind {
 	case GuardAlways:
