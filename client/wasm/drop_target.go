@@ -10,18 +10,10 @@ import (
 	"github.com/josephburnett/gridwell/client/zoomtrans"
 )
 
-// dropTarget describes where the cursor is currently pointing as a
-// destination for a drag-and-drop. Two flavors:
-//
-//   - parent-grid drop: gridID is the focused leaf grid of `pane`,
-//     cellSize is the parent cell size.
-//   - well-child-grid drop: gridID is the open well's ChildGridID,
-//     cellSize is the preview cell size, and path is the descent path
-//     into the well's interior.
-//
-// origin{X,Y} is the screen coordinate of cell (0, 0) in the target
-// grid — combined with cellSize and the cursor it's enough to compute
-// the target cell at the cursor.
+// dropTarget is where the cursor points as a drop destination: either the
+// pane's leaf grid or, when the cursor promoted into an open well, that
+// well's child grid. origin{X,Y} is the screen coordinate of cell (0, 0) in
+// that grid, so cellSize and the cursor give the target cell.
 type dropTarget struct {
 	pane     *pane.Pane
 	gridID   string
@@ -30,34 +22,15 @@ type dropTarget struct {
 	originY  float64
 }
 
-// dropInputAt gathers, at the cursor, every world-read a drop decision needs:
-// one resolution of the drop target and one dragdrop.DropInput built from it,
-// read by the left commit (onMouseUp), the right commit (commitRightClone)
-// and the ghost preview (previewDrop) alike, so the three cannot disagree
-// about the world they decide on.
+// dropInputAt gathers every world-read a drop decision needs. The left
+// commit, the right commit and the ghost preview all read it, so the three
+// cannot disagree about the world they decide on. The flavor is d.intent, set
+// by the press: Forbidden is move-only, because no creation is forbidden, and
+// Occupied excludes the dragged tile on a move but nothing on a creation.
 //
-// The gesture flavor is not a parameter: it is d.intent, the one owner, set
-// by the press that armed the drag. The move flavor and the creating flavors
-// (copy, link) differ deliberately:
-//
-//   - Forbidden is a move-only input (dropForbiddenForMove): no creation is
-//     forbidden — a solid well deep-copies and a link copies as a link — so
-//     a creating drag leaves it false and DecideDrop's forbidden branch never
-//     fires for a right-drag.
-//   - Occupied excludes the dragged tile itself on a move, mirroring the
-//     server's PlaceTile self-exclusion, and excludes nothing on a creation,
-//     where the source tile is a real neighbor the new tile must not land on.
-//
-// SameGrid is fed on every flavor: DecideDrop reads it only through
-// `TargetReadOnly && !(SameGrid && !Intent.Creates())`, where the intent
-// already decides the branch, so a creation's SameGrid cannot change a
-// verdict.
-//
-// placement asks for the drop cell as well — SameCell, Occupied, and the
-// returned (dropX, dropY). The preview passes false: it is optimistic about
-// placement and shows the snap-to-cell even over an occupied cell, while the
-// commit does the authoritative overlap check and snaps back. What the two
-// always share is the action class: delete, link, place, or reject.
+// placement asks for the drop cell too. The preview passes false, so it shows
+// the snap-to-cell even over an occupied cell, while the commit does the
+// authoritative overlap check. The two always share the action class.
 func (a *App) dropInputAt(d *dragState, sx, sy float64, placement bool) (
 	in dragdrop.DropInput, t *dropTarget, dropX, dropY int64) {
 
@@ -75,7 +48,7 @@ func (a *App) dropInputAt(d *dragState, sx, sy float64, placement bool) (
 		return in, t, 0, 0
 	}
 	// Unknown is not read-only: a drop must not be refused because the
-	// target grid's fetch has not landed. The server is the authority.
+	// target grid's fetch has not landed.
 	targetWritable, targetKnown := a.gridWritable(t.gridID)
 	in.TargetReadOnly = targetKnown && !targetWritable
 	in.SameGrid = t.gridID == d.srcGridID
@@ -97,23 +70,18 @@ func (a *App) dropInputAt(d *dragState, sx, sy float64, placement bool) (
 	return in, t, dropX, dropY
 }
 
-// previewDrop updates the active ghost for an in-flight tile drag from the
-// same dragdrop.DecideDrop verdict the commit path uses, so a previewed
-// action cannot diverge from the committed one. The flavor comes from
-// d.intent, the same field the commit reads: a right-drag never feeds
-// MoveForbidden and shows no no-entry badge on a read-only doc, while a
-// left-drag across a namespace previews the link (dashed ghost plus chain
-// badge — the teaching signal).
+// previewDrop updates the active ghost from the same DecideDrop verdict the
+// commit uses, so a previewed action cannot diverge from the committed one.
+// The flavor is d.intent, the same field the commit reads.
 func (a *App) previewDrop(d *dragState, sx, sy float64) {
 	if a.ghost == nil {
 		return
 	}
 	in, t, _, _ := a.dropInputAt(d, sx, sy, false /* placement */)
 
-	// The verdict picks the action; GhostPlanForDrop picks the styling. Both
-	// are pure and tested in client/dragdrop, so preview, commit, and the
-	// styling cannot drift. The ghost rests in a different pane per verdict,
-	// so feed all three candidate pane ids and sizes.
+	// The verdict picks the action and GhostPlanForDrop the styling, both in
+	// client/dragdrop. The ghost rests in a different pane per verdict, so
+	// feed all three candidate pane ids and sizes.
 	var targetPaneID string
 	var targetCellSize float64
 	if t != nil {
@@ -134,14 +102,10 @@ func (a *App) previewDrop(d *dragState, sx, sy float64) {
 	a.ghost.screenY = sy - d.cellOffsetY*size
 }
 
-// dropTargetAt resolves the cursor at (sx, sy) to a drop target. Returns
-// false when the cursor is over a content descent or off-canvas: neither is a
-// valid drop destination.
-//
-// excludeTileID, when set, prevents a well at that row id from being treated
-// as a drop-into-well target, so dragging well X cannot drop X into its own
-// child grid while the cursor is still on top of X. Pass d.tileID from the
-// dragState; it is a safe no-op when the source is not a well.
+// dropTargetAt resolves the cursor to a drop target, false over a content
+// descent or off-canvas. excludeTileID keeps a well at that row id from being
+// a drop-into-well target, so dragging well X cannot drop X into its own
+// child grid.
 func (a *App) dropTargetAt(sx, sy float64, excludeTileID string) (*dropTarget, bool) {
 	p, r, ok := a.paneAtScreen(sx, sy)
 	if !ok {
@@ -152,13 +116,11 @@ func (a *App) dropTargetAt(sx, sy float64, excludeTileID string) (*dropTarget, b
 	}
 	parentCell := cellPx * p.Zoom
 
-	// Parent-grid origin (top-left of cell (0, 0) in screen coords).
 	ps := paneToDragdrop(p, r)
 	parentOriginX, parentOriginY := ps.CellToScreen(0, 0)
 
-	// Look for an open well under the cursor — that promotes the target to
-	// the well's child grid. The rule (enterable well, not the dragged tile
-	// itself) is the tested dragdrop.PromoteToWell.
+	// An open well under the cursor promotes the target to its child grid.
+	// The rule is dragdrop.PromoteToWell's.
 	cellX, cellY := cellAtScreen(p, r, sx, sy)
 	if n := a.tileAtCell(p, cellX, cellY); n != nil &&
 		dragdrop.PromoteToWell(rpc.IsWellKind(n.Kind), n.ChildGridId, n.Id, excludeTileID) {
@@ -172,7 +134,6 @@ func (a *App) dropTargetAt(sx, sy float64, excludeTileID string) (*dropTarget, b
 		}, true
 	}
 
-	// Parent-grid drop.
 	return &dropTarget{
 		pane:     p,
 		gridID:   a.gridIDForPane(p),
@@ -182,28 +143,24 @@ func (a *App) dropTargetAt(sx, sy float64, excludeTileID string) (*dropTarget, b
 	}, true
 }
 
-// tileCopy returns a copy of *n owned by the caller. The cache may rewrite
-// its tile map underneath, so a caller retaining a tile across event
-// boundaries holds its own copy.
+// tileCopy returns a copy owned by the caller, because the cache may rewrite
+// its tile map underneath one retained across event boundaries.
 func tileCopy(n *gridwellv1.Tile) *gridwellv1.Tile {
 	c := *n
 	return &c
 }
 
-// gridHostContent reports the grid's declared host_content — its rows
-// project host state — and false for a Gridwell-owned grid or an unknown
-// grid id. It wraps the cache lookup so callers read the declaration.
+// gridHostContent reports the grid's declared host_content, false for a
+// Gridwell-owned or unknown grid.
 func (a *App) gridHostContent(gridID string) bool {
 	g, _ := a.c.Grid(gridID)
 	return g.HostContent()
 }
 
-// dropCrossNamespace reports whether the drag's source grid and t's
-// destination grid live in different id namespaces — the one predicate the
-// cross-plugin gestures branch on: a left-drag becomes a link, and a solid
-// well's right-drag is refused. The one reader of NamespaceOf, called from
-// the one gather (dropInputAt) and from the move-forbidden rule it feeds, so
-// the two cannot disagree about what "cross-plugin" means.
+// dropCrossNamespace reports whether the source and destination grids live
+// in different id namespaces, which is what makes a left-drag a link and
+// refuses a solid well's right-drag. The one reader of rpc.NamespaceOf here,
+// so nothing else can disagree about what cross-plugin means.
 func dropCrossNamespace(d *dragState, t *dropTarget) bool {
 	if d == nil || t == nil {
 		return false
@@ -211,14 +168,11 @@ func dropCrossNamespace(d *dragState, t *dropTarget) bool {
 	return rpc.NamespaceOf(d.srcGridID) != rpc.NamespaceOf(t.gridID)
 }
 
-// dropForbiddenForMove reports whether a left-drag from the dragState's
-// source grid to t's destination grid is rejected up front: a same-namespace
-// cross-grid move with a host-content endpoint, since host mv is
-// unimplemented and host directories are not a placement medium. A
-// cross-namespace left-drag is never a move — it verdicts DropLink — so it is
-// exempt here, and the read-only destination case is the separate
-// TargetReadOnly gate. The UI flags the forbidden gestures so the cursor and
-// the ghost render "no entry" instead of inviting a drop that fails.
+// dropForbiddenForMove reports a left-drag rejected up front: a
+// same-namespace cross-grid move with a host-content endpoint, since host mv
+// is unimplemented and host directories are not a placement medium. A
+// cross-namespace left-drag verdicts DropLink and is exempt; a read-only
+// destination is the separate TargetReadOnly gate.
 func (a *App) dropForbiddenForMove(d *dragState, t *dropTarget) bool {
 	if d == nil || t == nil {
 		return false
@@ -231,19 +185,17 @@ func (a *App) dropForbiddenForMove(d *dragState, t *dropTarget) bool {
 	)
 }
 
-// cellAtCursorInTarget returns the (rounded) cell coord at the cursor
-// for a given drop target, taking the dragState's cell offset into
-// account so the snap point matches the grab point on the source tile.
+// cellAtCursor returns the cell coord at the cursor, offset by the grab
+// point on the source tile so the snap matches it.
 func (t *dropTarget) cellAtCursor(sx, sy, cellOffsetX, cellOffsetY float64) (int64, int64) {
 	cx := (sx-t.originX)/t.cellSize - cellOffsetX
 	cy := (sy-t.originY)/t.cellSize - cellOffsetY
 	return dragdrop.SnapToCell(cx), dragdrop.SnapToCell(cy)
 }
 
-// childTileAtScreen returns the preview tile under (sx, sy) inside
-// well's child preview, or nil if no tile is there. Used at mousedown
-// to decide whether a click on a well is starting a "pull out" gesture
-// on a specific child tile.
+// childTileAtScreen returns the preview tile under the cursor inside well's
+// child preview, which is what decides whether a click on a well starts a
+// pull-out gesture.
 func (a *App) childTileAtScreen(p *pane.Pane, r pane.Rect, well *gridwellv1.Tile, sx, sy float64) *gridwellv1.Tile {
 	if !rpc.IsWellKind(well.Kind) || well.ChildGridId == "" {
 		return nil
@@ -253,9 +205,8 @@ func (a *App) childTileAtScreen(p *pane.Pane, r pane.Rect, well *gridwellv1.Tile
 		return nil
 	}
 	cp := wellPreviewFor(paneToDragdrop(p, r), well)
-	// Which child cell does the cursor sit in? FloorCellAt floors toward
-	// -inf (math.Floor), the correct hit-test answer in a well's negative
-	// quadrant; int64() truncates toward zero and would mis-target there.
+	// FloorCellAt floors toward -inf, the correct hit-test answer in a
+	// well's negative quadrant, where int64() truncation would mis-target.
 	cellX, cellY := dragdrop.FloorCellAt(cp.OriginX, cp.OriginY, cp.CellPx, sx, sy)
 	for _, n := range g.Tiles {
 		if dragdrop.TileContainsCell(n.X, n.Y, n.W, n.H, cellX, cellY) {
@@ -266,11 +217,9 @@ func (a *App) childTileAtScreen(p *pane.Pane, r pane.Rect, well *gridwellv1.Tile
 }
 
 // wellPreviewFor is the one way a well's stored framing becomes a child
-// preview transform: both halves of the framing resolved through zoomtrans'
-// unvisited sentinel — the ratio (EffectiveViewZoom) and the center
-// (EffectiveCenter) — so the drop target, the pull-out-of-well hit test, and
-// the renderer place a never-visited well's preview at the same pixels
-// instead of each remembering the fallback for itself.
+// preview transform, with both halves resolved through zoomtrans' unvisited
+// sentinel, so the drop target, the pull-out hit test and the renderer place
+// a never-visited well's preview at the same pixels.
 func wellPreviewFor(ps dragdrop.Pane, n *gridwellv1.Tile) dragdrop.ChildPreview {
 	cx, cy := zoomtrans.EffectiveCenter(wellOf(n))
 	return dragdrop.ChildPreviewFor(ps, struct {
@@ -280,7 +229,6 @@ func wellPreviewFor(ps dragdrop.Pane, n *gridwellv1.Tile) dragdrop.ChildPreview 
 		zoomtrans.EffectiveViewZoom(n.ViewZoom, zoomtrans.DefaultWellViewZoom))
 }
 
-// wellOf forwards to zoomtrans.WellOf, the one derivation of "this row read
-// as a doorway". It keeps a local name because the renderer reads it at many
-// call sites.
+// wellOf forwards to zoomtrans.WellOf. The local name is for the renderer's
+// many call sites.
 func wellOf(n *gridwellv1.Tile) zoomtrans.Well { return zoomtrans.WellOf(n) }

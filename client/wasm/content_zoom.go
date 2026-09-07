@@ -13,11 +13,9 @@ import (
 	"github.com/josephburnett/gridwell/client/pane"
 )
 
-// Content zoom: Ctrl/Cmd +/-/0 while descended into a text, shell, or url
-// tile scales the content — the text font, the terminal font, the page zoom.
-// The zoom is per-tile framing: server-owned (content_zoom, written through
-// SetContentZoom, never bumping version) and restored on every descent, so a
-// zoomed doc reads at your size on every return.
+// Content zoom: Ctrl/Cmd +/-/0 while descended into a text, shell or url tile
+// scales the content. The zoom is per-tile framing, server-owned and never
+// bumping version, restored on every descent.
 
 const (
 	contentZoomStep = 1.1
@@ -27,7 +25,6 @@ const (
 	shellBaseFontPx = 13.0
 )
 
-// contentZoomOf reads a tile's zoom with the unset (0) default of 1.0.
 func contentZoomOf(t *gridwellv1.Tile) float64 {
 	if t != nil && t.ContentZoom > 0 {
 		return t.ContentZoom
@@ -45,10 +42,9 @@ func clampContentZoom(z float64) float64 {
 	return z
 }
 
-// textScaleFor is the render transform for a descended text pane: the fixed
-// base scale times the tile's content zoom. The painter, the logical wrap
-// width, and the textarea box all derive from this one helper, so they cannot
-// disagree about how big the text is.
+// textScaleFor is the render transform for a descended text pane. The
+// painter, the wrap width and the textarea box all derive from it, so they
+// cannot disagree about how big the text is.
 func (a *App) textScaleFor(p *pane.Pane) float64 {
 	if t, ok := a.descendedTile(p); ok {
 		return textFixedScale * contentZoomOf(t)
@@ -57,7 +53,7 @@ func (a *App) textScaleFor(p *pane.Pane) float64 {
 }
 
 // handleContentZoomKey consumes a Ctrl/Cmd +/-/0 chord for the focused
-// descended pane. Returns true when the key was handled (caller stops).
+// descended pane. True means the caller stops.
 func (a *App) handleContentZoomKey(ev js.Value) bool {
 	if !(ev.Get("ctrlKey").Bool() || ev.Get("metaKey").Bool()) {
 		return false
@@ -70,8 +66,7 @@ func (a *App) handleContentZoomKey(ev js.Value) bool {
 	if p == nil || p.ContentID() == "" {
 		return false
 	}
-	// Content zoom applies exactly to the content-descent kinds — the set has
-	// one owner (it drifted once and dropped shell descents; see its comment).
+	// The content-descent kind set has one owner, rpc.IsContentDescentKind.
 	t, ok := a.descendedTile(p)
 	if !ok || !rpc.IsContentDescentKind(t.Kind) {
 		return false
@@ -81,10 +76,9 @@ func (a *App) handleContentZoomKey(ev js.Value) bool {
 	return true
 }
 
-// contentZoomNext maps a zoom-chord key to its step function; nil for keys
-// that are not part of the chord. One mapping for both entry points (the
-// canvas keydown and the live-view forward), so they can never step
-// differently.
+// contentZoomNext maps a zoom-chord key to its step function, nil for a key
+// outside the chord. One mapping for the canvas keydown and the live-view
+// forward, so they cannot step differently.
 func contentZoomNext(key string) func(cur float64) float64 {
 	switch key {
 	case "+", "=":
@@ -98,10 +92,8 @@ func contentZoomNext(key string) func(cur float64) float64 {
 }
 
 // contentZoomKeyFromView applies a zoom chord forwarded from a live URL view.
-// The view owns OS keyboard focus, so the window-level keydown never fires:
-// main intercepts the chord in before-input-event and relays it keyed by
-// pane. Same guard set as handleContentZoomKey, same one owner
-// (applyContentZoom) underneath.
+// The view owns OS keyboard focus, so the window-level keydown never fires
+// and main relays the chord keyed by pane.
 func (a *App) contentZoomKeyFromView(paneID, key string) {
 	next := contentZoomNext(key)
 	if next == nil {
@@ -118,18 +110,14 @@ func (a *App) contentZoomKeyFromView(paneID, key string) {
 	a.applyContentZoom(p, t, next(contentZoomOf(t)))
 }
 
-// applyContentZoom updates the cache (the one client copy every reader uses),
-// pokes the live surface for the kinds that hold native state, and persists —
-// the last only for a descent that outlives the pane leaving it.
+// applyContentZoom updates the cache, pokes the live surface for the kinds
+// that hold native state, and persists, the last only for a descent that
+// outlives the pane leaving it.
 func (a *App) applyContentZoom(p *pane.Pane, t *gridwellv1.Tile, z float64) {
 	if rpc.PageContent(t) {
 		// A serves_page descent has no persisted content_zoom, because the
-		// owning plugin stores no url state, and a client-only zoom would
-		// break the no-client-state rule. The chord is inert here.
-		//
-		// PageContent's second half (kind is not url) is identity here: the
-		// plugin door refuses an entry declaring both, so no row can reach a
-		// client with a url kind and serves_page set.
+		// owning plugin stores no url state and a client-only zoom would
+		// break the no-client-state rule.
 		return
 	}
 	nt := proto.CloneOf(t)
@@ -137,8 +125,8 @@ func (a *App) applyContentZoom(p *pane.Pane, t *gridwellv1.Tile, z float64) {
 	a.c.UpdateTile(nt.GridId, nt)
 	switch t.Kind {
 	case rpc.KindText:
-		// The next draw reads the cache through textScaleFor; keep the pane's
-		// live scale (scroll math divides by it) in step.
+		// Keep the pane's live scale, which the scroll math divides by, in
+		// step with what the next draw reads.
 		p.TextZoom = textFixedScale * z
 	case rpc.KindShell:
 		a.applyShellZoom(p.ID, z)
@@ -147,21 +135,17 @@ func (a *App) applyContentZoom(p *pane.Pane, t *gridwellv1.Tile, z float64) {
 	}
 	a.refreshFileOverlay() // textarea font tracks the scale in text mode
 	a.draw()
-	// The zoom above is live for the session either way; only the write is
-	// conditional. An ephemeral visit's row is deleted on ascent, so
-	// persisting its zoom marks a row the user never asked to keep — the
-	// contract on possiblyEphemeral, which every durable write about a
-	// descent reads (persistTextScroll is the same shape).
+	// The zoom is live for the session either way; only the write is
+	// conditional. An ephemeral visit's row dies on ascent, so persisting its
+	// zoom would mark a row the user never asked to keep.
 	if a.possiblyEphemeral(p, t) {
 		return
 	}
-	// Through the framing dispatcher like every other framing write: a
-	// fire-and-forget call here would reconcile no verdict, and a transport
-	// failure would leave the zoom client-only until the next descent
-	// snapped it back. The cache patch above is the optimistic write the
-	// dispatcher's policy expects. There is no beacon form — content zoom is
-	// the one framing write with no *Beacon builder — so a quit inside its
-	// settle window still loses it.
+	// Through the framing dispatcher like every other framing write, because
+	// a fire-and-forget call would reconcile no verdict and a transport
+	// failure would leave the zoom client-only. There is no beacon form,
+	// content zoom being the one framing write without one, so a quit inside
+	// its settle window still loses it.
 	tileID := t.Id
 	a.postFramingPersist("SetContentZoom", nt.GridId, tileID,
 		func(ctx context.Context) error {
@@ -170,8 +154,8 @@ func (a *App) applyContentZoom(p *pane.Pane, t *gridwellv1.Tile, z float64) {
 		}, nil)
 }
 
-// applyShellZooms sets the live terminal's font for the pane; the per-draw
-// overlay sync re-fits the cell grid, which resizes the PTY to match.
+// applyShellZoom sets the live terminal's font. The per-draw overlay sync
+// re-fits the cell grid, which resizes the PTY to match.
 func (a *App) applyShellZoom(paneID string, z float64) {
 	if conn := a.shellConnFor(paneID); conn != nil {
 		conn.term.Get("options").Set("fontSize", int(shellBaseFontPx*z+0.5))
