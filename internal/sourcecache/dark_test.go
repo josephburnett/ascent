@@ -23,6 +23,111 @@ import (
 // that fails, and the connection's own health on the stream this layer
 // relays.
 
+// TestBothDirectionsLearnTheSameDarkness drives the two directions through
+// every transition and compares them. They are one fact — "can this source be
+// reached" — so the map must end in the same place whichever direction taught
+// it, and the ONLY thing that may differ is whether the discovery is
+// announced: noteReach found it alone and must tell the client, while the
+// health arm is relaying the very event the client is also receiving and must
+// not say it twice.
+//
+// This is the test a second bare writer of c.dark fails. A new `c.dark[x] = y`
+// that skipped setDark would have to reproduce the idempotence and the
+// announce rule exactly, in both directions, to stay green here — which is the
+// point: the announcements are counted, not merely observed, so an arm that
+// grows an emit or loses one is red.
+func TestBothDirectionsLearnTheSameDarkness(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		from bool // what the layer already believed
+		to   bool // what this outcome says
+	}{
+		{"light stays light", false, false},
+		{"light goes dark", false, true},
+		{"dark stays dark", true, true},
+		{"dark comes back", true, false},
+	} {
+		transition := tc.from != tc.to
+		t.Run(tc.name, func(t *testing.T) {
+			// Direction one: a pass-through call's outcome. Announces on the
+			// transition, because nobody else saw the call fail.
+			byCall, calls := darkFixture(t)
+			seedDark(byCall, tc.from)
+			var callErr error
+			if tc.to {
+				callErr = status.Error(codes.Unavailable, "tunnel down")
+			}
+			byCall.noteReachGrid(callErr, "conn/g1")
+
+			// Direction two: the source's own health, on the stream this layer
+			// relays. Never announces.
+			byHealth, healths := darkFixture(t)
+			seedDark(byHealth, tc.from)
+			byHealth.applyEvent(context.Background(), &pb.Event{
+				Payload: &pb.Event_PluginHealth{PluginHealth: &pb.EventPluginHealth{
+					PluginUuid: "conn", Healthy: !tc.to,
+				}},
+			})
+
+			// One fact: the two directions must agree on it.
+			if got, want := byCall.isDark("conn"), tc.to; got != want {
+				t.Errorf("after the call, dark = %v, want %v", got, want)
+			}
+			if got, want := byHealth.isDark("conn"), tc.to; got != want {
+				t.Errorf("after the health event, dark = %v, want %v", got, want)
+			}
+			if byCall.isDark("conn") != byHealth.isDark("conn") {
+				t.Error("the two directions disagree about the same source")
+			}
+
+			// One asymmetry, and exactly this much of it.
+			wantCalls := 0
+			if transition {
+				wantCalls = 1
+			}
+			if got := len(announced(calls)); got != wantCalls {
+				t.Errorf("the call direction announced %d times, want %d", got, wantCalls)
+			}
+			if got := len(announced(healths)); got != 0 {
+				t.Errorf("the health direction announced %d times, want 0: "+
+					"the client is receiving this same event on this same stream", got)
+			}
+		})
+	}
+}
+
+// darkFixture is a layer with nothing but a dark map and one subscriber, which
+// is all setDark touches. Its announcements land in the returned channel.
+func darkFixture(t *testing.T) (*Layer, chan *pb.Event) {
+	t.Helper()
+	c := &Layer{dark: map[string]bool{}, subs: map[int]chan *pb.Event{}}
+	ch := make(chan *pb.Event, 8)
+	c.subs[1] = ch
+	return c, ch
+}
+
+// seedDark puts the layer in the "before" state without going through either
+// direction, so the transition under test is the first thing either one does.
+func seedDark(c *Layer, dark bool) {
+	c.darkMu.Lock()
+	defer c.darkMu.Unlock()
+	c.dark["conn"] = dark
+}
+
+// announced takes whatever is waiting on an announcement channel right now. Both
+// directions emit synchronously, so anything owed is already there.
+func announced(ch chan *pb.Event) []*pb.Event {
+	var out []*pb.Event
+	for {
+		select {
+		case ev := <-ch:
+			out = append(out, ev)
+		default:
+			return out
+		}
+	}
+}
+
 // awaitStale polls a grid read until the answer says it is a memory.
 func awaitStale(t *testing.T, cc *Layer, gridID string, why string) {
 	t.Helper()

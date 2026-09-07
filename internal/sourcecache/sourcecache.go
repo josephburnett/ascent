@@ -215,10 +215,12 @@ type Layer struct {
 	// connection segment ("" for an upstream whose ids are unchained). It is
 	// the second half of "this serve is a memory": a remembered grid is
 	// stamped past its window because nothing has confirmed it, and stamped
-	// inside its window when the connection it came from is known dark. Two
-	// things write it, and they are the same fact from two directions — a
-	// pass-through call that failed transport-shaped, and the connection's
-	// own health on the stream this layer already relays.
+	// inside its window when the connection it came from is known dark. It is
+	// learned from two directions — a pass-through call that failed
+	// transport-shaped, and the connection's own health on the stream this
+	// layer already relays — but written through one door, setDark, which is
+	// also where the two directions' one real difference lives: whether the
+	// discovery has to be announced.
 	darkMu sync.Mutex
 	dark   map[string]bool
 }
@@ -242,16 +244,29 @@ func sourceOfNS(ns string) string {
 	return ns
 }
 
-// setDark records one source's reachability and reports whether that changed
-// it. Idempotent: only the transition is news.
-func (c *Layer) setDark(source string, dark bool) bool {
+// setDark is the one writer of c.dark. Darkness learned from a call that
+// failed and darkness learned from the source's own health are the same fact
+// from two directions, so they take the same door: same key, same idempotence
+// (only the transition is news), same resulting stamp on the next serve.
+//
+// The one thing the two directions do NOT share is whether the client has to
+// be told, and that asymmetry is announce — the caller's to state, because
+// only the caller knows whether anyone else saw this. On the transition alone,
+// and only when announce is set, the grid at hand is announced on this layer's
+// own stream so a client already holding it re-reads. grid is consulted on the
+// transition alone (looking one up costs a query), and a nil grid — or one
+// that names nothing — announces nothing.
+func (c *Layer) setDark(source string, dark bool, announce bool, grid func() string) {
 	c.darkMu.Lock()
-	defer c.darkMu.Unlock()
-	if c.dark[source] == dark {
-		return false
-	}
+	changed := c.dark[source] != dark
 	c.dark[source] = dark
-	return true
+	c.darkMu.Unlock()
+	if !changed || !announce || grid == nil {
+		return
+	}
+	if id := grid(); id != "" {
+		c.emitGridChanged(id)
+	}
 }
 
 func (c *Layer) isDark(source string) bool {
@@ -261,18 +276,16 @@ func (c *Layer) isDark(source string) bool {
 }
 
 // noteReach records one pass-through outcome as this layer's reachability of
-// the source the call named, and, when that changes, announces the grid at
-// hand so a client already holding it re-reads: dark, it wants the stamp and
-// the cached chip; light again, it wants the live answer back. A coded
-// refusal is an answer, so the source is reachable — only a transport-shaped
-// failure is darkness. grid is consulted on the transition alone.
+// the source the call named. A coded refusal is an answer, so the source is
+// reachable — only a transport-shaped failure is darkness.
+//
+// It announces, because this layer discovered the transition by itself: the
+// call that failed (or stopped failing) was its own, nobody else watched it,
+// and a client already holding that room would go on believing the room is
+// live. On the announcement it re-reads: dark, it wants the stamp and the
+// cached chip; light again, it wants the live answer back.
 func (c *Layer) noteReach(err error, source string, grid func() string) {
-	if !c.setDark(source, err != nil && gwerr.IsTransport(err)) || grid == nil {
-		return
-	}
-	if id := grid(); id != "" {
-		c.emitGridChanged(id)
-	}
+	c.setDark(source, err != nil && gwerr.IsTransport(err), true, grid)
 }
 
 // noteReachGrid and noteReachTile are noteReach for the two shapes of call:
@@ -968,9 +981,13 @@ func (c *Layer) applyEvent(ctx context.Context, ev *pb.Event) {
 		// connection, deeper for something inside one, which is its own key
 		// and never the connection's, since a far plugin being down does not
 		// make the machine unreachable.
-		// The client is receiving this same event, so nothing is emitted:
-		// what it does with it is the client's half.
-		c.setDark(p.PluginHealth.GetPluginUuid(), !p.PluginHealth.GetHealthy())
+		//
+		// It does NOT announce, because this arm is not a discovery: the event
+		// is relayed onward to the very client that would be told, on this
+		// same stream, in this same call (Subscribe's emit). A GridChanged of
+		// ours would be a second telling of a fact already delivered, and what
+		// the client does with it is the client's half.
+		c.setDark(p.PluginHealth.GetPluginUuid(), !p.PluginHealth.GetHealthy(), false, nil)
 	}
 }
 

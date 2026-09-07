@@ -170,19 +170,27 @@ Both health directions, and what each one costs the user.
 `s.dark[name]` and publishes one `healthEvent` on the hub. `Server.Subscribe`
 relays it, and opens with `darkNow()` for anyone attaching later.
 
-**Down, discovered by the cache — writer one.** Any pass-through call that
+`Layer.setDark` is the one writer of the cache's dark map, and the layer
+learns from two directions through it. The map is the same fact either way;
+the one thing the directions do not share is whether the client has to be
+told, which is `setDark`'s `announce` argument and the caller's to state.
+
+**Down, discovered by the cache — direction one.** Any pass-through call that
 fails transport-shaped: `Layer.GetTile`, `GetTilePreview`, `ReadContent`,
 `ServeContent`, and every write verb call `noteReachTile`/`noteReachGrid` →
-`noteReach` → `setDark(source, true)`. On the transition only, it calls
-`emitGridChanged` for the grid at hand, so a client already holding that room
-re-reads and sees the stamp.
+`noteReach` → `setDark(source, true, announce)`. It announces, because this
+layer discovered the transition alone and nobody else watched the call fail:
+on the transition only, `emitGridChanged` names the grid at hand, so a client
+already holding that room re-reads and sees the stamp.
 
-**Down, discovered by the cache — writer two.** The transport's health event
+**Down, discovered by the cache — direction two.** The transport's health event
 arrives on the stream this layer relays and lands in `Layer.applyEvent`'s
-`Event_PluginHealth` arm → `setDark(p.PluginHealth.GetPluginUuid(), !healthy)`.
+`Event_PluginHealth` arm → `setDark(uuid, !healthy, no announce)`.
 At this layer the uuid is the bare connection segment, which is exactly
-`sourceOf` of every id chained through it. Nothing is emitted here: the client
-is receiving the same event and does its own half. This is the path that
+`sourceOf` of every id chained through it. It does not announce: the same
+event is relayed onward to the very client that would be told, in this same
+call, so a `GridChanged` of ours would say twice what was already delivered —
+and what the client does with it is the client's half. This is the path that
 matters in practice — the machine usually dies while nobody is calling it, and
 without it the room would look live until some call happened to fail.
 
@@ -345,9 +353,10 @@ Each cross-layer behaviour in the three traces, and what pins it.
 |---|---|
 | The transport learns darkness from its own stream and publishes once | `internal/connection/fanin_health_test.go:TestFanInRemotePublishesHealthOnStreamDeath` |
 | A subscriber arriving after the outage is told (`darkNow`) | `fanin_health_test.go:TestASubscriberArrivingAfterTheOutageIsToldOfIt` |
-| Cache writer one: a failed pass-through makes a within-window serve a memory, and the next answer clears it | `sourcecache/dark_test.go:TestAFailedCallMakesAWithinWindowServeAMemory` |
-| Cache writer two: the relayed health event alone makes it a memory | `dark_test.go:TestAConnectionsHealthIsDarkness` |
+| Direction one: a failed pass-through makes a within-window serve a memory, and the next answer clears it | `sourcecache/dark_test.go:TestAFailedCallMakesAWithinWindowServeAMemory` |
+| Direction two: the relayed health event alone makes it a memory | `dark_test.go:TestAConnectionsHealthIsDarkness` |
 | Discovering darkness announces the grid at hand | `dark_test.go:TestDarkDiscoveryTellsTheClientToReRead` |
+| Both directions write the same fact through `setDark`, and differ only in the announcement | `dark_test.go:TestBothDirectionsLearnTheSameDarkness` |
 | Serve stale when dark; verdicts never masked | `sourcecache_test.go:TestServesStaleWhenDark`, `TestVerdictNeverMasked` |
 | Door bodies degrade the same way | `servecontent_test.go:TestServeContentServesStaleWhenDark`, `TestServeContentNeverCachesVerdicts` |
 | Real binaries, real ssh: warmed reads serve stale, never-read bytes fail honestly, a revived remote answers live | `test/connections/partition_test.go:TestMountPartitionServesCache` (`make check-connections`) |
