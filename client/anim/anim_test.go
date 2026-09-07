@@ -20,21 +20,18 @@ func TestLerpEndpoints(t *testing.T) {
 }
 
 func TestEaseOutCubicShape(t *testing.T) {
-	// Endpoints.
 	if EaseOutCubic(0) != 0 {
 		t.Error("ease(0)")
 	}
 	if EaseOutCubic(1) != 1 {
 		t.Error("ease(1)")
 	}
-	// Clamp outside [0, 1].
 	if EaseOutCubic(-0.5) != 0 {
 		t.Error("ease(-0.5) should clamp to 0")
 	}
 	if EaseOutCubic(1.5) != 1 {
 		t.Error("ease(1.5) should clamp to 1")
 	}
-	// Monotonically increasing.
 	prev := -1.0
 	for i := 0; i <= 100; i++ {
 		v := EaseOutCubic(float64(i) / 100)
@@ -43,8 +40,7 @@ func TestEaseOutCubicShape(t *testing.T) {
 		}
 		prev = v
 	}
-	// Decelerating: derivative is non-increasing across the curve, so the
-	// step from 0.0→0.1 should be larger than the step from 0.9→1.0.
+	// Ease-out means the derivative never rises.
 	earlyStep := EaseOutCubic(0.1) - EaseOutCubic(0.0)
 	lateStep := EaseOutCubic(1.0) - EaseOutCubic(0.9)
 	if earlyStep <= lateStep {
@@ -53,19 +49,15 @@ func TestEaseOutCubicShape(t *testing.T) {
 }
 
 func TestProgressClamping(t *testing.T) {
-	// Before start.
 	if Progress(0, 100, 200) != 0 {
 		t.Error("progress before start should be 0")
 	}
-	// Mid-animation.
 	if !near(Progress(150, 100, 200), 0.25) {
 		t.Errorf("progress mid: %v", Progress(150, 100, 200))
 	}
-	// After end.
 	if Progress(500, 100, 200) != 1 {
 		t.Error("progress after end should clamp to 1")
 	}
-	// Zero/negative duration: instant completion.
 	if Progress(0, 0, 0) != 1 {
 		t.Error("zero duration should be done")
 	}
@@ -84,7 +76,6 @@ func TestAnimationAt(t *testing.T) {
 	if !near(x, 100) || !near(y, 200) || !done {
 		t.Errorf("at end: x=%v y=%v done=%v", x, y, done)
 	}
-	// Mid: with ease-out, value should be past the linear midpoint.
 	x, _, _ = a.At(500)
 	if x <= 50 {
 		t.Errorf("at midpoint with ease-out, x=%v should be > 50 (linear midpoint)", x)
@@ -92,12 +83,10 @@ func TestAnimationAt(t *testing.T) {
 }
 
 func TestSplitN(t *testing.T) {
-	// Three phases, equal distances → equal times.
 	got := SplitN([]float64{1, 1, 1}, 300)
 	if !near(got[0], 100) || !near(got[1], 100) || !near(got[2], 100) {
 		t.Errorf("equal: %v", got)
 	}
-	// Sums to total exactly.
 	got = SplitN([]float64{2, 3, 5}, 100)
 	sum := 0.0
 	for _, v := range got {
@@ -106,7 +95,6 @@ func TestSplitN(t *testing.T) {
 	if !near(sum, 100) {
 		t.Errorf("sum drift: %v", sum)
 	}
-	// Zero distances → zero times for those phases.
 	got = SplitN([]float64{0, 1, 0}, 200)
 	if got[0] != 0 || got[2] != 0 {
 		t.Errorf("zero phase got time: %v", got)
@@ -114,10 +102,10 @@ func TestSplitN(t *testing.T) {
 	if !near(got[1], 200) {
 		t.Errorf("middle phase: %v", got[1])
 	}
-	// A trailing zero-distance phase (the "instant" install segment of every
-	// descent) must be EXACTLY zero — the rounding remainder goes to the last
-	// phase that has distance, never onto a zero one where it could land
-	// negative. Non-round inputs surface the fp error the round cases hide.
+	// A trailing zero-distance phase, the instant install segment of every
+	// descent, must be exactly zero, so the rounding remainder goes to the last
+	// phase with distance. Non-round inputs surface the floating-point error
+	// the round cases hide.
 	for _, d := range []float64{37.3, 99.9, 0.123} {
 		z := SplitN([]float64{d, 0}, 250)
 		if z[1] != 0 {
@@ -127,7 +115,6 @@ func TestSplitN(t *testing.T) {
 			t.Errorf("SplitN([%v,0],250) sum = %v, want 250", d, sum)
 		}
 	}
-	// All zero → equal split fallback.
 	got = SplitN([]float64{0, 0, 0}, 90)
 	for _, v := range got {
 		if !near(v, 30) {
@@ -135,37 +122,30 @@ func TestSplitN(t *testing.T) {
 			break
 		}
 	}
-	// Empty input.
 	if got := SplitN(nil, 100); len(got) != 0 {
 		t.Errorf("empty: %v", got)
 	}
 }
 
 func TestLerpExpEndpointsAndShape(t *testing.T) {
-	// Endpoints exact.
 	if !near(LerpExp(1, 8, 0), 1) {
 		t.Error("LerpExp at t=0")
 	}
 	if !near(LerpExp(1, 8, 1), 8) {
 		t.Error("LerpExp at t=1")
 	}
-	// Geometric midpoint between 1 and 4 is 2 (sqrt(1*4)).
+	// The midpoint is geometric, not arithmetic.
 	if !near(LerpExp(1, 4, 0.5), 2) {
 		t.Errorf("LerpExp(1,4,0.5)=%v, want 2", LerpExp(1, 4, 0.5))
 	}
-	// Geometric midpoint between 0.25 and 4 is 1.
 	if !near(LerpExp(0.25, 4, 0.5), 1) {
 		t.Errorf("LerpExp(0.25,4,0.5)=%v, want 1", LerpExp(0.25, 4, 0.5))
 	}
-	// Non-positive arg falls back to linear.
 	if !near(LerpExp(0, 10, 0.5), 5) {
 		t.Errorf("fallback linear")
 	}
 }
 
-// TestFadeAlpha: the decaying-highlight opacity — 1 at the start, 0 at/after
-// the duration, strictly decreasing in between (quadratic tail so the fade
-// lingers briefly then drops away).
 func TestFadeAlpha(t *testing.T) {
 	if got := FadeAlpha(1000, 1000, 2000); got != 1 {
 		t.Errorf("at start: alpha = %v, want 1", got)

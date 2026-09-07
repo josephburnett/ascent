@@ -1,21 +1,16 @@
-// Package anim is the small interpolation toolbox used by the Gridwell client
-// for drag snap-to-cell and snap-back animations.
-//
-// Pure Go, no syscall/js — exercised by ordinary go test.
+// Package anim holds the interpolation the client uses for drag snap-to-cell
+// and snap-back animations. It is pure Go with no syscall/js, so go test runs
+// it.
 package anim
 
 import "math"
 
-// Lerp linearly interpolates between from and to at parameter t in [0, 1].
-// Outside that range it extrapolates; callers should clamp t themselves
-// when they want clamping behavior.
+// Lerp interpolates between from and to at t, extrapolating outside [0, 1].
 func Lerp(from, to, t float64) float64 {
 	return from + (to-from)*t
 }
 
-// EaseOutCubic returns the eased value of t in [0, 1]. Outside the range it
-// clamps. Cubic ease-out feels natural for "stone settling into place" — the
-// motion is fast at first and decelerates.
+// EaseOutCubic returns the cubic ease-out of t, clamped to [0, 1].
 func EaseOutCubic(t float64) float64 {
 	if t <= 0 {
 		return 0
@@ -27,9 +22,9 @@ func EaseOutCubic(t float64) float64 {
 	return 1 - u*u*u
 }
 
-// Progress returns the fraction of an animation that has elapsed at time
-// nowMs, given the start time and duration. Clamped to [0, 1]; durations
-// of zero or less return 1 immediately so degenerate animations finish.
+// Progress returns the fraction of an animation elapsed at nowMs, clamped to
+// [0, 1]. A duration of zero or less returns 1 so a degenerate animation
+// finishes.
 func Progress(nowMs, startMs, durationMs float64) float64 {
 	if durationMs <= 0 {
 		return 1
@@ -44,9 +39,7 @@ func Progress(nowMs, startMs, durationMs float64) float64 {
 	return t
 }
 
-// Animation describes a 2D motion from (FromX, FromY) to (ToX, ToY) in
-// generic units. Interpret the units yourself: screen pixels for ghost
-// motion, cells for grid-coordinate animations, etc.
+// Animation describes a 2D motion in whatever units the caller chooses.
 type Animation struct {
 	FromX, FromY float64
 	ToX, ToY     float64
@@ -54,10 +47,7 @@ type Animation struct {
 	DurationMs   float64
 }
 
-// At returns the interpolated (x, y) position for the animation at time
-// nowMs, plus a boolean indicating whether the animation is finished.
-//
-// Easing is cubic ease-out.
+// At returns the eased position at nowMs and whether the animation finished.
 func (a Animation) At(nowMs float64) (x, y float64, done bool) {
 	t := Progress(nowMs, a.StartMs, a.DurationMs)
 	eased := EaseOutCubic(t)
@@ -67,15 +57,11 @@ func (a Animation) At(nowMs float64) (x, y float64, done bool) {
 	return
 }
 
-// SplitN apportions totalMs across an arbitrary number of phases by their
-// relative distances. Phases with sub-epsilon distance get zero time. If
-// every phase has zero distance, the time is divided equally so the
-// caller doesn't end up with a transition that completes instantly.
-//
-// The last phase WITH distance absorbs floating-point rounding so the
-// returned values always sum to totalMs exactly. The remainder must not land
-// on a zero-distance phase — that is an "instant" segment, and a spurious
-// (possibly negative) duration on it breaks the transition stepper.
+// SplitN apportions totalMs across phases by their relative distances. A phase
+// under the epsilon gets zero time; if every phase is under it the time divides
+// equally, so the transition does not complete instantly. The last phase with
+// distance absorbs rounding, because a spurious or negative duration on a
+// zero-distance phase breaks the transition stepper.
 func SplitN(distances []float64, totalMs float64) []float64 {
 	out := make([]float64, len(distances))
 	if len(distances) == 0 {
@@ -107,12 +93,9 @@ func SplitN(distances []float64, totalMs float64) []float64 {
 	return out
 }
 
-// LerpExp interpolates between from and to in log space at parameter t.
-// Used for zoom transitions: linear interpolation feels visually
-// non-uniform because perceived "zoom level" is logarithmic in scale.
-//
-// Both from and to must be strictly positive; otherwise the result is the
-// linear interpolation as a fallback.
+// LerpExp interpolates between from and to in log space, because perceived zoom
+// level is logarithmic in scale. If either end is not positive it falls back to
+// Lerp.
 func LerpExp(from, to, t float64) float64 {
 	if from <= 0 || to <= 0 {
 		return Lerp(from, to, t)
@@ -120,9 +103,8 @@ func LerpExp(from, to, t float64) float64 {
 	return from * math.Pow(to/from, t)
 }
 
-// FadeAlpha is the opacity of a decaying highlight (the ascent trace) at
-// nowMs: 1 when the fade starts, easing to 0 at startMs+durationMs with a
-// quadratic tail.
+// FadeAlpha is the opacity of the ascent trace at nowMs: 1 at startMs, 0 at
+// startMs+durationMs.
 func FadeAlpha(nowMs, startMs, durationMs float64) float64 {
 	r := 1 - Progress(nowMs, startMs, durationMs)
 	return r * r
