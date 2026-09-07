@@ -1,12 +1,8 @@
 package dial
 
-// The knownhosts algorithm bridge. Strict verification fails with "key
-// mismatch" when the handshake negotiates a host-key type the file does not
-// hold, even though the host is known and honest: the file has its ed25519
-// key, the server also has an ecdsa key, and the default negotiation picks
-// ecdsa. OpenSSH avoids this by offering the known algorithms first, and
-// hostKeyAlgorithmsFor recovers them from the knownhosts callback so the
-// ClientConfig can do the same.
+// The knownhosts algorithm bridge. Strict verification reports a key mismatch
+// when negotiation picks a host-key type known_hosts does not hold, so
+// hostKeyAlgorithmsFor recovers the trusted types for ClientConfig to offer.
 
 import (
 	"crypto/ed25519"
@@ -18,13 +14,10 @@ import (
 )
 
 // hostKeyAlgorithmsFor returns the host-key algorithms known_hosts already
-// trusts for host ("host:port"), by probing the callback with a throwaway key
-// and reading the KeyError's Want list. It returns nil for an unknown host, so
-// the default negotiation runs and the unknown-host error surfaces
-// normally.
+// trusts for host ("host:port"). It returns nil for an unknown host, so the
+// default negotiation runs and the unknown-host error surfaces normally.
 func hostKeyAlgorithmsFor(cb ssh.HostKeyCallback, host string) []string {
-	// A throwaway key of a real type. The file holding an ed25519 key whose
-	// bytes match this fresh one is not a case worth handling.
+	// A file that happens to hold this fresh key's match is not worth handling.
 	_, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		return nil
@@ -33,8 +26,7 @@ func hostKeyAlgorithmsFor(cb ssh.HostKeyCallback, host string) []string {
 	if err != nil {
 		return nil
 	}
-	// The callback wants the same "host:port" form the ssh library
-	// passes during a real handshake.
+	// The callback wants the "host:port" form the ssh library passes.
 	probeErr := cb(host, &net.TCPAddr{IP: net.IPv4zero, Port: 22}, signer.PublicKey())
 	var ke *knownhosts.KeyError
 	if !errors.As(probeErr, &ke) || len(ke.Want) == 0 {
