@@ -1,18 +1,16 @@
-// Package gridpath resolves a pane's descent path to its leaf grid. The
-// decision lives here, not in the wasm shim, so it is unit-tested: a
-// stale-prefix slip sends you to the wrong grid.
+// Package gridpath resolves a pane's descent path to its leaf grid. It lives
+// outside the wasm shim so it is unit-tested, because a stale-prefix slip sends
+// you to the wrong grid.
 package gridpath
 
 // ResolveLeafGrid walks a descent path from rootGridID, following each well
-// tile's child grid, and returns the grid id at the leaf. It stops early —
-// returning the LAST good grid id — when lookup reports the current grid
-// isn't cached (gridCached=false) or a path id isn't a tile in it
-// (tileFound=false): a stale path prefix resolves as deep as it can and
-// never past a gap. Returns "" when rootGridID is "".
+// tile's child grid, and returns the grid id at the leaf. When lookup reports
+// the current grid uncached or a path id absent from it, the walk returns the
+// last good grid id, so a stale path prefix resolves as deep as it can and
+// never past a gap. An empty rootGridID returns "".
 //
-// lookup(gid, wellID) returns the well's child grid id plus whether the grid
-// was cached and the tile found; the wasm caller does the cache read (and
-// may kick a background fetch on a miss) inside it.
+// The wasm caller does the cache read inside lookup and may kick a background
+// fetch on a miss.
 func ResolveLeafGrid(rootGridID string, path []string,
 	lookup func(gid, wellID string) (childGridID string, gridCached, tileFound bool)) string {
 	if rootGridID == "" {

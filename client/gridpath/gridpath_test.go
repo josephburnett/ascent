@@ -3,7 +3,8 @@ package gridpath
 import "testing"
 
 func TestResolveLeafGrid(t *testing.T) {
-	// World: root "1" --well "10"--> grid "2" --well "20"--> grid "3".
+	// Root grid "1" holds well "10" over grid "2", which holds well "20" over
+	// grid "3".
 	lookup := func(gid, wellID string) (string, bool, bool) {
 		switch {
 		case gid == "1" && wellID == "10":
@@ -11,9 +12,9 @@ func TestResolveLeafGrid(t *testing.T) {
 		case gid == "2" && wellID == "20":
 			return "3", true, true
 		case gid == "2" && wellID == "99":
-			return "", true, false // grid cached, tile missing
+			return "", true, false // cached, tile missing
 		case gid == "7":
-			return "", false, false // grid not cached
+			return "", false, false // not cached
 		}
 		return "", true, false
 	}
@@ -37,7 +38,6 @@ func TestResolveLeafGrid(t *testing.T) {
 		}
 	}
 
-	// Uncached grid mid-walk stops there.
 	if got := ResolveLeafGrid("7", []string{"1"}, lookup); got != "7" {
 		t.Errorf("uncached grid: got %q want 7", got)
 	}
