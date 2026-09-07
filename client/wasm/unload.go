@@ -3,21 +3,10 @@
 package main
 
 // The unload flush: quitting or reloading inside the settle window must not
-// lose the last pan or scroll. Three mechanisms:
-//
-//   - beacons: during beforeunload a write posts through
-//     navigator.sendBeacon, which Chromium completes after the page dies,
-//     instead of a goroutine RPC that dies with the page. The bodies are the
-//     exact wire form the ordinary calls send (api/rpc's *Beacon helpers —
-//     one request builder, two transports). Which transport a write takes is
-//     the dispatcher's decision (write.beacon, mutate.go), not each call
-//     site's.
-//   - the outbox drains here too: everything an earlier outage parked — a
-//     settled viewport, a frozen face, a pane arrangement, unsaved bytes —
-//     leaves through the beacon transport instead of dying with the page.
-//   - a transition in flight persists its destination: the viewport the user
-//     chose is the transition's end state. The mid-animation values are
-//     presentation; the destination is user state.
+// lose the last pan or scroll. A write posts through navigator.sendBeacon,
+// which Chromium completes after the page dies; which transport a write takes
+// is the dispatcher's decision, not each call site's. The outbox drains here
+// too, and a transition in flight persists its destination.
 
 import (
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
@@ -26,12 +15,10 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
-// sendBeacon posts one write so it survives the page (contentType picks
-// the wire form — unary proto-JSON or the WriteContent streaming
-// envelope). Returns false when the body couldn't be built or the
-// browser refused (queue full) — the caller falls back to the ordinary
-// async post, which MAY land; a refused beacon must not silently drop
-// the write two ways.
+// sendBeacon posts one write so it survives the page; contentType picks the
+// wire form. Returns false when the body could not be built or the browser
+// refused, and the caller falls back to the ordinary async post, which may
+// land.
 func (a *App) sendBeacon(path string, body []byte, contentType string) bool {
 	if path == "" || body == nil {
 		return false
@@ -49,12 +36,9 @@ func (a *App) sendBeacon(path string, body []byte, contentType string) bool {
 	return nav.Call("sendBeacon", a.origin+path, blob).Bool()
 }
 
-// flushOnUnload is the beforeunload durable-state path: land every in-flight
-// transition on its destination, switch the beacon transport in
-// (a.unloading), run the settle-persister flush for framing the user just
-// changed, drain the outbox so everything already owed leaves too, and
-// finally beacon the one thing neither covers — a live page's navigation
-// state, which lives in the bridge, not in any ledger.
+// flushOnUnload is the beforeunload durable-state path. It ends with a live
+// page's navigation state, the one thing the settle flush and the outbox do
+// not cover, because it lives in the bridge and not in any ledger.
 func (a *App) flushOnUnload() {
 	a.trans.CancelAll()
 	a.unloading = true
@@ -66,13 +50,11 @@ func (a *App) flushOnUnload() {
 	a.flushURLStateOnUnload()
 }
 
-// flushURLStateOnUnload beacons the address, and the title, a live durable
-// page navigated to. Persisting it only at teardown would lose it: the
-// bridge's IPC reply never arrives during unload, so closing the tab would
-// revert every live url tile to its descent-time address. No jpeg and no
-// history rides the beacon — the bridge holds both and is unreachable now —
-// and the store skips empty fields, so the previous face and trail survive
-// rather than being blanked.
+// flushURLStateOnUnload beacons the address and title a live durable page
+// navigated to. Persisting it only at teardown would lose it, since the
+// bridge's IPC reply never arrives during unload. No jpeg and no history
+// rides the beacon, because the bridge holds both and is unreachable now; the
+// store skips empty fields, so the previous face and trail survive.
 func (a *App) flushURLStateOnUnload() {
 	for _, pl := range a.locals {
 		v := pl.urlView
