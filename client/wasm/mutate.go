@@ -11,6 +11,7 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/clientsync"
 	"github.com/josephburnett/gridwell/client/errsurface"
+	"github.com/josephburnett/gridwell/client/inflight"
 	"github.com/josephburnett/gridwell/client/outbox"
 	"github.com/josephburnett/gridwell/client/textedit"
 )
@@ -116,14 +117,21 @@ func rpcErrText(err error) string {
 	return err.Error()
 }
 
-// do runs one non-content mutation and applies the whole policy: record the
-// outcome in the outbox (transport parks a retry, any verdict acks), react
-// per clientsync's table for this caller's shape, surface what failed, and
-// run the caller's own then/undo. Blocking; `post` is the goroutine form.
+// do runs one non-content mutation and applies the whole policy: park the
+// write in the outbox before it is sent and resolve it on the answer
+// (outbox.Send — a verdict acks, a transport failure leaves it for the
+// drain), react per clientsync's table for this caller's shape, surface what
+// failed, and run the caller's own then/undo. Blocking; `post` is the
+// goroutine form.
 //
 // The retry thunk re-enters here with the same `write`, so a retry that fails
 // on transport again re-parks itself and the outbox converges rather than
 // losing the value.
+//
+// The call is bounded by inflight.Bounded, like every other client RPC: the
+// answer is what acks the parked entry and what runs `undo`, so a request the
+// network swallows would otherwise leave the write parked with no verdict and
+// its goroutine alive for the life of the page.
 func (a *App) do(w write) error {
 	if w.done != nil {
 		defer w.done()
@@ -131,16 +139,22 @@ func (a *App) do(w write) error {
 	if a.unloading {
 		return a.doOnUnload(w)
 	}
-	err := w.call(context.Background())
-	o := clientsync.Of(err)
-
+	var err error
+	// The closure holds the captured payload — a settled viewport, a freeze's
+	// jpeg, url, title, and trail, a pane arrangement, a typed name — which is
+	// the only copy once the gesture that made it is over. Abandoning it on a
+	// blip loses it. A write with no id parks nothing: its value is still on
+	// screen and the failure notice is the reconcile.
+	var retry func()
 	if w.id != "" {
-		// The closure holds the captured payload — a settled viewport, a
-		// freeze's jpeg, url, title, and trail, a pane arrangement, a typed
-		// name — which is the only copy once the gesture that made it is
-		// over. Abandoning it on a blip loses it.
-		a.persist.out.Record(o, outbox.Key{Op: w.label, ID: w.id}, func() { a.post(w) })
+		retry = func() { a.post(w) }
 	}
+	o := a.persist.out.Send(outbox.Key{Op: w.label, ID: w.id}, retry, func() clientsync.Outcome {
+		ctx, cancel := inflight.Bounded()
+		defer cancel()
+		err = w.call(ctx)
+		return clientsync.Of(err)
+	})
 
 	r := clientsync.React(o)
 	if w.optimistic {
@@ -214,7 +228,11 @@ func (a *App) doOnUnload(w write) error {
 			return nil
 		}
 	}
-	go w.call(context.Background())
+	go func() {
+		ctx, cancel := inflight.Bounded()
+		defer cancel()
+		w.call(ctx)
+	}()
 	return nil
 }
 
@@ -307,9 +325,17 @@ func (a *App) putEditedContent(cid string, data []byte) {
 // This is the one path that carries a version claim, because content bytes
 // are the one thing version means. Its outbox bookkeeping is recordContent's:
 // the cache entry's dirtiness is whether the write is still owed, so all
-// three outcomes below resolve through one line.
+// three outcomes below resolve through one line — and the entry is already
+// dirty before this is called, so the bytes are parked before the send here
+// too, by their owner rather than by this dispatcher.
+//
+// Bounded like every other client RPC, and doubly needed here: text saves for
+// one document run on a serial queue, so a WriteContent the network swallows
+// would block every later save of that document behind it, forever.
 func (a *App) postWriteContent(gid, tileID string, version int64, newContent []byte) (rpc.Tile, bool) {
-	tile, err := a.cl.WriteContent(context.Background(), tileID, version, newContent)
+	ctx, cancel := inflight.Bounded()
+	defer cancel()
+	tile, err := a.cl.WriteContent(ctx, tileID, version, newContent)
 	if err != nil {
 		o := clientsync.Of(err)
 		r := clientsync.ReactSave(o)

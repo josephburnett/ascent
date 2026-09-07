@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"slices"
+	"sync"
 
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/cache"
@@ -122,17 +123,7 @@ func (a *App) openURLStream(p *pane.Pane, tileID string) {
 		// standing intent, so the two facts never coexist. Auto-live never
 		// reaches here while the intent is set, because DecideAutoLive
 		// blocks it, so this only fires on the explicit reconnect click.
-		tid := t.ID
-		go func() {
-			cleared, err := a.cl.SetURLFrozen(context.Background(), &rpc.SetURLFrozenRequest{
-				TileID: tid, Frozen: false,
-			})
-			if err != nil {
-				a.surfaceRPCError("SetTile", err)
-				return
-			}
-			a.c.UpdateTile(cleared.GridID, *cleared)
-		}()
+		a.postURLFrozen(t.ID, false, nil)
 	}
 	if !t.LeafLink() {
 		a.placeURLView(p.ID, t)
@@ -328,21 +319,53 @@ func (a *App) freezeURLPaneByIntent(paneID string) {
 	if !ok || tile.Kind != rpc.KindURL || a.possiblyEphemeral(p, &tile) {
 		return
 	}
-	tid := tile.ID
-	go func() {
-		t, err := a.cl.SetURLFrozen(context.Background(), &rpc.SetURLFrozenRequest{
-			TileID: tid, Frozen: true,
-		})
-		if err != nil {
-			// The freeze the user asked for did not stick, so surface it;
-			// the teardown below still parks the view.
-			a.surfaceRPCError("SetTile", err)
-		} else {
-			a.c.UpdateTile(t.GridID, *t)
-		}
+	a.postURLFrozen(tile.ID, true, func() {
+		// The teardown runs whatever the write did: the view parks either
+		// way, and a freeze still owed to the server is the outbox's business,
+		// not the surface's.
 		a.closeURLStream(paneID, true)
 		a.draw()
-	}()
+	})
+}
+
+// postURLFrozen is the one dispatcher for the standing freeze intent, in both
+// directions: the context menu's "Freeze Page" sets it, the reconnect gesture
+// clears it. It rides the ordinary write dispatcher, so it is bounded, it
+// parks, and it drains on reconnect like every other write — the intent is a
+// thing the user changed, and a blip must not swallow it. Both directions key
+// the same outbox entry, so the last gesture wins and no stale one can drain
+// over it.
+//
+// after, when set, runs once the first attempt has finished either way — the
+// teardown that follows the freeze, which is presentation and must happen
+// exactly once however many times the write is retried.
+func (a *App) postURLFrozen(tileID string, frozen bool, after func()) {
+	req := &rpc.SetURLFrozenRequest{TileID: tileID, Frozen: frozen}
+	var tile *rpc.Tile
+	var once sync.Once
+	a.post(write{
+		label: "SetURLFrozen", gid: a.gridIDOfTile(tileID), id: tileID,
+		// Its own notice source: the teardown's SetURLState capture reports
+		// under "urlfreeze" on the same gesture and the same tile, and one
+		// source is one notice — sharing the key would let each failure
+		// overwrite the other's words and resolve the other's notice.
+		source: "urlfrozen", failText: "freeze state save failed",
+		call: func(ctx context.Context) error {
+			var err error
+			tile, err = a.cl.SetURLFrozen(ctx, req)
+			return err
+		},
+		then: func() {
+			if tile != nil {
+				a.c.UpdateTile(tile.GridID, *tile)
+			}
+		},
+		done: func() {
+			if after != nil {
+				once.Do(after)
+			}
+		},
+	})
 }
 
 // closeAllURLStreams tears down every live view. Used on beforeunload so the

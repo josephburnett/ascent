@@ -3,6 +3,7 @@ package outbox
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -245,5 +246,91 @@ func TestSyncContentParksTheDirtySetInOrder(t *testing.T) {
 	}
 	if len(fired) != 2 || fired[0] != "t1" || fired[1] != "t2" {
 		t.Errorf("drained %v, want [t1 t2] in the dirty set's order", fired)
+	}
+}
+
+// TestSendParksBeforeTheAnswer is the park-before-the-answer rule, and the
+// whole of #298: a write whose transport never answers must already be in the
+// outbox while it waits. Recording the write on its return can only ever see
+// the writes that return, so the one request the network swallows — the case
+// the outbox exists for — was the one it never heard about, and the closure
+// holding the user's bytes died with its goroutine.
+func TestSendParksBeforeTheAnswer(t *testing.T) {
+	o := New()
+	blackhole := make(chan struct{})
+	sent := make(chan struct{})
+	go o.Send(k("SetFraming", "w1"), func() {}, func() clientsync.Outcome {
+		close(sent)
+		<-blackhole // a socket nobody answers and nobody resets
+		return clientsync.OutcomeOK
+	})
+	<-sent
+
+	// The call is out and no answer is coming. The write is owed a verdict,
+	// so it is parked, drainable, and visible to the "unsaved work" read.
+	deadline := time.Now().Add(2 * time.Second)
+	for o.Len() == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if keys := o.Keys(); len(keys) != 1 || keys[0] != k("SetFraming", "w1") {
+		t.Fatalf("a write waiting on a swallowed request is parked: keys = %v", keys)
+	}
+	close(blackhole)
+}
+
+// TestSendAcksOnTheVerdict: the park is intent, not a second copy of the
+// write. The server's answer resolves it through Record's one fork — a
+// verdict acks the key it parked at send, a transport failure leaves it for
+// the drain — so an ordinary write leaves nothing behind.
+func TestSendAcksOnTheVerdict(t *testing.T) {
+	dead := connect.NewError(connect.CodeUnavailable, errors.New("refused"))
+	cases := []struct {
+		name       string
+		out        clientsync.Outcome
+		wantParked bool
+	}{
+		{"landed", clientsync.Of(nil), false},
+		{"conflict", clientsync.Of(connect.NewError(connect.CodeFailedPrecondition, errors.New("stale"))), false},
+		{"rejected", clientsync.Of(connect.NewError(connect.CodeNotFound, errors.New("gone"))), false},
+		{"transport", clientsync.Of(dead), true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			o := New()
+			got := o.Send(k("SetFraming", "w1"), func() {}, func() clientsync.Outcome {
+				if o.Len() != 1 {
+					t.Errorf("the write is parked while the call is out: len = %d", o.Len())
+				}
+				return c.out
+			})
+			if got != c.out {
+				t.Errorf("Send returned %v, want the call's own outcome %v", got, c.out)
+			}
+			if parked := o.Len() == 1; parked != c.wantParked {
+				t.Errorf("parked after %s = %v, want %v", c.name, parked, c.wantParked)
+			}
+		})
+	}
+}
+
+// TestSendWithNoRetryParksNothing: a write that reconciles visibly — a create,
+// a drag whose ghost snaps back — has no parked value by design, and a nil
+// retry must not become an entry the drain cannot fire.
+func TestSendWithNoRetryParksNothing(t *testing.T) {
+	o := New()
+	dead := connect.NewError(connect.CodeUnavailable, errors.New("refused"))
+	ran := false
+	o.Send(k("PlaceTile", "t1"), nil, func() clientsync.Outcome {
+		ran = true
+		if o.Len() != 0 {
+			t.Errorf("an unparked write parked anyway: %v", o.Keys())
+		}
+		return clientsync.Of(dead)
+	})
+	if !ran {
+		t.Fatal("the call must run whether or not the write parks")
+	}
+	if o.Len() != 0 {
+		t.Errorf("an unparked write left %v behind", o.Keys())
 	}
 }

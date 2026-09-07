@@ -3,6 +3,7 @@ package clientsync
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 
@@ -129,5 +130,32 @@ func TestIsUnimplemented(t *testing.T) {
 	}
 	if IsUnimplemented(connect.NewError(connect.CodeUnavailable, errors.New("x"))) || IsUnimplemented(errors.New("plain")) || IsUnimplemented(nil) {
 		t.Fatal("anything else is not")
+	}
+}
+
+// TestOfReadsOurOwnDeadlineAsTransport: the bound on a client RPC is the
+// client's own (inflight.Deadline), so its expiry is never a server verdict.
+// It is classified by identity rather than by wire code, because what a
+// transport dresses a cancelled request in on the way back is not something
+// this client gets to assume — and reading it as a verdict would drop the
+// user's bytes on our own timer.
+func TestOfReadsOurOwnDeadlineAsTransport(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"bare deadline", context.DeadlineExceeded},
+		{"bare cancel", context.Canceled},
+		{"wrapped by the transport", fmt.Errorf("Post \"/x\": %w", context.DeadlineExceeded)},
+		// The shape that hurts: a transport that hands the expiry back
+		// wearing a coded error which is not one of the transport codes.
+		{"dressed as a verdict", connect.NewError(connect.CodeUnknown, context.DeadlineExceeded)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := Of(c.err); got != OutcomeTransport {
+				t.Errorf("Of(%v) = %v, want OutcomeTransport", c.err, got)
+			}
+		})
 	}
 }

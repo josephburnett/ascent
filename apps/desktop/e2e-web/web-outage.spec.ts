@@ -332,3 +332,78 @@ test('an ephemeral visit left during an outage parks its delete and drains on re
     .poll(async () => ((await gw.getGrid(scratchGridID)).tiles ?? []).length, { timeout: 30_000 })
     .toBe(0);
 });
+
+// The swallowed WRITE, #298's own case, and the mirror of the swallowed grid
+// read above. Killing a server resets its sockets, so every write returns and
+// every outage spec above sees an answer; the shape that hurts is the black
+// hole — a laptop asleep, a route that went away — where the request neither
+// answers nor fails. The outbox recorded a write on its RETURN, so the one
+// write it could never hear about was the one it exists for: no entry, no
+// drain, and the closure holding the user's value died with its goroutine.
+//
+// Nothing is killed and nothing is restarted here. The write parks the moment
+// it is sent, so the outbox is the truth about it while it hangs, and the
+// retry drains it over a link that works — no user action, only time.
+test('a write the network swallows parks in the outbox and drains itself', async ({
+  gw,
+  window,
+}) => {
+  test.setTimeout(150_000);
+  await gw.enterPlugin('home');
+  const f = await gw.focused();
+  const cx = Math.round(f.cx);
+  const cy = Math.round(f.cy);
+
+  // A fresh well: its zoom stays 0 until the first framing write, the same
+  // oracle the restart spec above settles with.
+  await gw.openPalette();
+  await gw.dragCreate('well', cx, cy);
+  const well = tileAt(await gw.getGrid(f.gridID), 'well', cx, cy)!;
+  await gw.descendCell(cx, cy);
+  const inside = await gw.focused();
+
+  // The black hole: every SetFraming for this well is swallowed — never
+  // fulfilled, never aborted — until the test opens it. Everything else keeps
+  // working, the way a dead socket leaves a fresh one fine, so the only thing
+  // between the user's viewport and the server is the client's own
+  // bookkeeping.
+  let blackhole = true;
+  await window.route('**/gridwell.v1.Gridwell/SetFraming', async (route) => {
+    if (blackhole && (route.request().postData() ?? '').includes(well.id)) return;
+    await route.continue();
+  });
+
+  // Pan inside the well: the settle persister fires SetFraming into the hole.
+  await gw.panFocusedGrid(
+    Math.round(inside.cx) + 1,
+    Math.round(inside.cy),
+    Math.round(inside.cx) - 1,
+    Math.round(inside.cy),
+  );
+
+  // While it hangs, the write is owed a verdict and the outbox says so. This
+  // is the whole of #298: a write recorded on its return is invisible here.
+  await expect
+    .poll(() => window.evaluate(() => (window as any).__gridwellTest.outbox()), {
+      message: 'the swallowed write is parked while it waits',
+      timeout: 20_000,
+    })
+    .toContain('SetFraming:' + well.id);
+
+  // The route comes back. No restart, no reconnect, no user action: the
+  // outbox drain is the only thing that can carry the viewport across.
+  blackhole = false;
+
+  // And it lands by itself: the retry drains over the live link, with no user
+  // action and nothing restarted.
+  await expect
+    .poll(
+      async () => {
+        const g = await gw.getGrid(f.gridID);
+        const t = (g.tiles ?? []).find((t) => t.id === well.id);
+        return Number((t as { viewZoom?: number | string } | undefined)?.viewZoom ?? 0);
+      },
+      { message: 'the parked write reaches the server on its own', timeout: 90_000 },
+    )
+    .toBeGreaterThan(0);
+});

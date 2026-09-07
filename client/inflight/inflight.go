@@ -1,5 +1,12 @@
-// Package inflight owns one rule about the client's fetches: a fetch is
-// deduped by key, and it never outlives the link it rode.
+// Package inflight owns two rules about the client's RPCs: every one of them
+// is bounded, and a deduped fetch is deduped by key and never outlives the
+// link it rode.
+//
+// Bounded is the first rule, and it covers reads and writes alike: a request
+// the network swallows — a laptop asleep, a route that went away, a socket
+// nobody answers and nobody resets — never returns on its own. Only the two
+// long-lived streams (the event Subscribe and the shell WebSocket) are
+// unbounded, because waiting is what they are for.
 //
 // The renderer fires a fetch on every cache miss, every frame, so a second
 // request for a key the first has not answered yet would dogpile the server.
@@ -28,12 +35,24 @@ import (
 	"time"
 )
 
-// Deadline is the outside bound on any one client fetch: generous enough for
-// a plugin building its first listing over a slow link, short enough that a
-// request lost to a dead socket becomes a visible failure and a retry rather
-// than a pane that waits forever. Any single fetch slower than this is
-// already broken from where the user sits.
+// Deadline is the outside bound on any one client RPC, read or write:
+// generous enough for a plugin building its first listing over a slow link,
+// short enough that a request lost to a dead socket becomes a visible failure
+// and a retry rather than a pane that waits forever. Any single call slower
+// than this is already broken from where the user sits.
 const Deadline = 30 * time.Second
+
+// Bounded is the context every client RPC that holds no dedupe claim must
+// use: a write, a nav walk's read, a probe, the boot handshake. It is the one
+// door to Deadline for callers with no Set of their own, so "bounded" is not
+// something each call site decides for itself. The caller must cancel it.
+//
+// A write reaching this matters twice over: its answer is what acknowledges
+// the outbox entry parked before it was sent, so a call that never returns
+// leaves the user's bytes parked forever with no verdict and no drain.
+func Bounded() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), Deadline)
+}
 
 // Set is the live claims for one kind of fetch (grids, tiles, tile content),
 // keyed by the id being fetched.

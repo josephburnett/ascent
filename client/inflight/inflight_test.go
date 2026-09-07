@@ -141,3 +141,23 @@ func TestContextIsBoundedAndClaimFree(t *testing.T) {
 		t.Fatal("an unclaimed fetch must be bounded too")
 	}
 }
+
+// TestBoundedCarriesTheDeadline pins the one bound, without waiting on it: a
+// caller with no Set of its own — a write, a nav walk's read, a probe, the
+// boot handshake — gets Deadline and nothing it chose for itself.
+func TestBoundedCarriesTheDeadline(t *testing.T) {
+	before := time.Now()
+	ctx, cancel := Bounded()
+	defer cancel()
+	dl, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("a bounded context must carry a deadline")
+	}
+	if d := dl.Sub(before); d > Deadline+time.Second || d < Deadline-time.Second {
+		t.Errorf("deadline is %v out, want Deadline (%v)", d, Deadline)
+	}
+	cancel()
+	if !errors.Is(ctx.Err(), context.Canceled) {
+		t.Errorf("the caller's cancel must end it: %v", ctx.Err())
+	}
+}

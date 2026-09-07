@@ -1,13 +1,20 @@
 // Package outbox is the one ordered record of writes the server has not
 // acknowledged, and the one rule for what to do about them.
 //
-// The rule: local state may be dropped only on a server verdict. A
-// dispatcher that fails on transport — the server never spoke,
-// clientsync.OutcomeTransport — parks its write here as a retry thunk; every
-// completed attempt for the same key (success, conflict, rejection) acks it
-// away. Record is that fork, in exactly one place, so no dispatcher can
-// implement half of it. The retry kick drains the outbox when the link
-// returns, and so does the unload flush.
+// The rule: local state may be dropped only on a server verdict. A write
+// parks here as a retry thunk when it is SENT, and every completed attempt
+// for the same key (success, conflict, rejection) acks it away; a transport
+// failure — the server never spoke, clientsync.OutcomeTransport — leaves it
+// parked. Send is that order and Record is that fork, each in exactly one
+// place, so no dispatcher can implement half of it. The retry kick drains the
+// outbox when the link returns, and so does the unload flush.
+//
+// Parking at send, not on the answer, is the whole point of the order: an
+// answer is exactly what a swallowed request never produces. A write parked
+// only on its own return can be recorded only if it returns, so the request
+// the network eats — a laptop asleep, a route that went away, a socket nobody
+// answers and nobody resets — is the one write the outbox never hears about,
+// and the closure holding the user's bytes dies with its goroutine.
 //
 // # What it holds, and what it does not
 //
@@ -55,6 +62,30 @@ type Outbox struct {
 // New returns an empty outbox.
 func New() *Outbox {
 	return &Outbox{m: map[Key]func(){}}
+}
+
+// Send is the order every non-content write runs in: park the retry thunk
+// BEFORE the call, run the call, then Record what the server said. It returns
+// the outcome the call reported so the dispatcher can react to it.
+//
+// The park comes first because a request that is never answered is also never
+// recorded, and the value it carries — a settled viewport, a freeze's jpeg, a
+// typed name — has no other copy. While the call is out, the key is parked:
+// that is the truth (the server has not acknowledged this write), so a drain
+// racing the flight re-sends it, which is safe because every write that parks
+// is a last-writer-wins overwrite of one key. On the answer, Record's fork
+// runs: a verdict acks, a transport failure leaves it parked for the drain.
+//
+// retry may be nil for a write with nothing to park (a create, a drag whose
+// ghost snaps back visibly): the call still runs and the outcome still acks
+// any stale entry.
+func (o *Outbox) Send(k Key, retry func(), call func() clientsync.Outcome) clientsync.Outcome {
+	if retry != nil {
+		o.Park(k, retry)
+	}
+	out := call()
+	o.Record(out, k, retry)
+	return out
 }
 
 // Record is the reconcile rule: a transport failure parks the write for the

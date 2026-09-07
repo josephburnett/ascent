@@ -87,9 +87,26 @@ to claim. A dirty entry is never overwritten by a fetch, a save response, or
 a delete: it is the one copy of unsaved typing.
 
 **7. The outbox and the retry** — `client/outbox/`, `client/inflight/`,
-`client/wasm/main.go`. `outbox.Record` is the one fork: a transport failure
-parks a retry thunk under `Key{Op, ID}`, any verdict acks. One live entry
-per key, last-writer-wins, order preserved. `inflight.Set` bounds and
+`client/wasm/main.go`. `outbox.Send` is the one order and `outbox.Record` the
+one fork: a write parks a retry thunk under `Key{Op, ID}` when it is SENT, and
+the answer resolves it — a transport failure leaves it parked, any verdict
+acks. One live entry per key, last-writer-wins, order preserved. Parking on
+the answer instead was #298: an answer is exactly what a swallowed request
+never produces, so the one write the outbox could not hear about was the one
+it exists for. While a write is in flight its key is parked, which is the
+truth about it; a drain that races the flight re-sends it, and that is safe
+because every write that parks is a last-writer-wins overwrite of one key
+(the writes that would replay unsafely — a create, a clone, a placement —
+carry no id and park nothing; they reconcile visibly instead).
+
+`inflight.Deadline` is the bound on every client RPC, read and write, and
+`inflight.Bounded` is the one door to it for a call with no dedupe claim of
+its own — a write, a nav walk's read, the shell-alive probe, the boot
+handshake. Only the two long-lived streams are unbounded. A call that never
+returns is what park-at-send survives and what the bound then ends: the
+answer is what acks the parked entry, so without it the entry would sit
+parked with no verdict for the life of the page.
+`inflight.Set` adds the claim: it bounds and
 cancels fetches so a request that died with its link cannot hold a dedupe
 claim forever. It is the client's ONE claim mechanism, and `App.fetchState`
 holds every set: grids, tiles, tile content, url previews, and the + menu's

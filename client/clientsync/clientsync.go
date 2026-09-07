@@ -12,6 +12,7 @@
 package clientsync
 
 import (
+	"context"
 	"errors"
 
 	"connectrpc.com/connect"
@@ -44,9 +45,19 @@ const (
 // CodeCanceled. A non-connect error can only come from below the protocol
 // (the transport itself), so it classifies Transport too. Every other
 // coded error is a server that answered.
+//
+// A context deadline or cancellation is checked first, and by identity rather
+// than by wire code. The bound on a client RPC is the client's own
+// (client/inflight's Deadline), so its expiry means the server never spoke —
+// whatever code, or no code at all, the transport dressed it in on the way
+// back. Reading that as a verdict would drop the user's bytes on the client's
+// own timer.
 func Of(err error) Outcome {
 	if err == nil {
 		return OutcomeOK
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return OutcomeTransport
 	}
 	var ce *connect.Error
 	if !errors.As(err, &ce) {
