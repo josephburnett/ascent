@@ -5,8 +5,8 @@ import (
 	"os"
 )
 
-// Main is the CLI dispatch: serve, status, backup, clear-browser-data.
-// Returns the process exit code.
+// Main is the CLI dispatch: serve, status, backup, clear-browser-data,
+// version. Returns the process exit code.
 func Main(args []string) int {
 	if len(args) < 1 {
 		usage()
@@ -23,6 +23,9 @@ func Main(args []string) int {
 		return RunBackup(rest)
 	case "clear-browser-data":
 		return RunClearBrowserData(rest)
+	case "version", "--version", "-v":
+		fmt.Println(VersionString())
+		return 0
 	case "-h", "--help", "help":
 		usage()
 		return 0
@@ -51,6 +54,8 @@ Usage:
                                               session (cookies, storage, caches
                                               of every live url tile); the app
                                               must not be running
+    gridwell version                          print the release version this
+                                              binary was built from, or "dev"
 
 server.yaml names the node's id, its connections and its content plugins;
 every DB path is derived from an id, never configured.`)

@@ -1,4 +1,4 @@
-.PHONY: build bin plugins wasm fmt-check proto-check check check-electron check-e2e check-web check-connections serve clean launch vendor dist node-modules
+.PHONY: build bin plugins wasm fmt-check proto-check check check-electron check-e2e check-web check-connections serve clean launch vendor dist stamp-version node-modules
 
 # Every plugin kind with a binary in $(PLUGINS_DIR). This is the one list:
 # `plugins` builds from it and `clean` removes from it.
@@ -26,6 +26,13 @@ BIN := ./gridwell$(EXE)
 # clean removes every kind, whatever this host builds, so switching hosts in
 # one checkout leaves nothing behind.
 ALL_PLUGIN_BIN := $(addsuffix $(EXE),$(addprefix ./gridwell-plugin-,$(ALL_PLUGIN_KINDS)))
+
+# VERSION is the release version, and the git tag is its ONE owner: the
+# release workflow passes VERSION=$${GITHUB_REF_NAME#v}. Nothing in the tree
+# carries a version between releases — no bump commit, no churn — so an
+# unset VERSION is a development build and reports itself as "dev".
+VERSION ?=
+GO_LDFLAGS := -X github.com/josephburnett/gridwell/internal/cli.Version=$(VERSION)
 
 # The plugins live in their own repository — gridwell owns the door, the
 # plugins repo owns the plugins. PLUGINS_DIR is the one place that says where
@@ -61,7 +68,7 @@ build: bin plugins wasm
 # copy them anywhere and the browser client serves from the binary itself.
 # bin depends on wasm so the embed always carries the current client.
 bin: wasm
-	cd apps/gridwell && CGO_ENABLED=0 go build -o ../../gridwell$(EXE) .
+	cd apps/gridwell && CGO_ENABLED=0 go build -ldflags "$(GO_LDFLAGS)" -o ../../gridwell$(EXE) .
 
 # Phony so a source change always rebuilds (Go's build cache keeps it fast);
 # file-target rules would skip the build whenever the binary already existed.
@@ -245,6 +252,19 @@ vendor: bin wasm
 	cd $(DESKTOP) && node node_modules/electron/install.js
 	$(MAKE) dist
 	@echo "vendored: caches warm under $(CACHE); 'make dist' is now offline"
+
+# stamp-version writes VERSION into the desktop package.json, which is where
+# electron-builder reads the version it names every artifact with. This is a
+# BUILD-TIME write and never a commit: the tree keeps its 0.0.0 placeholder,
+# so cutting a release bumps no file and leaves no churn. An empty VERSION is
+# a local build and leaves package.json alone.
+stamp-version:
+	@if [ -n "$(VERSION)" ]; then \
+		(cd $(DESKTOP) && npm version "$(VERSION)" --no-git-tag-version --allow-same-version >/dev/null); \
+		echo "stamped $(DESKTOP)/package.json version = $(VERSION)"; \
+	else \
+		echo "no VERSION: a development build, package.json untouched"; \
+	fi
 
 # dist is the offline AppImage build. It assumes a prior `make vendor` warmed
 # the caches and installed node_modules. Produces a single self-contained
