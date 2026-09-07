@@ -1,24 +1,20 @@
 // Package plugintest is the seam harness for a test that needs a plugin.v1
 // client.
 //
-// Spawn is the door for a SHIPPED plugin: a plugin lives in its own
-// repository (github.com/josephburnett/gridwell-plugins) and reaches this one
-// exactly one way — compose.LoadPlugin spawns gridwell-plugin-<kind> and
-// speaks plugin.v1 to it. No gridwell package, test files included, may
-// import a plugin implementation; the module boundary makes it impossible and
-// test/boundary pins it. So a test that needs a real plugin behind the
-// adapter spawns the real binary with the config server.yaml would have given
-// it. Binary is the one place that locates a built binary and Spawn the one
-// place that launches one; both answer with a t.Fatal naming what to build,
-// never a skip, since a skip would leave the seam unexercised while the suite
-// stayed green.
+// Spawn is the door for a shipped plugin. A plugin lives in its own repository
+// and reaches this one only through compose.LoadPlugin, which spawns
+// gridwell-plugin-<kind> and speaks plugin.v1 to it, so a test that needs a real
+// plugin behind the adapter spawns the real binary with the config server.yaml
+// would have given it. Binary is the one place that locates a built binary and
+// Spawn the one place that launches one. Both answer with a t.Fatal naming what
+// to build rather than a skip, which would leave the seam unexercised while the
+// suite stayed green.
 //
-// Loopback is the door for a plugin the TEST ITSELF declares — a stub that
-// answers one way, to pin what the adapter does with the answer. It is a real
-// gRPC server on an in-memory listener, not a direct method call, so the
-// marshalling the wire does still happens: a message the plugin cannot
-// serialize fails here too, and no answer is shared by pointer across the
-// seam.
+// Loopback is the door for a plugin the test itself declares, a stub that
+// answers one way so a test can pin what the adapter does with the answer. It is
+// a real gRPC server on an in-memory listener, so the marshalling the wire does
+// still happens: a message the plugin cannot serialize fails here too, and no
+// answer is shared by pointer across the seam.
 package plugintest
 
 import (
@@ -105,23 +101,23 @@ func Binary(t *testing.T, kind string) string {
 	return path
 }
 
-// Spawn launches the shipped gridwell-plugin-<kind> with cfg — exactly the
-// production spawn, config map and all — and returns the connected client,
-// killed at the end of the test.
+// Spawn launches the shipped gridwell-plugin-<kind> with cfg, the production
+// spawn down to the config map, and returns the connected client, killed at the
+// end of the test.
 //
 // The guest inherits this process's environment, so the test's own home is
-// redirected first: an fs plugin trashes a deleted file into
+// redirected first. An fs plugin trashes a deleted file into
 // $XDG_DATA_HOME/Trash, and a test must never write into the developer's. Its
-// state_dir is redirected for the same reason — see withStateDir.
+// state_dir is redirected for the same reason, see withStateDir.
 func Spawn(t *testing.T, kind string, cfg map[string]string) pluginv1.PluginClient {
 	t.Helper()
 	cp, _ := SpawnCloser(t, kind, cfg)
 	return cp
 }
 
-// SpawnCloser is Spawn with the kill handed back, for a test that must stop
-// the plugin mid-test — a restart, a crash. The kill also runs at the end of
-// the test, and running it twice is harmless.
+// SpawnCloser is Spawn with the kill handed back, for a test that must stop the
+// plugin mid-test to stage a restart or a crash. The kill also runs at the end
+// of the test, and running it twice is harmless.
 func SpawnCloser(t *testing.T, kind string, cfg map[string]string) (pluginv1.PluginClient, func()) {
 	t.Helper()
 	t.Setenv("XDG_DATA_HOME", t.TempDir())
@@ -134,10 +130,10 @@ func SpawnCloser(t *testing.T, kind string, cfg map[string]string) (pluginv1.Plu
 }
 
 // withStateDir copies cfg with a state_dir, the private directory the loader
-// hands a plugin in production (<home>/plugins/<id>): a per-test temp
+// hands a plugin in production (<home>/plugins/<id>). Here it is a per-test temp
 // directory, so no test writes into a real home. A test that keeps a plugin's
-// memory across a restart passes its own directory and this leaves it alone.
-// The copy keeps the caller's map its own.
+// memory across a restart passes its own directory and this leaves it alone. The
+// copy keeps the caller's map its own.
 func withStateDir(t *testing.T, cfg map[string]string) map[string]string {
 	t.Helper()
 	out := make(map[string]string, len(cfg)+1)
@@ -150,11 +146,11 @@ func withStateDir(t *testing.T, cfg map[string]string) map[string]string {
 	return out
 }
 
-// Landing is the grid a plugin's single declared collection serves: what a
-// test descends into for a plugin that has exactly one. A plugin declares no
-// root of its own — it contributes doorways, one menu entry per collection —
-// so there is no RootGridId to read, and a plugin with several collections
-// has no single landing, which is why this fails rather than picking.
+// Landing is the grid a plugin's single declared collection serves, for a test
+// descending into a plugin that has exactly one. A plugin declares no root of
+// its own, only one menu entry per collection, so there is no RootGridId to
+// read. A plugin with several collections has no single landing, which is why
+// this fails rather than picking one.
 func Landing(t *testing.T, info *gridwellv1.InfoResponse) string {
 	t.Helper()
 	if info.RootGridId != "" {

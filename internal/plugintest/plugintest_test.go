@@ -1,15 +1,15 @@
 package plugintest
 
 // What the harness adds to a spawn config. Spawning itself needs a built
-// binary; this pins the part that does not.
+// binary, and this pins the part that does not.
 
 import (
 	"os"
 	"testing"
 )
 
-// TestWithStateDir_MintsATempDir pins that a spawn always carries a state_dir,
-// a directory of this test's own, so no test writes into a real home.
+// A spawn always carries a state_dir of this test's own, so no test writes into
+// a real home.
 func TestWithStateDir_MintsATempDir(t *testing.T) {
 	cfg := map[string]string{"root": "/srv"}
 	out := withStateDir(t, cfg)
@@ -28,8 +28,8 @@ func TestWithStateDir_MintsATempDir(t *testing.T) {
 	}
 }
 
-// TestWithStateDir_KeepsTheTestsOwn pins that a test restarting a plugin over
-// a kept directory gets the directory it named.
+// A test restarting a plugin over a kept directory gets the directory it
+// named.
 func TestWithStateDir_KeepsTheTestsOwn(t *testing.T) {
 	dir := t.TempDir()
 	out := withStateDir(t, map[string]string{"state_dir": dir})
