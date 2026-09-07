@@ -27,6 +27,7 @@ here.
 
 | Concept | What it does |
 |---|---|
+| **collection** | One grid a plugin serves, declared as a + menu entry (`door.PlacesOf`). A plugin has no place of its own, so a collection is the only way in, and it is named for its instance — "hey · Feed" (`door.EntryName`). |
 | **grid frame** | One doorway crossing, with the viewport you left it at. The whole of where a pane is. |
 | **content frame** | A frame whose place is a tile rather than a grid (`pane.ContentFrame`): text scroll, text mode, and content zoom live here. A descent into a document is an ordinary level you can ascend out of. |
 | **level** | A pane-tile descent (`pane.Level`), session-only. One pane tile can hold a whole arrangement without the frame stack encoding a tree. |

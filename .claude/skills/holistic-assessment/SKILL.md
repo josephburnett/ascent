@@ -84,7 +84,8 @@ decided behavior would be lost if this concept collapsed into its neighbor,
 and if the answer is nothing, it is a useless abstraction — name it. A
 default that privileges one member of a uniform set is the tell
 (`root_context` privileged one collection over the menu entries that already
-expressed all of them, and a plugin had to fake a root to work around it).
+expressed all of them, and a plugin had to fake a root to work around it; it
+was retired for that reason).
 CLEAN when no two concepts could merge without losing a decided behavior AND
 no exception check bypasses its owning predicate.
 

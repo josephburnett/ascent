@@ -117,16 +117,28 @@ These were decided deliberately. Do not reverse one without a new decision.
   because the config stopped declaring it — the row and its landing stay,
   its links go dead by the roster, and the stanza brings them back.
   Secrets stay host-local file paths.
-- A plugin's collections are + menu entries, one per collection
-  (`InfoResponse.menu_entries`, each naming a context key). A plugin never
-  wraps them in a synthetic root grid of wells. `root_context` is the
-  primary collection and gets no menu entry of its own.
+- A plugin is not a place (2026-09-06, reversing the `root_context`
+  decision). Nodes have homes; a plugin contributes doorways. Its
+  collections are + menu entries, one per collection
+  (`InfoResponse.menu_entries`, each naming a context key), and it never
+  wraps them in a synthetic root grid of wells. `root_context` is RETIRED:
+  the field number is kept forever and the node reads it in one place only —
+  a plugin that answers a root_context and NO entries gets one derived entry
+  onto it, so an old binary keeps presenting. Declare both and the entries
+  win; there is no privileged collection. A plugin that declares none
+  contributes nothing and is healthy (`pluginhealth.NoDoor`), not broken.
 - A node has no grid of its own. A mount lands on the far node's home.
-  Plugins and connections live on the + menu's top row. That row is an open
-  set, so it is folded: a menu opens on the primitives with a chevron strip
-  for the section above it, and every opening starts folded — the fold is the
-  menu's live state and dies with it (`client/palette` decides what a state
-  shows, `client/menu` owns the flag).
+  The + menu's top row is one swatch per declared doorway: a node's home and
+  a connection's far home are places and get a row; a plugin's collections
+  are the swatches, one each, and the plugin has none of its own
+  (`client/door.PlacesOf` enumerates, `client/palette.Doorways` composes). An
+  entry is named for its instance — "hey · Feed", `door.EntryName`,
+  uniformly, with no privileged one — and it carries its grid's framing, so a
+  collection reopens where it was left. That row is an open set, so it is
+  folded: a menu opens on the primitives with a chevron strip for the section
+  above it, and every opening starts folded — the fold is the menu's live
+  state and dies with it (`client/palette` decides what a state shows,
+  `client/menu` owns the flag).
 - The web door always has a password (the minted 0600 `web-password` file;
   delete it to rotate). The connection door is a 0600 unix socket, never
   TCP. Its `server.yaml` key stays `federation:` and its file stays

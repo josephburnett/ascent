@@ -146,9 +146,13 @@ it as `state_dir` at spawn: its own memory of its source, under cache.db's
 contract — disposable, safe to delete, rewarmed by use, and never deleted by
 the node. The node mints ids against those keys and
 keeps the arrangement as a namespace of its own store
-(`internal/pluginhost/adapter.go`). The host never imports a plugin and never
-switches on its kind; every plugin behavior rides a wire declaration.
-`docs/plugin-authoring.md` is the contract from the plugin's side.
+(`internal/pluginhost/adapter.go`). A plugin is not a place: it declares its
+collections as `menu_entries`, one per collection, and each becomes a + menu
+swatch onto that grid. It has no landing of its own — `root_context` is
+retired, read only to derive the single entry an older binary implies. The
+host never imports a plugin and never switches on its kind; every plugin
+behavior rides a wire declaration. `docs/plugin-authoring.md` is the contract
+from the plugin's side.
 
 **Connections** (`internal/connection`) are config rows: an immutable name, a
 label, how to dial. The transport dials each at boot, lands on the far node's

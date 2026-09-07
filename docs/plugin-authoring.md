@@ -52,16 +52,27 @@ content: no config, no state, and every page generated in the plugin.
 ## Info
 
 `InfoResponse` is your one handshake: `kind`, `display_name`, `glyph`
-(`folder`/`process`/`well`/empty), `root_context` (your landing grid's key;
-empty = none), `watch`, `writable`, and `menu_entries` (the + menu additions
-the node stamps onto your grids).
+(`folder`/`process`/`well`/empty), `watch`, `writable`, and `menu_entries`
+(your collections).
 
-If your source has several collections, declare one `menu_entries` row per
-collection, each naming its context key. Do not invent a wrapper context
-whose entries are wells onto the others: that is a grid the user did not
-make and cannot arrange. `root_context` is your primary collection and gets
-no menu entry of its own — a mail plugin lands on the inbox and declares
-"reply later" and "set aside" beside it.
+**Declare one `menu_entries` row per collection**, each naming its context
+key. That is how your plugin is reached: each entry becomes a + menu swatch,
+and the node stamps them onto every grid it serves for you. You have no
+landing grid and no primary collection — a plugin is not a place, it
+contributes doorways — so a mail plugin declares "inbox", "reply later" and
+"set aside", all three the same way. Do not invent a wrapper context whose
+entries are wells onto the others: that is a grid the user did not make and
+cannot arrange.
+
+An entry's `label` is optional. Leave it empty when you serve one collection
+and the swatch reads as the configured instance; set it and the swatch reads
+"<instance> · <label>". Declaring no entries at all is legal: your plugin is
+listed, contributes nothing to the menu, and is healthy — not an error.
+
+`root_context` is RETIRED. Leave it empty. The node reads it in one case, so
+a binary built against the older proto keeps presenting: a plugin that
+answers a `root_context` and no `menu_entries` gets one derived entry onto
+it, wearing your own name and face. Declare both and the entries win.
 
 ## Listings
 
