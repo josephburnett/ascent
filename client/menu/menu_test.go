@@ -50,8 +50,7 @@ func TestOpenResetsHover(t *testing.T) {
 	}
 }
 
-// Close clears the remembered pane so a later OpenOn cannot resolve true off
-// a stale id.
+// A later OpenOn must not resolve true off a stale id.
 func TestCloseClearsPane(t *testing.T) {
 	s := New()
 	s.Open("p1")
@@ -85,7 +84,6 @@ func TestToggleOtherPaneMovesMenu(t *testing.T) {
 	}
 }
 
-// Focus moving away from the menu's pane closes the menu.
 func TestSyncFocusClosesOnFocusMoveAway(t *testing.T) {
 	s := New()
 	s.Open("p1")
@@ -125,8 +123,7 @@ func TestSetHoverReportsChangeOnce(t *testing.T) {
 	}
 }
 
-// A menu open on a pane is snapshotted with OpenOn, closed for the descent,
-// and reopened with Open on the ascent, mirroring the wasm client.
+// The descent/ascent round trip the wasm client runs.
 func TestDescendAscentRoundTrip(t *testing.T) {
 	s := New()
 	s.Open("p1")
@@ -157,13 +154,9 @@ func TestDescendAscentRoundTripClosedStaysClosed(t *testing.T) {
 	}
 }
 
-// Calling TransferFocus from a new path closes the menu when focus moves
-// away from it, with nothing extra to remember at the call site.
-
 func TestTransferFocusReturnsChangedAndClosesMenu(t *testing.T) {
 	s := New()
 	s.Open("p1")
-	// Focus moves from p1 to p2.
 	if !s.TransferFocus("p1", "p2") {
 		t.Fatal("TransferFocus must report true when focus changed")
 	}
@@ -175,7 +168,6 @@ func TestTransferFocusReturnsChangedAndClosesMenu(t *testing.T) {
 func TestTransferFocusNoopWhenFocusUnchanged(t *testing.T) {
 	s := New()
 	s.Open("p1")
-	// Focus stays on p1.
 	if s.TransferFocus("p1", "p1") {
 		t.Fatal("TransferFocus must report false when focus did not change")
 	}
@@ -198,8 +190,7 @@ func TestTransferFocusMenuClosedNoChange(t *testing.T) {
 // The menu closes whenever focus moves, whichever gesture moved it.
 func TestTransferFocusForwardedPathClosesMenu(t *testing.T) {
 	s := New()
-	s.Open("p1") // menu open on the text pane
-	// A forwarded press lands on the url pane and focus moves.
+	s.Open("p1")
 	changed := s.TransferFocus("p1", "p2")
 	if !changed {
 		t.Fatal("forwarded press that changes focus must report changed=true")
@@ -209,8 +200,7 @@ func TestTransferFocusForwardedPathClosesMenu(t *testing.T) {
 	}
 }
 
-// The doorway section is folded on every opening, however the user left the
-// last one.
+// The doorway section is folded on every opening, however the last was left.
 func TestPluginsCollapsedOnEveryOpen(t *testing.T) {
 	s := New()
 	s.Open("p1")
