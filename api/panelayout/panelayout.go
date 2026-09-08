@@ -51,11 +51,10 @@ type LayoutFrame struct {
 }
 
 // LayoutPane is a leaf's persisted place: the frame stack in Place, root
-// first, plus the leaf's viewport and content-descent state. Anchor, Path
-// and TextFocus are the same place projected onto its innermost namespace
-// level. Place wins where present and is written only where the projection
-// would lose a level, so a place the projection holds in full still encodes
-// byte-identically to what earlier versions wrote.
+// first, plus its viewport and content-descent state. Anchor, Path and
+// TextFocus are the same place projected onto its innermost namespace level.
+// Place wins where present and is written only where the projection would lose
+// a level, so what the projection holds in full still encodes byte-identically.
 type LayoutPane struct {
 	ID          string        `json:"id"`
 	Anchor      string        `json:"anchor,omitempty"`
