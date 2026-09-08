@@ -7,8 +7,7 @@ package preview
 
 import "sync"
 
-// Image is the decoded handle the renderer draws. Truthy reports whether the
-// browser resource is loaded, and Revoke releases the backing object URL.
+// Image is the decoded handle the renderer draws.
 type Image interface {
 	Truthy() bool
 	Revoke()
@@ -33,8 +32,7 @@ type Cache struct {
 type entry struct {
 	// blobID is the preview_blob_id decoded from, or wildcardBlobID.
 	blobID int64
-	// image is nil while a decode is pending.
-	image Image
+	image  Image
 	// gen rises with every Put, so a decode whose onReady fires after a newer
 	// Put superseded it is discarded.
 	gen int64
@@ -92,7 +90,6 @@ func (c *Cache) PutEmpty(tileID string, blobID int64) {
 	c.entries[tileID] = &entry{blobID: blobID, empty: true}
 }
 
-// KnownEmpty lets the caller skip the fetch instead of re-asking every frame.
 func (c *Cache) KnownEmpty(tileID string, blobID int64) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -151,7 +148,7 @@ func (c *Cache) put(tileID string, blobID int64, bytes []byte, onReady func()) {
 	)
 }
 
-// Drop revokes the entry's image. It is idempotent and runs on tile delete.
+// Drop is idempotent and runs on tile delete.
 func (c *Cache) Drop(tileID string) {
 	c.mu.Lock()
 	e, ok := c.entries[tileID]
