@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS blobs (
     -- Self-describing media: an IANA type ('text/markdown', 'image/jpeg') so a
     -- blob is interpretable on its own, independent of the column that points
     -- at it. Read back through GetBlob and returned over the wire by
-    -- GetTileContent, never hard-coded at the read site. Blobs are immutable
+    -- ReadContent, never hard-coded at the read site. Blobs are immutable
     -- (content-addressed): size is recomputable from data and first-seen time
     -- carries no meaning for dedup, so neither is stored.
     media_type TEXT NOT NULL DEFAULT ''

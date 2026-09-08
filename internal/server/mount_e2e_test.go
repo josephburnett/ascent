@@ -89,7 +89,7 @@ func TestSecondDBMountE2E(t *testing.T) {
 	// Content routes to the second plugin.
 	body, _, _, err := cl.ReadContent(ctx, txt.Id)
 	if err != nil {
-		t.Fatalf("GetTileContent: %v", err)
+		t.Fatalf("ReadContent: %v", err)
 	}
 	if !strings.Contains(string(body), "in second") {
 		t.Errorf("content = %q, want it to mention 'in second'", body)

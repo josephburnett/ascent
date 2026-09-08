@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { tileAt } from './oracle';
 
 // A new text tile must be empty, never seeded with a previously-edited tile's
-// body. Asserted at the store through GetTileContent, the system of record.
+// body. Asserted at the store through ReadContent, the system of record.
 test('a newly created text tile is empty, not the previously edited content', async ({ gw }) => {
   await gw.enterPlugin('home');
   const f = await gw.focused();

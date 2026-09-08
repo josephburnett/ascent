@@ -3,7 +3,7 @@ import { tileAt } from './oracle';
 
 // Drives the text-editing gesture end to end: create a markdown tile, descend
 // into it, type, ascend, and assert the typed content reached the server through
-// GetTileContent. The edit logic is unit-tested in client/textedit and
+// ReadContent. The edit logic is unit-tested in client/textedit and
 // client/markdown; this proves the wiring from keystrokes to a durable body.
 test('typing into a descended text tile persists to the server', async ({ gw, window }) => {
   await gw.enterPlugin('home');

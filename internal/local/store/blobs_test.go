@@ -31,7 +31,7 @@ func TestGetBlobReturnsBytes(t *testing.T) {
 }
 
 // blobMedia reads back a blob's bytes and self-describing media type through
-// the public read path — the same route GetTileContent uses to report a type
+// the public read path — the same route ReadContent uses to report a type
 // instead of hard-coding one.
 func blobMedia(t *testing.T, s *Store, id int64) (data []byte, mediaType string) {
 	t.Helper()
