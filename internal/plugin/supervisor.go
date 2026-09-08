@@ -13,34 +13,28 @@ import (
 	"github.com/josephburnett/gridwell/api/compose"
 )
 
-// A plugin's subprocess is spawned here, watched here, and respawned here when
-// it dies. This package is the one owner of whether a plugin is alive. The
-// adapter asks nothing and remembers nothing, the pluginhost event stream
-// announces what the supervisor says, and while the process is gone every call
-// fails rather than being answered from a memory of what the plugin used to
-// say.
-//
-// go-plugin offers no exit signal to select on, only Exited(), so the watch
-// looks on a tick. The respawn is backed off, capped, and reset only after a
-// process has proved it can stay up, so a binary that dies on start does not
-// become a spawn loop.
+// A plugin's subprocess is spawned, watched and respawned here. While the
+// process is gone every call fails rather than being answered from a memory of
+// what the plugin used to say. go-plugin offers no exit signal to select on,
+// only Exited(), so the watch looks on a tick, and the respawn is backed off,
+// capped and reset only after a process has proved it can stay up.
 
 const (
-	// watchInterval is how often the supervisor looks at the process. It is
-	// the whole latency between a crash and the strip saying so.
+	// watchInterval is the whole latency between a crash and the strip
+	// saying so.
 	watchInterval = 250 * time.Millisecond
 	// firstBackoff is the pause before the first respawn, maxBackoff the cap.
 	firstBackoff = 250 * time.Millisecond
 	maxBackoff   = 30 * time.Second
-	// stableFor is how long a process must have run for its exit to count as
-	// a one-off. Exit sooner and the backoff keeps growing.
+	// stableFor is how long a process must run for its exit to count as a
+	// one-off; sooner and the backoff keeps growing.
 	stableFor = 30 * time.Second
 )
 
-// Supervisor owns one plugin's subprocess. It is a grpc.ClientConnInterface, so
-// a single plugin.v1 client is built over it for the life of the plugin
-// (pluginv1.NewPluginClient) and every call routes to whichever process is up at
-// that moment. Nothing upstream ever holds a handle to a dead one.
+// Supervisor owns one plugin's subprocess. It is a grpc.ClientConnInterface,
+// so one plugin.v1 client is built over it for the plugin's life and every
+// call routes to whichever process is up. Nothing upstream holds a handle to a
+// dead one.
 type Supervisor struct {
 	uuid   string
 	kind   string
@@ -49,7 +43,7 @@ type Supervisor struct {
 
 	mu   sync.Mutex
 	proc *compose.Process
-	// healthy and detail are the fact this type owns. detail is why the
+	// healthy and detail are the fact this type owns; detail is why the
 	// plugin is down, carried to the user on the health event.
 	healthy bool
 	detail  string
@@ -68,10 +62,9 @@ type Supervisor struct {
 // The supervisor is the connection every plugin.v1 call rides.
 var _ grpc.ClientConnInterface = (*Supervisor)(nil)
 
-// Supervise spawns the plugin binary and starts watching it. A spawn that fails
-// at boot is the caller's error, because a plugin the node cannot start must not
-// come up as an empty grid, so nothing is watched until the first spawn
-// succeeds.
+// Supervise makes a spawn that fails at boot the caller's error, because a
+// plugin the node cannot start must not come up as an empty grid, so nothing
+// is watched until the first spawn succeeds.
 func Supervise(uuid, kind, binary string, cfg map[string]string) (*Supervisor, error) {
 	s := &Supervisor{
 		uuid: uuid, kind: kind, binary: binary, cfg: cfg,
@@ -86,7 +79,7 @@ func Supervise(uuid, kind, binary string, cfg map[string]string) (*Supervisor, e
 	return s, nil
 }
 
-// Invoke routes one unary call to the process that is up right now.
+// Invoke routes to the process that is up right now.
 func (s *Supervisor) Invoke(ctx context.Context, method string, args, reply any, opts ...grpc.CallOption) error {
 	conn, err := s.conn()
 	if err != nil {
@@ -95,7 +88,6 @@ func (s *Supervisor) Invoke(ctx context.Context, method string, args, reply any,
 	return conn.Invoke(ctx, method, args, reply, opts...)
 }
 
-// NewStream routes one streaming call the same way.
 func (s *Supervisor) NewStream(ctx context.Context, desc *grpc.StreamDesc, method string, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 	conn, err := s.conn()
 	if err != nil {
@@ -104,8 +96,8 @@ func (s *Supervisor) NewStream(ctx context.Context, desc *grpc.StreamDesc, metho
 	return conn.NewStream(ctx, desc, method, opts...)
 }
 
-// conn is the live connection, or the reason there is none. The code is
-// Unavailable, so a caller that degrades on a transport failure degrades here.
+// conn's error code is Unavailable, so a caller that degrades on a transport
+// failure degrades here.
 func (s *Supervisor) conn() (grpc.ClientConnInterface, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -115,18 +107,15 @@ func (s *Supervisor) conn() (grpc.ClientConnInterface, error) {
 	return s.proc.Conn, nil
 }
 
-// Health is the current state: whether the subprocess is up, and why not when
-// it is down. A subscriber reads it before listening, so a client that
-// connects while the plugin is down learns that instead of waiting for the
-// next transition.
+// Health is read by a subscriber before it listens, so a client that connects
+// while the plugin is down learns that instead of waiting for a transition.
 func (s *Supervisor) Health() (healthy bool, detail string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.healthy, s.detail
 }
 
-// OnHealth registers a listener for every transition until the returned cancel
-// runs. The listener is called from the watch goroutine and must not block.
+// OnHealth's listener is called from the watch goroutine and must not block.
 func (s *Supervisor) OnHealth(fn func(healthy bool, detail string)) (cancel func()) {
 	s.listenersMu.Lock()
 	defer s.listenersMu.Unlock()
@@ -140,8 +129,7 @@ func (s *Supervisor) OnHealth(fn func(healthy bool, detail string)) (cancel func
 	}
 }
 
-// Close stops the watch and kills the subprocess. Idempotent, and the closer
-// the registry runs at shutdown.
+// Close is idempotent, and is the closer the registry runs at shutdown.
 func (s *Supervisor) Close() {
 	s.closeOnce.Do(func() {
 		close(s.done)
@@ -157,7 +145,6 @@ func (s *Supervisor) Close() {
 	})
 }
 
-// spawn starts one subprocess and installs it.
 func (s *Supervisor) spawn() error {
 	proc, err := compose.LoadPlugin(s.binary, s.cfg)
 	if err != nil {
@@ -174,8 +161,7 @@ func (s *Supervisor) spawn() error {
 	return nil
 }
 
-// watch is the supervisor's one goroutine: it notices the subprocess is gone,
-// says so, and brings it back.
+// watch is the supervisor's one goroutine.
 func (s *Supervisor) watch() {
 	defer s.watchWG.Done()
 	backoff := firstBackoff
@@ -191,8 +177,8 @@ func (s *Supervisor) watch() {
 		}
 		if proc != nil {
 			backoff = respawnPause(backoff, up)
-			// The id is read before the kill: go-plugin drops its reference to
-			// the process there, and ID() answers "" from then on.
+			// Read the id before the kill: go-plugin drops its reference to
+			// the process there and ID() answers "" from then on.
 			id := proc.ID()
 			log.Printf("gridwell: plugin %s (%s) pid %s exited after %v; respawning in %v",
 				s.uuid, s.kind, id, up.Round(time.Millisecond), backoff)
@@ -200,9 +186,8 @@ func (s *Supervisor) watch() {
 			s.proc = nil
 			s.mu.Unlock()
 			proc.Kill() // reap go-plugin's own bookkeeping before replacing it
-			// The pid rides the detail: it is what an operator needs to find
-			// the process in a log, or its core, once the strip says a plugin
-			// went down.
+			// The pid rides the detail, so an operator can find the process
+			// in a log once the strip says a plugin went down.
 			s.setHealth(false, "the plugin subprocess (pid "+id+") exited")
 		}
 		if !s.sleep(backoff) {
@@ -218,12 +203,10 @@ func (s *Supervisor) watch() {
 	}
 }
 
-// respawnPause is the respawn policy: how long to wait before the next attempt,
-// given the pause used before it and how long the process that just died had
-// been running. A process that proved it can stay up starts the pause over, so
-// an ordinary crash comes back at once; one that died young doubles it, capped,
-// so a binary that cannot stay up is retried forever without being respawned in
-// a loop.
+// respawnPause takes the pause used before and how long the dead process ran.
+// A process that proved it can stay up starts the pause over, so an ordinary
+// crash comes back at once; one that died young doubles it, capped, so a
+// binary that cannot stay up is retried forever without looping.
 func respawnPause(last, ranFor time.Duration) time.Duration {
 	if ranFor > stableFor {
 		return firstBackoff
@@ -241,10 +224,9 @@ func (s *Supervisor) sleep(d time.Duration) bool {
 	}
 }
 
-// setHealth records the state and tells the listeners only when it changed:
-// down on the first failure, up on the recovery, never once per retry, so a
-// flapping plugin does not spam the strip. The detail always takes the latest
-// reason, so a plugin that is still down for a new reason reads true.
+// setHealth tells the listeners only when the state changed, never once per
+// retry, so a flapping plugin does not spam the strip. The detail always takes
+// the latest reason.
 func (s *Supervisor) setHealth(healthy bool, detail string) {
 	s.mu.Lock()
 	changed := s.healthy != healthy
