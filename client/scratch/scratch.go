@@ -1,9 +1,8 @@
-// Package scratch answers where a pane's ephemeral visits live and whether a
-// tile is one of them. It reads only Grid.scratch_grid_id, the stamp the
-// serving node chains through mounts. The answer cannot be guessed from an id:
-// a mounted remote grid's first segment is the local node, so a lookup keyed on
-// it would answer for the wrong node. So the answer is three-valued and an
-// uncached grid is told not known rather than handed a guess.
+// Package scratch answers where a pane's ephemeral visits live, reading only
+// Grid.scratch_grid_id, the stamp the serving node chains through mounts. The
+// answer cannot be guessed from an id, a mounted remote grid's first segment
+// being the local node, so it is three-valued and an uncached grid is told not
+// known rather than handed a guess.
 package scratch
 
 // Grid is what the rule reads. An uncached grid carries no stamp, which is why
