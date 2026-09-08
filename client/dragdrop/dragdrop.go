@@ -23,7 +23,6 @@ func (p Pane) ScreenToCell(sx, sy float64) (float64, float64) {
 	return cx, cy
 }
 
-// CellToScreen is the inverse of ScreenToCell.
 func (p Pane) CellToScreen(cx, cy float64) (float64, float64) {
 	cellSize := p.CellPx * p.Zoom
 	sx := p.ScreenX + p.ScreenW/2 + (cx-p.Cx)*cellSize
@@ -31,15 +30,15 @@ func (p Pane) CellToScreen(cx, cy float64) (float64, float64) {
 	return sx, sy
 }
 
-// CellAt is the integer cell containing a screen point; see FloorCellAt.
+// CellAt floors; see FloorCellAt.
 func (p Pane) CellAt(sx, sy float64) (int64, int64) {
 	cx, cy := p.ScreenToCell(sx, sy)
 	return int64(math.Floor(cx)), int64(math.Floor(cy))
 }
 
 // SnapToCell rounds halves away from zero, so the snap is symmetric about
-// zero. It answers where a dragged tile comes to rest; FloorCellAt answers
-// which cell the cursor is inside.
+// zero. It is where a dragged tile comes to rest; FloorCellAt is which cell
+// the cursor is inside.
 func SnapToCell(c float64) int64 {
 	if c >= 0 {
 		return int64(c + 0.5)
@@ -47,9 +46,8 @@ func SnapToCell(c float64) int64 {
 	return int64(c - 0.5)
 }
 
-// FloorCellAt is the integer cell containing a screen point. Every interior
-// point of cell N reports N, which is what a hit-test needs; SnapToCell rounds
-// instead and would miss the lower-right half of every cell.
+// FloorCellAt reports N for every interior point of cell N, which is what a
+// hit-test needs; SnapToCell would miss the lower-right half of every cell.
 func FloorCellAt(originX, originY, cellSize, sx, sy float64) (int64, int64) {
 	return int64(math.Floor((sx - originX) / cellSize)),
 		int64(math.Floor((sy - originY) / cellSize))
@@ -62,16 +60,14 @@ func HiddenMatch(hiddenTileID string, hiddenPaneID, currentPaneID string, tileID
 	return hiddenTileID != "" && hiddenPaneID == currentPaneID && tileID == hiddenTileID
 }
 
-// ChildPreview is a well's child-grid preview drawn inside its parent grid.
-// Origin is the screen coordinate of child cell (0, 0).
+// ChildPreview's Origin is the screen coordinate of child cell (0, 0).
 type ChildPreview struct {
 	OriginX, OriginY float64
 	CellPx           float64
 }
 
-// ChildPreviewFor is the screen transform for a well's child-grid preview.
-// previewRatio is child cells per parent cell, resolved by the caller through
-// zoomtrans.EffectiveViewZoom. The result is independent of pane size.
+// ChildPreviewFor takes previewRatio, child cells per parent cell, from the
+// caller's zoomtrans.EffectiveViewZoom. The result is independent of pane size.
 func ChildPreviewFor(parent Pane, well struct {
 	X, Y, W, H     int64
 	ViewCx, ViewCy float64
@@ -106,8 +102,8 @@ func RectsOverlap(ax, ay, aw, ah, bx, by, bw, bh int64) bool {
 	return ax < bx+bw && bx < ax+aw && ay < by+bh && by < ay+ah
 }
 
-// InTileCenter is the tile's inner third. It scales with the tile, so the copy
-// and link handle feels the same at every zoom and on a 1x1 tile.
+// InTileCenter scales with the tile, so the copy and link handle feels the
+// same at every zoom and on a 1x1 tile.
 func InTileCenter(x, y, w, h int64, cellX, cellY float64) bool {
 	xf, yf := float64(x), float64(y)
 	wf, hf := float64(w), float64(h)
@@ -124,7 +120,6 @@ type ResizeAnchors struct {
 	ClickCellX, ClickCellY   int64
 }
 
-// ResizeAnchorsFor pins the corner opposite the clicked quadrant.
 func ResizeAnchorsFor(x, y, w, h int64, cellXf, cellYf float64) ResizeAnchors {
 	var a ResizeAnchors
 	midX := float64(x) + float64(w)/2
@@ -157,9 +152,8 @@ func ResizeFromCursor(a ResizeAnchors, curCellX, curCellY int64) (int64, int64, 
 	return x, y, w, h
 }
 
-// RangeFromAnchors is at least 1 long. When the anchors meet, the range sits
-// on the side first clicked, so the rectangle keeps its identity across the
-// crossover.
+// RangeFromAnchors puts the range on the side first clicked when the anchors
+// meet, so the rectangle keeps its identity across the crossover.
 func RangeFromAnchors(pin, moving int64, origRight bool) (start, length int64) {
 	if moving == pin {
 		if origRight {
@@ -190,9 +184,8 @@ func MoveForbidden(sameGrid, crossPlugin, srcHost, dstHost bool) bool {
 type Intent int
 
 const (
-	// IntentMove is a left-drag, where the tile itself travels; across an id
-	// namespace it verdicts a link. It is the zero value a palette template
-	// drag leaves unset.
+	// IntentMove is a left-drag; across an id namespace it verdicts a link.
+	// It is the zero value a palette template drag leaves unset.
 	IntentMove Intent = iota
 	// IntentCopy is a right-drag, an independent copy in any namespace.
 	IntentCopy
@@ -201,22 +194,20 @@ const (
 	IntentLink
 )
 
-// Creates reports whether the intent puts a new tile at the destination. A
-// copy and a link both do, so the source stays put and is a neighbor the drop
-// must not land on, and MoveForbidden does not apply.
+// Creates: a copy and a link both do, so the source stays put and is a
+// neighbor the drop must not land on, and MoveForbidden does not apply.
 func (i Intent) Creates() bool { return i != IntentMove }
 
-// DropAction is the verdict for a drag release and its in-flight preview. The
-// commit and the ghost preview both route through DecideDrop, so they cannot
-// drift apart.
+// DropAction is the verdict for a release and its preview. The commit and the
+// ghost both route through DecideDrop, so they cannot drift apart.
 type DropAction int
 
 const (
-	// DropNavigate is a bare click on an already-focused pane: descend,
-	// ascend or select, placing nothing.
+	// DropNavigate is a bare click on a focused pane: descend, ascend or
+	// select, placing nothing.
 	DropNavigate DropAction = iota
 	// DropNavigateSplit is that click with ctrl held at press, so a descent
-	// lands in a new split pane. On an unfocused pane it is still focus-only.
+	// lands in a new split pane.
 	DropNavigateSplit
 	DropFocusOnly
 	DropCreateTemplate
@@ -244,7 +235,7 @@ type DropInput struct {
 	// OriginFocused. The + button and the corner circle follow the same
 	// focus-only rule as a bare click.
 	OriginFocused bool
-	// SplitNav is ctrl at left-press time, fixed there so releasing ctrl
+	// SplitNav is ctrl at left-press time, fixed there so releasing it
 	// mid-click cannot change the verdict. Touch synthesizes no ctrlKey.
 	SplitNav   bool
 	IsTemplate bool
@@ -265,11 +256,10 @@ type DropInput struct {
 	CrossPlugin bool
 }
 
-// DecideDrop maps a gathered DropInput to the action both the preview and the
-// commit obey. The branch order is the decision: an earlier arm wins. The
-// HasTarget check sits above every arm that lands something in a grid, so no
-// arm commits against a destination the target resolution refused; only the
-// pan and the trashcan, which land in no grid, stand above it.
+// DecideDrop's branch order is the decision: an earlier arm wins. HasTarget
+// sits above every arm that lands something in a grid, so none commits against
+// a destination the target resolution refused; only the pan and the trashcan,
+// which land in no grid, stand above it.
 func DecideDrop(in DropInput) DropAction {
 	switch {
 	case !in.Started && !in.OriginFocused:
@@ -313,17 +303,15 @@ type GhostPlan struct {
 	TargetCellSize float64 // size the ghost lerps toward
 	Fragmentation  float64 // 1 shatters into the trashcan
 	Forbidden      bool    // draw the no-entry badge
-	// Link draws the dashed ghost and chain badge, so the user learns
-	// mid-drag that the source stays put. Without it a cross-plugin left-drag
-	// would look like a move and the survivor would read as a duplicate.
+	// Link draws the dashed ghost and chain badge. Without it a cross-plugin
+	// left-drag would look like a move and the survivor read as a duplicate.
 	Link   bool
 	Cursor string // CSS cursor: "" or "not-allowed"
 }
 
-// GhostPlanForDrop maps a verdict and its reject cause to the ghost styling.
-// The ghost rests in a different pane per verdict, which is why both pane ids
-// and cell sizes come in. SameCell and Occupied get no style: the preview is
-// optimistic and the commit does the authoritative overlap check.
+// GhostPlanForDrop takes both pane ids and cell sizes because the ghost rests
+// in a different pane per verdict. SameCell and Occupied get no style: the
+// preview is optimistic and the commit does the authoritative overlap check.
 func GhostPlanForDrop(action DropAction, forbidden bool,
 	originPaneID, targetPaneID string, srcCellSize, targetCellSize float64) GhostPlan {
 	switch action {
@@ -341,10 +329,9 @@ func GhostPlanForDrop(action DropAction, forbidden bool,
 	}
 }
 
-// PromoteToWell reports whether the tile under the cursor promotes the drop
-// target to its own child grid. It must not be the dragged tile: a well
-// dropped into its own subtree is a cycle the server rejects. The caller
-// resolves isWell from rpc.IsWellKind, keeping api/rpc out of here.
+// PromoteToWell excludes the dragged tile: a well dropped into its own subtree
+// is a cycle the server rejects. The caller resolves isWell from
+// rpc.IsWellKind, keeping api/rpc out of here.
 func PromoteToWell(isWell bool, childGridID, tileID, draggedTileID string) bool {
 	return isWell && childGridID != "" && tileID != draggedTileID
 }
