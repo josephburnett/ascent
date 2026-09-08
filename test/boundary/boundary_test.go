@@ -30,10 +30,8 @@ var modules = map[string][]string{
 	// doctype: neutral text-document semantics, self-contained.
 	"internal/doctype": {},
 	// The plugins are their own repository, whose modules depend on the api
-	// and never on this one. TestNoPluginImplementation keeps it that way.
-	//
-	// The root module is the server library and its embedded client: the
-	// api and the neutral packages, never a plugin implementation.
+	// and never on this one; TestNoPluginImplementation keeps it that way.
+	// The root module is the server library and its embedded client.
 	"": {"api", "internal/doctype"},
 	// The stock host takes the server and the api. It spawns plugin
 	// binaries rather than importing them.
@@ -163,14 +161,10 @@ func TestAPIDependencyBudget(t *testing.T) {
 	}
 }
 
-// TestNoPluginImplementation pins the third-party door. No package in this
-// repository, test files included, may import a plugin implementation, and no
-// module here may declare the plugins repository as a dependency, so every
-// plugin-specific behavior has to ride a wire declaration.
-//
-// A test reaches a real plugin the way production does: internal/plugintest
-// spawns the shipped gridwell-plugin-<kind> binary through
-// compose.LoadPlugin.
+// No package here, test files included, may import a plugin implementation,
+// and no module may declare the plugins repository as a dependency, so every
+// plugin-specific behavior rides a wire declaration. A test reaches a real
+// plugin the way production does, through internal/plugintest.
 func TestNoPluginImplementation(t *testing.T) {
 	root := repoRoot(t)
 	for mod := range modules {
@@ -220,28 +214,21 @@ func TestNoPluginImplementation(t *testing.T) {
 	}
 }
 
-// doorServerOwners maps each source file allowed to construct a door server
-// to why it may. The two shapes pinned here are the raw http.Server literal
-// and the raw gRPC server constructor, and each has one owner, so a harness
-// cannot serve a door configured differently from the node's.
-//
-// nodeexport.go owns the node doors: WebDoorServer and ConnectionDoorServer
-// are the two http.Server shapes and ConnectionHandler is the gRPC server they
-// carry. The other two entries are not node doors. plugintest stands up a
-// plugin subprocess's own gRPC server, and the namespace round-trip test
-// stands up a throwaway one to exercise the namespace codec end to end.
+// doorServerOwners maps each source file allowed to construct a door server to
+// why it may, so a harness cannot serve a door configured differently from the
+// node's. nodeexport.go owns the node doors; the other two entries are not node
+// doors, being a plugin subprocess's own server and a throwaway for the
+// namespace codec round trip.
 var doorServerOwners = map[string]string{
 	"internal/server/nodeexport.go":        "the node's door owner: WebDoorServer, ConnectionDoorServer, ConnectionHandler",
 	"internal/plugintest/plugintest.go":    "not a node door: the plugin subprocess's own gRPC server",
 	"internal/namespace/roundtrip_test.go": "not a node door: a throwaway gRPC server for the namespace codec test",
 }
 
-// TestOneDoorServerOwner pins door-server construction. No file in this
-// repository, test files included, builds a raw http.Server or a raw gRPC
-// server outside the owners above. A node door's listener and server
-// configuration has one owner, so a harness that built its own would serve a
-// shape the node never runs and every seam test through it would cross a door
-// that does not exist in production.
+// No file here, test files included, builds a raw http.Server or gRPC server
+// outside the owners above. A harness that built its own would serve a shape
+// the node never runs, and every seam test through it would cross a door that
+// does not exist in production.
 func TestOneDoorServerOwner(t *testing.T) {
 	root := repoRoot(t)
 	// Concatenated so this file does not match its own needles.
