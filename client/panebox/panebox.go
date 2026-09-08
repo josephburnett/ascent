@@ -1,6 +1,5 @@
-// Package panebox holds the geometry for a pane's interior boxes: the content
-// area, the text-overlay textarea, and the hit-tests inside the pane border.
-// It is outside client/wasm so go test exercises the math without a browser.
+// Package panebox holds the geometry for a pane's interior boxes. It is
+// outside client/wasm so go test exercises the math without a browser.
 package panebox
 
 import (
@@ -31,19 +30,17 @@ func ContentBox(r pane.Rect, borderPx float64) pane.Rect {
 	return pane.Rect{X: x, Y: y, W: w, H: h}
 }
 
-// PointInContent reports whether (sx, sy) lies inside ContentBox(r, borderPx).
-// Every live surface fills that box, as does the canvas frame drawn in its
-// place while it is parked.
+// PointInContent: every live surface fills that box, as does the canvas frame
+// drawn in its place while it is parked.
 func PointInContent(r pane.Rect, borderPx, sx, sy float64) bool {
 	return ContentBox(r, borderPx).Contains(sx, sy)
 }
 
-// LiveViewOwnsPoint decides whether a pane's live view owns a screen point.
-// Every canvas pointer handler asks it before handing an event to the native
-// surface. A WebContentsView paints over the content box and swallows the
-// mouse there, unless overlaysHidden (the shim's liveOverlaysHidden parks every
-// view during a gesture, so the canvas keeps the release that ends it) or the
-// pane has no live view, a frozen preview being only a canvas drawing.
+// LiveViewOwnsPoint is asked by every canvas pointer handler before it hands
+// an event to the native surface. A WebContentsView swallows the mouse over
+// the content box, unless overlaysHidden (the shim parks every view during a
+// gesture, so the canvas keeps the release that ends it) or the pane has no
+// live view, a frozen preview being only a canvas drawing.
 func LiveViewOwnsPoint(overlaysHidden, hasLiveView bool, r pane.Rect, borderPx, x, y float64) bool {
 	if overlaysHidden || !hasLiveView {
 		return false
@@ -51,8 +48,7 @@ func LiveViewOwnsPoint(overlaysHidden, hasLiveView bool, r pane.Rect, borderPx, 
 	return PointInContent(r, borderPx, x, y)
 }
 
-// TextareaBox returns the text-overlay textarea rectangle and its rendered
-// font size. sideInset is the gap between the pane edge and the text.
+// TextareaBox's sideInset is the gap between the pane edge and the text.
 func TextareaBox(r pane.Rect, sideInset, baseFontPx, scale float64) (rect pane.Rect, fontPx float64) {
 	fontPx = baseFontPx * scale
 	x := r.X + sideInset
@@ -68,8 +64,7 @@ func TextareaBox(r pane.Rect, sideInset, baseFontPx, scale float64) (rect pane.R
 	return pane.Rect{X: x, Y: y, W: w, H: h}, fontPx
 }
 
-// InnerBox is the text-focused pane's inner reading area, the textarea's
-// rectangle without the font size.
+// InnerBox is the textarea's rectangle without the font size.
 func InnerBox(r pane.Rect, sideInset float64) pane.Rect {
 	b, _ := TextareaBox(r, sideInset, 0, 0)
 	return b
@@ -90,10 +85,9 @@ func FitZoom(r pane.Rect, fileW, fileH int64, sideInset, cellPx float64) float64
 	return zoomtrans.Fit(fileW, fileH, inner.W, inner.H, cellPx)
 }
 
-// ModalCardPos centers a modal card on the active pane rather than the screen,
-// clamped so a small pane near an edge cannot push it off the window. A card
-// larger than the window on an axis pins to 0, keeping its first input
-// reachable.
+// ModalCardPos centers on the active pane rather than the screen, clamped so a
+// small pane near an edge cannot push the card off the window. One larger than
+// the window on an axis pins to 0, keeping its first input reachable.
 func ModalCardPos(paneRect pane.Rect, cardW, cardH, winW, winH float64) (x, y float64) {
 	x = paneRect.X + paneRect.W/2 - cardW/2
 	y = paneRect.Y + paneRect.H/2 - cardH/2
