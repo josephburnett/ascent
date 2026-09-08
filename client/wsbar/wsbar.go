@@ -1,15 +1,13 @@
 // Package wsbar owns the bottom bar's geometry: the circle slot and the nav
-// chain, the complete path from the root as square tile previews. Render and
-// input read the same segment rects, so the crumb you see is the crumb you
-// hit. The band, the full-width RowH row at the bottom, is reserved layout and
-// the pane tree ends at its top edge (Band), so nothing sized from a pane can
-// paint over it. Only the bar's own chrome moves with focus (Rect).
+// chain. Render and input read the same segment rects, so the crumb you see is
+// the crumb you hit. The band is reserved layout and the pane tree ends at its
+// top edge, so nothing sized from a pane can paint over it; only the bar's own
+// chrome moves with focus.
 package wsbar
 
-// Band divides the window's vertical space: panes above, the RowH band, then
-// the caller's notice strip (stripH). paneH is both the pane tree's height and
-// the band's top edge, so layout and bar cannot disagree about where they
-// meet. ok=false when what is left cannot hold the band.
+// Band returns paneH as both the pane tree's height and the band's top edge,
+// so layout and bar cannot disagree about where they meet. ok=false when what
+// is left cannot hold the band.
 func Band(winH, stripH float64) (paneH float64, ok bool) {
 	avail := winH - stripH
 	if avail < 0 {
@@ -22,11 +20,9 @@ func Band(winH, stripH float64) (paneH float64, ok bool) {
 }
 
 // Rect is the one answer to where the bar is: render, hit-test and the rename
-// inputs all read it. Vertically it is the band's row whichever pane has
-// focus, so panes never resize as focus moves. Horizontally it is the focused
-// pane's span, so the bar reads as a tab under the pane in use; a span wider
-// than the window is clamped whole into it. ok=false leaves the band plain
-// background all the way across.
+// inputs all read it. It is the band's row whichever pane has focus, so panes
+// never resize as focus moves, and the focused pane's span across, clamped
+// whole into the window. ok=false leaves the band plain background.
 func Rect(winW, winH, stripH, paneX, paneW float64) (x, top, w float64, ok bool) {
 	top, ok = Band(winH, stripH)
 	if !ok || winW <= 0 || paneW <= 0 {
@@ -54,7 +50,6 @@ const (
 	// ZoneBand is the band's row off the bar. Nothing is under the band, so a
 	// point here is swallowed rather than passed to a pane.
 	ZoneBand
-	// ZoneBar is the bar's own chrome, where every bar gesture lives.
 	ZoneBar
 )
 
@@ -69,8 +64,7 @@ func Where(px, py, x, top, w float64) Zone {
 	return ZoneBar
 }
 
-// RowH keeps the band thin while a square chain crumb stays legible as a
-// preview.
+// RowH keeps the band thin while a square crumb stays legible as a preview.
 const RowH = 32.0
 
 // SlotW is reserved at the bar's right end for the circle button. It sits in
@@ -78,9 +72,9 @@ const RowH = 32.0
 // it.
 const SlotW = 48.0
 
-// Segment is one crumb's hit and draw rect, relative to the bar's left edge.
-// Index is the position in the caller's full list, so under left-truncation
-// the visible segments still point at the right crumbs.
+// Segment's Rect is relative to the bar's left edge and Index is the position
+// in the caller's full list, so under left-truncation the visible segments
+// still point at the right crumbs.
 type Segment struct {
 	Index int
 	X, W  float64
@@ -90,11 +84,10 @@ type Segment struct {
 // of chain crumbs. It is the rename target.
 const BoundaryW = 120.0
 
-// Layout lays the nav chain left to right; widths[i] is RowH for a chain crumb
-// and BoundaryW for a pane-tile boundary. When the band cannot fit them all,
-// crumbs drop from the left and the survivors keep full size, a too-small
-// preview reading as nothing. The current pane's name is a separate centered
-// title, not a crumb.
+// Layout takes widths[i] as RowH for a chain crumb and BoundaryW for a
+// pane-tile boundary. When the band cannot fit them all, crumbs drop from the
+// left and the survivors keep full size, a too-small preview reading as
+// nothing. The current pane's name is a centered title, not a crumb.
 func Layout(widths []float64, width float64) []Segment {
 	if len(widths) == 0 || width <= 0 {
 		return nil
@@ -125,10 +118,9 @@ const titlePad = 8.0
 
 const minTitleW = 24.0
 
-// TitleSpan centers the pane title between the crumbs' end and the circle
-// slot, so growing crumbs cannot crowd it one-sidedly. crumbsEnd is 0 with no
-// crumbs and textW includes padding. x is relative to the band's left edge and
-// ok=false when less than minTitleW remains.
+// TitleSpan centers the title between the crumbs' end and the circle slot, so
+// growing crumbs cannot crowd it one-sidedly. x is relative to the band's left
+// edge and ok=false when less than minTitleW remains.
 func TitleSpan(crumbsEnd, width, textW float64) (x, w float64, ok bool) {
 	left := crumbsEnd + titlePad
 	right := width - SlotW - titlePad
@@ -142,7 +134,7 @@ func TitleSpan(crumbsEnd, width, textW float64) (x, w float64, ok bool) {
 	return left + (right-left-w)/2, w, true
 }
 
-// At returns the segment under x, relative to the bar's left edge.
+// At takes x relative to the bar's left edge.
 func At(segs []Segment, x float64) (Segment, bool) {
 	for _, s := range segs {
 		if x >= s.X && x < s.X+s.W {
