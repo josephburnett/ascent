@@ -11,6 +11,10 @@ import (
 	"sync"
 )
 
+// streamBuffer is how many delivered events a stalled consumer can fall
+// behind by before the pump blocks and later events coalesce in pending.
+const streamBuffer = 16
+
 type Hub[T any] struct {
 	key  func(T) string
 	mu   sync.Mutex
@@ -38,7 +42,7 @@ func (h *Hub[T]) Subscribe() (<-chan T, func()) {
 		pending: map[string]T{},
 		wake:    make(chan struct{}, 1),
 		done:    make(chan struct{}),
-		out:     make(chan T, 16),
+		out:     make(chan T, streamBuffer),
 	}
 	h.mu.Lock()
 	h.subs[sub] = struct{}{}

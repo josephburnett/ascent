@@ -48,15 +48,28 @@ func TestHubCoalescesPerKeyAndDropsNothing(t *testing.T) {
 		}
 	}
 
+	// Coalescing is only reachable while the pump is blocked, so park it
+	// first: one more filler than the stream buffer holds means the pump is
+	// stuck sending a filler, and first-touch order keeps it from ever
+	// reaching the burst's key while the burst is published.
+	for i := 0; i <= streamBuffer; i++ {
+		h.Publish(ev{key: "f" + strconv.Itoa(i), n: i})
+	}
 	for i := 0; i < 50; i++ {
 		h.Publish(ev{key: "same", n: i})
 	}
 	// The coalesced entity keeps its first slot and later entities follow.
 	h.Publish(ev{key: "other", n: 1})
 	h.Publish(ev{key: "same", n: 99})
-	got = drain(t, ch, 2)
-	if got[0].key != "same" || got[0].n != 99 || got[1].key != "other" {
-		t.Fatalf("coalesce: got %+v, want same@99 then other", got)
+	got = drain(t, ch, streamBuffer+3)
+	for i := 0; i <= streamBuffer; i++ {
+		if got[i].key != "f"+strconv.Itoa(i) {
+			t.Fatalf("filler %d = %+v; want first-touch order", i, got[i])
+		}
+	}
+	tail := got[streamBuffer+1:]
+	if tail[0].key != "same" || tail[0].n != 99 || tail[1].key != "other" {
+		t.Fatalf("coalesce: got %+v, want same@99 then other", tail)
 	}
 
 	for i := 0; i < 3; i++ {
