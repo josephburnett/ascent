@@ -4,27 +4,20 @@ package server
 //
 //	/content/<content-token>/<qualified-tile-id>/<subpath>
 //
-// becomes one ServeContent RPC routed to the tile's owning plugin — through
-// contentRoute, so links resolve and transit hops forward exactly like
-// ReadContent — and the stream comes back as the HTTP body. The door is a
-// pure translator: it owns the URL grammar, the token gate, and the sandbox
-// header, while the plugin owns everything about what the bytes mean.
+// becomes one ServeContent RPC routed through contentRoute, so links resolve
+// and transit hops forward exactly like ReadContent. The door owns the URL
+// grammar, the token gate and the sandbox header; the plugin owns what the
+// bytes mean.
 //
-// Sandbox: every response carries `Content-Security-Policy: sandbox
-// allow-scripts`. The page runs with an opaque origin, so scripts may run but
-// there are no cookies, no storage, and no reach into the Gridwell RPC
-// surface, and plugin-served content can never act on the user's Gridwell. The
-// server stamps the header itself, and a plugin cannot override it because
-// plugins never write HTTP headers at all.
+// Every response carries `Content-Security-Policy: sandbox allow-scripts`, so
+// the page runs with an opaque origin: no cookies, no storage, no reach into
+// the RPC surface. The server stamps the header, and plugins never write HTTP
+// headers at all.
 //
-// Token: a sandboxed page and the desktop's native views cannot present the
-// auth cookie — an opaque origin sends no credentials, and the views live on
-// their own session partition — so the door is exempt from the cookie gate and
-// carries its own capability in the path, where relative subresource URLs
-// inherit it for free. ContentToken derives from the same config password
-// under a different domain prefix: leaked, it opens only this read-only door
-// and never the RPC surface; changed, every old content URL dies with it,
-// exactly like the cookie.
+// A sandboxed page and the desktop's native views cannot present the auth
+// cookie, so the door is exempt from that gate and carries its own capability
+// in the path, where relative subresource URLs inherit it. Leaked, that token
+// opens only this read-only door; changed, every old content URL dies with it.
 
 import (
 	"crypto/sha256"
@@ -42,27 +35,18 @@ import (
 
 const contentPathPrefix = "/content/"
 
-// ContentToken derives the /content/ door's path capability from the
-// configured password. It is the one derivation, mirroring AuthToken: the door
-// checks it, and Handshake hands it to the client over the
-// cookie-authenticated mux, so only a logged-in client learns it. The domain
-// prefix differs from AuthToken's so neither token can be replayed as the
-// other.
+// ContentToken is the one derivation of the door's path capability. Its domain
+// prefix differs from AuthToken's, so neither token replays as the other.
 func ContentToken(password string) string {
 	sum := sha256.Sum256([]byte("gridwell-content-v1\n" + password))
 	return hex.EncodeToString(sum[:])
 }
 
-// parseContentPath splits a /content/ URL path into its parts. The grammar
-// leans on the id shape: a namespace segment — a plugin uuid, a node id, a
-// connection name — is never a tile segment, so the first TILE segment
-// terminates the qualified id and everything after it is the page-relative
-// subpath. Which segments are tiles is rpc.IsTileSegment's decision, shared
-// with the router's peel and the address bar, so a tile a plugin has never
-// minted a row for — named by its key, "~…" — serves its page through the same
-// door as one that has. needSlash reports a root-page request missing its
-// trailing slash, which the caller redirects: relative URLs inside the page
-// resolve against the directory, so the root page must live at ".../<id>/".
+// parseContentPath leans on the id shape: the first tile segment terminates the
+// qualified id and everything after it is the page-relative subpath, so a tile
+// named by its key serves through the same door as a minted one. needSlash
+// reports a root-page request missing its trailing slash, which the caller
+// redirects, because relative URLs resolve against the directory.
 func parseContentPath(path string) (token, tileID, subpath string, needSlash, ok bool) {
 	rest, found := strings.CutPrefix(path, contentPathPrefix)
 	if !found {
@@ -99,8 +83,7 @@ func parseContentPath(path string) (token, tileID, subpath string, needSlash, ok
 	return token, tileID, subpath, false, true
 }
 
-// contentDoor is the HTTP handler mounted at /content/, exempt from the cookie
-// gate because the token in the path is the credential here.
+// contentDoor is the handler mounted at /content/.
 func (s *Server) contentDoor() http.Handler {
 	want := []byte(ContentToken(s.cfg.Password))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -128,11 +111,9 @@ func (s *Server) contentDoor() http.Handler {
 			httpStatusError(w, err)
 			return
 		}
-		// The first chunk carries the status and media type, so the headers
-		// are written from inside the stream: a failure before it is still an
-		// HTTP status the browser can read, and a failure after it can only
-		// truncate the body, since the headers are gone and there is nothing
-		// truthful left to send.
+		// The first chunk carries the status and media type, so headers are
+		// written from inside the stream: a failure before it is an HTTP
+		// status, one after it can only truncate the body.
 		wroteHeader := false
 		serr := c.ServeContent(r.Context(), &pb.ServeContentRequest{TileId: local, Subpath: subpath},
 			func(chunk *pb.ServeContentChunk) error {
@@ -162,8 +143,8 @@ func (s *Server) contentDoor() http.Handler {
 }
 
 // httpStatusError maps a routing or RPC failure onto the door's HTTP surface.
-// Unimplemented is the deliberate default: a plugin that serves no web content
-// has no pages, so the door says 404 rather than 500.
+// Unimplemented is deliberately 404: a plugin that serves no web content has
+// no pages.
 func httpStatusError(w http.ResponseWriter, err error) {
 	st, _ := status.FromError(err)
 	switch st.Code() {

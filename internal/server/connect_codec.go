@@ -1,15 +1,11 @@
 package server
 
-// The browser codec: gridwellv1connect.GridwellHandler over the one
-// in-process router. It routes nothing and decides nothing — it unwraps a
-// connect.Request, calls the router, and wraps the answer. The connection
-// door's codec is namespace.Server over the same router value, so the two
-// surfaces cannot drift: there is no second implementation to drift from.
-//
-// The codec is deliberately not total. Info, Probe, and OpenShell are
-// connection-door verbs: the browser learns the node's identity from Handshake on
-// its own door, and its shell bytes ride the /shell WebSocket. Unimplemented
-// here means "not a browser verb", not "missing".
+// The browser codec: gridwellv1connect.GridwellHandler over the one in-process
+// router. It routes nothing and decides nothing, and the connection door's
+// codec is namespace.Server over the same router value, so there is no second
+// implementation to drift from. It is deliberately not total: Info, Probe and
+// OpenShell are connection-door verbs, so unimplemented here means "not a
+// browser verb", not "missing".
 
 import (
 	"context"
@@ -31,9 +27,9 @@ type connectHandler struct {
 
 func newConnectHandler(rt *router) *connectHandler { return &connectHandler{rt: rt} }
 
-// unary lifts one router verb into the Connect shapes: unwrap, call, wrap, and
-// map the router's gRPC status code through gwerr's one table. It is written
-// once so no verb can grow its own error mapping.
+// unary lifts one router verb into the Connect shapes, mapping the router's
+// gRPC status code through gwerr's one table, so no verb grows its own error
+// mapping.
 func unary[Req, Resp any](call func(context.Context, *Req) (*Resp, error)) func(context.Context, *connect.Request[Req]) (*connect.Response[Resp], error) {
 	return func(ctx context.Context, req *connect.Request[Req]) (*connect.Response[Resp], error) {
 		resp, err := call(ctx, req.Msg)
@@ -120,14 +116,9 @@ func (h *connectHandler) Subscribe(ctx context.Context, _ *connect.Request[pb.Su
 	return asConnectError(h.rt.Subscribe(ctx, &pb.SubscribeRequest{}, stream.Send))
 }
 
-// asConnectError maps an error returned from a namespace, or a raw store
-// sentinel, to a Connect status code. Namespace errors arrive as gRPC status
-// errors, because a namespace translates store sentinels into codes, so
-// NotFound, InvalidArgument, overlap, and version conflicts survive the
-// routing hop. The code crosses through gwerr's one gRPC-to-Connect table so
-// every code survives, and a transport failure two mounts away still reads as
-// transport. A non-gRPC error falls through to the same gwerr.ClassifyError
-// categorization the raw-HTTP endpoints use.
+// asConnectError maps a namespace error, or a raw store sentinel, to a Connect
+// status code through gwerr's one table, so a transport failure two mounts away
+// still reads as transport.
 func asConnectError(err error) error {
 	if err == nil {
 		return nil
