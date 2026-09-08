@@ -1,7 +1,6 @@
-// Package clientsync holds the post-RPC policy the wasm client applies after
-// a mutation returns: what the outcome was (Of) and what to do about it (one
-// React table per mutation family). Local state may be dropped only on a
-// server verdict; a transport failure keeps it and retries.
+// Package clientsync holds the post-RPC policy: what the outcome was (Of) and
+// what to do about it (one React table per mutation family). Local state may be
+// dropped only on a server verdict.
 package clientsync
 
 import (
@@ -18,18 +17,17 @@ const (
 	OutcomeOK Outcome = iota
 	// OutcomeConflict is a version or overlap race; the local claim lost.
 	OutcomeConflict
-	// OutcomeRejected is the server saying no; the local attempt is wrong.
+	// OutcomeRejected is the server saying no.
 	OutcomeRejected
-	// OutcomeTransport is the server never speaking. The local state is
-	// still the only truth the user has, so the caller keeps it.
+	// OutcomeTransport is the server never speaking, so the local state is
+	// still the only truth the user has.
 	OutcomeTransport
 )
 
-// Of classifies an RPC error. A non-connect error comes from below the
-// protocol, so it is Transport too; every other coded error is a server that
-// answered. A context deadline or cancellation is checked first and by
-// identity, because the bound is inflight.Deadline, the client's own timer,
-// and reading its expiry as a verdict would drop the user's bytes.
+// Of reads a non-connect error as Transport, coming from below the protocol,
+// and every other coded error as a server that answered. A context deadline is
+// checked first and by identity, because the bound is inflight.Deadline, the
+// client's own timer, and reading its expiry as a verdict would drop bytes.
 func Of(err error) Outcome {
 	if err == nil {
 		return OutcomeOK
@@ -50,24 +48,22 @@ func Of(err error) Outcome {
 	return OutcomeRejected
 }
 
-// Reaction is what a mutation's outcome calls for. Success is the zero value.
+// Reaction is what a mutation's outcome calls for; success is the zero value.
 type Reaction struct {
 	// Refetch is never set on Transport, where against a flapping link it
 	// could succeed and revert a patch whose write never landed.
 	Refetch bool
-	// Log asks the caller to surface the failure through errsurface.
+	// Log surfaces the failure through errsurface.
 	Log bool
-	// DropLocal permits reconciling away the local copy. It is true only on
-	// a server verdict; false means the caller parks the state for a retry.
+	// DropLocal is true only on a server verdict; false means the caller
+	// parks the state for a retry.
 	DropLocal bool
-	// Retry leaves the value queued for the reconnect drain, exactly on
-	// Transport.
+	// Retry queues the value for the reconnect drain, exactly on Transport.
 	Retry bool
 }
 
-// React is the policy for a mutation that wrote no local state ahead of the
-// RPC, a create, move or delete. Transport surfaces but sets no Retry,
-// because there is no ledger behind these ops to retry from.
+// React is for a mutation that wrote no local state ahead of the RPC.
+// Transport sets no Retry: there is no ledger behind these ops.
 func React(o Outcome) Reaction {
 	switch o {
 	case OutcomeConflict:
@@ -78,10 +74,9 @@ func React(o Outcome) Reaction {
 	return Reaction{}
 }
 
-// ReactOptimistic is the policy for a mutation whose caller patched the local
-// cache before the RPC, such as a framing write. Any server verdict rolls the
-// cache back, or it stays ahead of the server. Transport keeps the patch,
-// which is the value the retry will land, and refetches nothing.
+// ReactOptimistic is for a caller that patched the local cache before the RPC.
+// Any server verdict rolls it back, or the cache stays ahead of the server;
+// Transport keeps the patch, which is the value the retry will land.
 func ReactOptimistic(o Outcome) Reaction {
 	switch o {
 	case OutcomeConflict:
@@ -94,11 +89,10 @@ func ReactOptimistic(o Outcome) Reaction {
 	return Reaction{}
 }
 
-// ReactSave is the policy for a content save, the one write that claims a
-// version. On Transport the entry stays dirty, because it is the only copy of
-// the user's unsaved words. A conflict is surfaced here where the other
-// tables leave it silent: someone else changed these bytes and the words on
-// screen are about to be replaced by theirs.
+// ReactSave is for a content save, the one write that claims a version. On
+// Transport the entry stays dirty, being the only copy of the user's unsaved
+// words. A conflict surfaces here where the other tables leave it silent:
+// someone else changed these bytes and the screen is about to show theirs.
 func ReactSave(o Outcome) Reaction {
 	switch o {
 	case OutcomeConflict:
