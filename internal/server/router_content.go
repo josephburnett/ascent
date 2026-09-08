@@ -12,12 +12,10 @@ import (
 )
 
 // The router's content streams and the placement verb. Reads route through
-// contentRoute, which resolves a link at the serving node; writes take plain
-// id routing, because a link owns no content and the store refuses a write to
-// a link row.
+// contentRoute; writes take plain id routing.
 
-// ReadContent streams a tile's bytes from the namespace that owns it.
-// Chunks carry no ids, so nothing needs re-qualification on the way back.
+// ReadContent streams a tile's bytes from the namespace that owns it. Chunks
+// carry no ids, so nothing needs re-qualification on the way back.
 func (rt *router) ReadContent(ctx context.Context, req *pb.ReadContentRequest, send func(*pb.ContentChunk) error) error {
 	c, local, err := rt.srv.contentRoute(ctx, req.TileId)
 	if err != nil {
@@ -26,10 +24,9 @@ func (rt *router) ReadContent(ctx context.Context, req *pb.ReadContentRequest, s
 	return c.ReadContent(ctx, &pb.ReadContentRequest{TileId: local}, send)
 }
 
-// ServeContent forwards a web-content request one hop, resolving links via
-// contentRoute like ReadContent — this is how a mounted remote node's pages
-// reach the local /content/ door: HTTP terminates at the LOCAL door and the
-// request rides this verb through the tunnel.
+// ServeContent forwards a web-content request one hop. HTTP terminates at the
+// local door and the request rides this verb through the tunnel, which is how
+// a mounted node's pages are served.
 func (rt *router) ServeContent(ctx context.Context, req *pb.ServeContentRequest, send func(*pb.ServeContentChunk) error) error {
 	c, local, err := rt.srv.contentRoute(ctx, req.TileId)
 	if err != nil {
@@ -38,11 +35,9 @@ func (rt *router) ServeContent(ctx context.Context, req *pb.ServeContentRequest,
 	return c.ServeContent(ctx, &pb.ServeContentRequest{TileId: local, Subpath: req.Subpath}, send)
 }
 
-// WriteContent relays the caller's messages to the owning namespace,
-// preserving commit-at-close: the owner commits only after a clean
-// end-of-stream, and a broken caller stream propagates as an error before
-// any commit, so nothing is ever written torn. The TileResponse carries
-// ids, so it is re-qualified like every tile-returning verb.
+// WriteContent preserves commit-at-close: the owner commits only after a clean
+// end-of-stream, and a broken caller stream errors before any commit, so
+// nothing is written torn.
 func (rt *router) WriteContent(ctx context.Context, recv func() (*pb.WriteContentRequest, error)) (*pb.TileResponse, error) {
 	first, err := recv()
 	if err != nil {
