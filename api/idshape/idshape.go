@@ -24,9 +24,10 @@ func NewUUID() string {
 const shortIDLen = 7
 
 // NewShortID mints a plugin, node or namespace identity. Lowercase because
-// the id names a directory (~/.gridwell/db/<id>) and a tmux socket; no '/'
-// so rpc.SplitID keeps its delimiter; a leading letter so a URL path tells a
-// namespace segment from a tile id. The 32-hex shape stays valid forever.
+// the id names filesystem paths — a plugin's state_dir at <home>/plugins/<id>,
+// the home's tmux socket gridwell-<id>; no '/' so rpc.SplitID keeps its
+// delimiter; a leading letter so a URL path tells a namespace segment from a
+// tile id. The 32-hex shape stays valid forever.
 func NewShortID() string {
 	const letters = "abcdefghijklmnopqrstuvwxyz"
 	const alnum = "0123456789abcdefghijklmnopqrstuvwxyz"
