@@ -6,10 +6,9 @@ package shellconn
 
 import "encoding/base64"
 
-// DecodeJPEGDataURL decodes a "data:image/jpeg;base64,..." data URL. The
-// decode is in Go rather than through JS atob, whose binary string re-encodes
-// as UTF-8 when read back through js.Value.String() and doubles every byte at
-// or above 0x80.
+// DecodeJPEGDataURL decodes in Go rather than through JS atob, whose binary
+// string re-encodes as UTF-8 through js.Value.String() and doubles every byte
+// at or above 0x80.
 func DecodeJPEGDataURL(s string) ([]byte, bool) {
 	const prefix = "data:image/jpeg;base64,"
 	if len(s) <= len(prefix) || s[:len(prefix)] != prefix {
@@ -27,8 +26,8 @@ func DecodeJPEGDataURL(s string) ([]byte, bool) {
 type AutoLive int
 
 const (
-	// AutoLiveNone stays frozen. A host without the capability descends
-	// silently, because a notice belongs to an explicit gesture.
+	// AutoLiveNone descends silently: a notice belongs to an explicit
+	// gesture.
 	AutoLiveNone AutoLive = iota
 	AutoLiveURL
 	// AutoLiveShell attaches to a live session, or creates one for a tile
@@ -38,12 +37,10 @@ const (
 	AutoLiveProbeShell
 )
 
-// DecideAutoLive maps a descent's facts to its liveness action. webContent
-// comes from rpc.WebContent, fed in so this package never re-derives it.
-// hasPreview and the aliveness pair are the same facts
-// DecideShellRefreshVisible reads, so the two agree about what a dead session
-// means. urlFrozen is the user's standing freeze, which beats the engagement
-// default until the reconnect gesture clears it.
+// DecideAutoLive reads the same aliveness facts DecideShellRefreshVisible
+// does, so the two agree about what a dead session means. urlFrozen is the
+// user's standing freeze, which beats the engagement default until the
+// reconnect gesture clears it.
 func DecideAutoLive(webContent, kindShell, liveURL, liveShell, hasPreview, aliveKnown, alive, urlFrozen bool) AutoLive {
 	switch {
 	case webContent:
@@ -72,10 +69,9 @@ type RefreshVisibility struct {
 	Probe bool
 }
 
-// DecideShellRefreshVisible decides whether the refresh button paints on a
-// frozen shell descent and whether a ShellSessionAlive probe must start. A
-// tile with no preview blob has never been opened, so refresh creates a
-// session and always shows; a session cached dead has no recovery and hides.
+// DecideShellRefreshVisible: a tile with no preview blob has never been
+// opened, so refresh creates a session and always shows; a session cached dead
+// has no recovery and hides.
 func DecideShellRefreshVisible(isShell, hasPreview, aliveKnown, alive bool) RefreshVisibility {
 	if !isShell {
 		return RefreshVisibility{}
@@ -90,17 +86,16 @@ func DecideShellRefreshVisible(isShell, hasPreview, aliveKnown, alive bool) Refr
 }
 
 // MouseTrackingNone is xterm's modes.mouseTrackingMode for an application not
-// tracking the mouse. An empty string is a terminal that did not answer, read
-// as not tracking, so DecideLinkPress swallows only a press it is sure about.
+// tracking the mouse. An empty string, a terminal that did not answer, reads
+// the same, so DecideLinkPress swallows only a press it is sure about.
 const MouseTrackingNone = "none"
 
-// DecideLinkPress reports whether Gridwell alone owns a left-button press in a
-// live shell, rather than the terminal. It owns a press over a hovered link
-// while the application is tracking the mouse, because xterm both activates
-// the link and reports the press, so an application with its own opener would
-// open the url a second time in the host browser. Two presses stay the
-// terminal's: with nothing tracking, the press is xterm's selection start, and
-// a held modifier is the escape hatch from a tracking application.
+// DecideLinkPress gives Gridwell a press over a hovered link while the
+// application is tracking the mouse, because xterm both activates the link and
+// reports the press and an application with its own opener would open the url
+// again in the host browser. Two presses stay the terminal's: with nothing
+// tracking the press is xterm's selection start, and a held modifier is the
+// escape hatch from a tracking application.
 func DecideLinkPress(hoveredURL, mouseTracking string, modifier bool) bool {
 	if hoveredURL == "" || modifier {
 		return false
