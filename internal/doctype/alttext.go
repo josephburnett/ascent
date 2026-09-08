@@ -1,6 +1,6 @@
-// alttext.go derives alt-text for text tiles, so the store can auto-title one
-// without importing the client tree. The parse dialect is GFM, matching the
-// client renderer's parser, so the derived title agrees with the rendered view.
+// Alt-text for text tiles, so the store can auto-title one without importing
+// the client tree. The dialect is GFM, matching the client renderer's parser,
+// so the derived title agrees with the rendered view.
 
 package doctype
 
@@ -13,14 +13,11 @@ import (
 	gmtext "github.com/yuin/goldmark/text"
 )
 
-// altParser parses with the same dialect the client renders, GFM.
 var altParser = goldmark.New(goldmark.WithExtensions(extension.GFM))
 
-// AltFromSource derives a short one-line alt-text from a markdown document: the
-// plain text of the first block, markers stripped so "# Heading" becomes
-// "Heading", whitespace runs collapsed to one space, clamped to altMaxLen runes.
-// It returns "" for content-free input. The single line matters, since a
-// code-block-first document would otherwise yield a multi-line alt.
+// AltFromSource is the first block's plain text, markers stripped, whitespace
+// collapsed, clamped to altMaxLen runes, "" for content-free input. One line
+// matters: a code-block-first document would otherwise yield a multi-line alt.
 func AltFromSource(src string) string {
 	source := []byte(src)
 	root := altParser.Parser().Parse(gmtext.NewReader(source))
@@ -34,8 +31,7 @@ func AltFromSource(src string) string {
 	return ""
 }
 
-// blockPlainText is the concatenated plain text of one block-level AST node.
-// Images and everything inside them are skipped.
+// blockPlainText skips images and everything inside them.
 func blockPlainText(n ast.Node, src []byte) string {
 	var b strings.Builder
 	_ = ast.Walk(n, func(c ast.Node, entering bool) (ast.WalkStatus, error) {
