@@ -1,15 +1,10 @@
 // Package shellstream owns the lifecycle of the client's live shell
-// attachments. It is js-free; the wasm shim hands it a dialer and two
-// callbacks. The rules:
-//
-//   - Open for a pane closes and replaces that pane's existing stream.
-//   - Write and Resize after Close, or before Open, are silent no-ops; a race
-//     between a teardown and an in-flight keystroke is expected.
-//   - An end fires at most once, and only while that stream is still the
-//     pane's current one, so a replaced stream's late end cannot freeze the
-//     pane right after its new stream attached.
-//   - Output routes through the registry rather than the closure, so a
-//     replaced stream's late bytes cannot reach the renderer.
+// attachments. Open replaces a pane's existing stream; Write and Resize
+// outside a stream are silent no-ops, a teardown racing an in-flight keystroke
+// being expected. An end fires at most once and only while that stream is
+// still the pane's current one, and output routes through the registry rather
+// than the closure, so a replaced stream's late end or late bytes cannot reach
+// the renderer.
 package shellstream
 
 import "sync"
