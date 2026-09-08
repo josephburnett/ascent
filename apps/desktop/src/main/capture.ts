@@ -6,7 +6,7 @@ const JPEG_QUALITY = 92;
 // A parked or busy renderer can leave capturePage pending forever, and the
 // freeze path detaches only after it resolves, so an unbounded wait strands the
 // view over the pane just left.
-const CAPTURE_TIMEOUT_MS = 1500;
+export const CAPTURE_TIMEOUT_MS = 1500;
 
 // One attempt's outcome, because a caller that sees only '' cannot tell a
 // wedged renderer from a blank page. The kind is capturestreak's AttemptKind.

@@ -33,6 +33,8 @@ const ALLOWED: Record<string, string> = {
     'the decision\'s input shape; the executor builds it inline as an object literal, so only the table test names the type',
   'main/focusguard.ts:GuardAction':
     'the decision\'s output shape; the executor switches on act.kind, so only the table test names the type',
+  'main/capture.ts:CAPTURE_TIMEOUT_MS':
+    'the declared capture bound; captureAttempt and captureJpegBase64 default to it, so only the test that waits it out names it',
   'main/capture.ts:CaptureAttempt':
     'the labelled outcome of one capture; captureAttempt returns it and describeAttempt takes it, and the executor holds it in an inferred const',
   'main/capturestreak.ts:AttemptKind':
