@@ -65,7 +65,7 @@ func (p *Plugin) CleanupScratch(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	if unreadable {
-		log.Printf("localdb: scratch sweep skipped: a pane layout blob is unreadable (never guess at workspace ownership)")
+		log.Printf("gridwell: home: scratch sweep skipped: a pane layout blob is unreadable (never guess at workspace ownership)")
 		return 0, nil
 	}
 	g, err := p.st.GetGrid(ctx, scratch)

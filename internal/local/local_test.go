@@ -68,7 +68,7 @@ func TestInfo(t *testing.T) {
 		t.Fatal(err)
 	}
 	if resp.Kind != "home" {
-		t.Errorf("Kind = %q, want localdb", resp.Kind)
+		t.Errorf("Kind = %q, want home", resp.Kind)
 	}
 	if resp.RootGridId == "" {
 		t.Errorf("RootGridId = %q, want non-empty", resp.RootGridId)
