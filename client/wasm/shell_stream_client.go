@@ -33,9 +33,9 @@ type shellStreamConn struct {
 	// that is the link row, not tileID. The per-frame sweep compares it through
 	// pane.SurfaceOf; the content id instead parks a link's overlay forever.
 	descentID string
-	// anchor and path locate the grid holding this shell tile, captured when the
-	// stream opened, because SetShellPreview would otherwise resolve against the
-	// plugin root grid and fail inside a sub-grid. Same contract as urlView's.
+	// anchor and path locate the grid holding this shell tile: SetShellPreview
+	// would otherwise resolve against the plugin root grid and fail inside a
+	// sub-grid. Same contract as urlView's.
 	anchor string
 	path   []string
 
@@ -482,10 +482,9 @@ func tryWebglAddon(term js.Value) (addon js.Value, ok bool) {
 	return a, true
 }
 
-// shellContentCanvas returns the canvas terminal content is painted on. The
-// WebGL main canvas is class-less while its transparent link layer comes first
-// in the DOM, so the first canvas captures all black. The DOM fallback has no
-// canvas; callers handle nil.
+// shellContentCanvas returns the canvas terminal content is painted on: the
+// WebGL main canvas is class-less while its transparent link layer comes first,
+// so the first canvas captures all black. The DOM fallback has none.
 func shellContentCanvas(container js.Value) js.Value {
 	list := container.Call("querySelectorAll", "canvas")
 	n := list.Get("length").Int()
@@ -581,10 +580,9 @@ func (a *App) mirrorLiveShells() {
 	}
 }
 
-// closeShellStream is the freeze path: capture a JPEG, post it through
-// SetShellPreview, end the stream. The close only detaches the tmux client, so
-// a refresh reattaches. An ephemeral ascent passes freeze=false: the session is
-// about to be deleted.
+// closeShellStream is the freeze path: capture a JPEG, post it, end the stream.
+// The close only detaches the tmux client, so a refresh reattaches. An
+// ephemeral ascent passes freeze=false: the session is about to be deleted.
 func (a *App) closeShellStream(paneID string, freeze bool) {
 	conn := a.shellConnFor(paneID)
 	if conn == nil {
