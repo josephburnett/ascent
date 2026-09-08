@@ -758,9 +758,19 @@ func (a *App) fetchTileByID(tileID string) {
 			// same way every time. A transport failure latches nothing.
 			if clientsync.Of(err) != clientsync.OutcomeTransport {
 				a.fetch.tileLoadFailed[tileID] = true
+				// The asker is a crumb or a descent, which without this draw
+				// an empty content box named "unnamed" and say nothing. An
+				// outage is not named once per id: the same read's grid says
+				// it once under "grid:".
+				detail := "the row is gone"
+				if err != nil {
+					detail = rpcErrText(err)
+				}
+				a.reportErr(errsurface.Error, "tile:"+tileID, "tile unavailable: "+detail)
 			}
 			return
 		}
+		a.resolveErr("tile:" + tileID)
 		a.fetchGrid(tile.GridId)
 	}()
 }

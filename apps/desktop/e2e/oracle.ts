@@ -144,6 +144,23 @@ export async function placeTile(
   }
 }
 
+// A foreign writer deleting a row out from under the app: another device, or
+// this one in a pane the spec is not driving.
+export async function deleteTile(origin: string, tileId: string): Promise<void> {
+  const res = await fetch(`${origin}/${SERVICE}/DeleteTile`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Connect-Protocol-Version': '1',
+      ...authHeaders(origin),
+    },
+    body: JSON.stringify({ tileId }),
+  });
+  if (!res.ok) {
+    throw new Error(`DeleteTile(${tileId}) failed: ${res.status} ${await res.text()}`);
+  }
+}
+
 // A well whose child grid is a qualified id in another namespace. The node
 // stores the reference verbatim and cannot check the namespace exists, so this
 // is also how a spec seeds a dangling link.
