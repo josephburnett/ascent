@@ -9,30 +9,25 @@ import (
 	"strings"
 )
 
-// urlInText matches an http(s) URL embedded in arbitrary text such as terminal
-// output. The body runs to the first whitespace or a character that cannot sit
-// inside a URL, and FindURLs trims trailing sentence punctuation.
+// urlInText runs to the first whitespace or character that cannot sit inside a
+// URL; FindURLs trims trailing sentence punctuation.
 var urlInText = regexp.MustCompile(`https?://[^\s"'<>` + "`" + `]+`)
 
-// URLSpan is one URL found in a line of text. Col0 and Col1 are 1-based,
-// inclusive columns of its first and last byte, the xterm link-range
-// convention. Byte offsets equal columns for the ASCII URLs shell output
-// carries.
+// URLSpan's Col0 and Col1 are 1-based inclusive columns, the xterm link-range
+// convention. Byte offsets equal columns for ASCII URLs.
 type URLSpan struct {
 	Col0, Col1 int
 	URL        string
 }
 
-// FindURLs locates every http(s) URL in one line of text with its 1-based
-// inclusive column span, which the xterm link provider needs to make shell URLs
-// clickable. Trailing prose punctuation (.,;:!?) and an unbalanced ")" are
-// excluded.
+// FindURLs locates every http(s) URL in one line, for the xterm link provider.
+// Trailing prose punctuation (.,;:!?) and an unbalanced ")" are excluded.
 func FindURLs(text string) []URLSpan {
 	var out []URLSpan
 	for _, loc := range urlInText.FindAllStringIndex(text, -1) {
 		trimmed := strings.TrimRight(text[loc[0]:loc[1]], ".,;:!?")
-		// Drop a trailing ")" that closes a paren the URL never opened, as in
-		// "(see https://x)", while keeping balanced ones like "/Foo_(bar)".
+		// Drop a ")" closing a paren the URL never opened, as in
+		// "(see https://x)", while keeping "/Foo_(bar)".
 		for strings.HasSuffix(trimmed, ")") && strings.Count(trimmed, ")") > strings.Count(trimmed, "(") {
 			trimmed = strings.TrimRight(trimmed[:len(trimmed)-1], ".,;:!?")
 		}
@@ -44,9 +39,8 @@ func FindURLs(text string) []URLSpan {
 	return out
 }
 
-// Normalize trims the input, prepends "https://" when it carries no scheme, and
-// validates the result as a plausible http(s) URL. The error text is
-// user-facing.
+// Normalize prepends "https://" when the input carries no scheme. The error
+// text is user-facing.
 func Normalize(raw string) (string, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
@@ -70,20 +64,16 @@ func Normalize(raw string) (string, error) {
 	return "https://" + s, nil
 }
 
-// Candidate is one autocomplete entry: an address plus the page title the
-// freeze captured, which is a url tile's alt_text and "" when never frozen.
+// Candidate's Title is the url tile's alt_text, "" when never frozen.
 type Candidate struct {
 	URL, Title string
 }
 
-// Suggest ranks candidates against the user's partial input for the new-url
-// modal's autocomplete. The query matches the address case-insensitively,
-// ignoring a leading "http(s)://" and "www." on both sides, or a
-// case-insensitive substring of the title. A candidate whose comparable address
-// starts with the input ranks ahead of any other match, and within a rank the
-// caller's order is kept. Dedupe is by comparable address, so scheme and www
-// variants of one address collapse to a single suggestion. Empty input returns
-// the first `limit` distinct candidates, and limit <= 0 returns nil.
+// Suggest ranks candidates for the new-url modal's autocomplete. The query
+// matches the comparable address or a substring of the title; a prefix match
+// ranks ahead of any other, and within a rank the caller's order is kept.
+// Dedupe is by comparable address, so scheme and www variants collapse. Empty
+// input returns the first limit distinct candidates; limit <= 0 returns nil.
 func Suggest(input string, candidates []Candidate, limit int) []Candidate {
 	if limit <= 0 {
 		return nil
@@ -119,9 +109,7 @@ func Suggest(input string, candidates []Candidate, limit int) []Candidate {
 	return out
 }
 
-// comparableURL lowercases s and strips a leading http(s):// scheme and a
-// "www." host prefix, so autocomplete matches the part of the address a user
-// types.
+// comparableURL strips what a user does not type: case, scheme, "www.".
 func comparableURL(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	for _, p := range []string{"https://", "http://"} {
@@ -133,8 +121,8 @@ func comparableURL(s string) string {
 	return strings.TrimPrefix(s, "www.")
 }
 
-// hostPart returns everything up to the first `/`, `?`, or `#`, so trailing
-// path and query characters do not confuse looksLikeHost's dot check.
+// hostPart stops at the first `/`, `?`, or `#`, so path and query characters
+// do not confuse looksLikeHost's dot check.
 func hostPart(s string) string {
 	for i := 0; i < len(s); i++ {
 		switch s[i] {
@@ -145,16 +133,14 @@ func hostPart(s string) string {
 	return s
 }
 
-// looksLikeHost is a deliberately lenient sanity check: anything containing a
-// dot, or the literal "localhost", optionally with a :port suffix.
-// Internationalized domains and IPv6 literals are out of scope.
+// looksLikeHost is deliberately lenient: a dot or "localhost", optionally with
+// a :port. Internationalized domains and IPv6 literals are out of scope.
 func looksLikeHost(s string) bool {
 	if s == "" {
 		return false
 	}
-	// Drop any userinfo ("user:pass@") before the port check, or the password's
-	// colon reads as the port separator and "user:pass@host.com" is rejected,
-	// though the server's http/https check accepts it.
+	// Drop userinfo before the port check, or the password's colon reads as
+	// the port separator and the server would accept what this rejects.
 	if at := strings.LastIndex(s, "@"); at >= 0 {
 		s = s[at+1:]
 	}
