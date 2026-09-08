@@ -14,12 +14,10 @@ var unboundedOK = map[string]string{
 	"client/wasm/main.go": "a.cl.Subscribe(context.Background())",
 }
 
-// TestClientRPCsAreBounded is the gate behind the bounded-RPC rule
-// client/inflight owns. It reads the shim, because that is where the contexts
-// are spelled and `make check` compiles client/wasm without executing it.
-//
-// A bare context.Background() on a unary call leaves a read holding its
-// dedupe claim forever and a write that can never park. Naming the two
+// The gate behind the bounded-RPC rule client/inflight owns. It reads the
+// shim, where the contexts are spelled and which `make check` compiles without
+// executing. A bare context.Background() on a unary call leaves a read holding
+// its dedupe claim forever and a write that can never park, so naming the two
 // exceptions here makes each one a decision.
 func TestClientRPCsAreBounded(t *testing.T) {
 	root := repoRoot(t)
