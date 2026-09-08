@@ -1,10 +1,9 @@
 //go:build connections
 
-// The direct-connect gate: the transport reaches another node's export with
-// no ssh anywhere, which is two nodes on one machine. The connection carries
-// only an addr, and an empty host selects the transport. Trust is the
-// socket's mode, and the ssh bridge stays the authenticated transport across
-// machines.
+// The direct-connect gate: two nodes on one machine, the transport reaching
+// another node's export with no ssh anywhere. The connection carries only an
+// addr and an empty host selects the transport; trust is the socket's mode,
+// and the ssh bridge stays the authenticated transport across machines.
 
 package connections_test
 

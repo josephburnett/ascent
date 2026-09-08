@@ -1,15 +1,10 @@
 //go:build connections
 
 // Package connections_test is the spawn gate, run by `make
-// check-connections`. It runs the separately compiled binaries, `gridwell
-// serve` and the go-plugin subprocesses, through a real ssh tunnel and
-// asserts one write and read crossing every hop. The in-process seam tests
-// cannot see go-plugin spawn, so a failure that only happens in a spawned
-// process leaves them green.
-//
-// It needs the binaries already built at the repo root, which the make target
-// depends on, and the `connections` build tag keeps plain `go test ./...`
-// fast.
+// check-connections`. It runs the separately compiled binaries through a real
+// ssh tunnel and asserts one write and read crossing every hop, which the
+// in-process seam tests cannot see. It needs the binaries already built at the
+// repo root, and the `connections` build tag keeps plain `go test ./...` fast.
 package connections_test
 
 import (
@@ -326,12 +321,9 @@ func TestConnectionSpawn(t *testing.T) {
 		t.Fatalf("content through the chain = %q", got)
 	}
 
-	// 5. Live events cross the mount. A write made directly on the remote
-	//    node by another client arrives on the local node's Subscribe
-	//    stream as a TileChanged carrying the fully chained tile id, over
-	//    the seam no in-process test can see: the remote's home, the remote
-	//    export's fan-in, the tunnel, the local fan-in's transit
-	//    re-qualification, and the client stream.
+	// 5. Live events cross the mount: a write on the remote node arrives on
+	//    the local Subscribe stream as a TileChanged carrying the fully
+	//    chained tile id, over the seam no in-process test can see.
 	//
 	// Connect holds response headers until the first Send, so the open and
 	// the receive loop both live in the goroutine while the main loop makes
@@ -420,12 +412,10 @@ func TestConnectionSpawn(t *testing.T) {
 	fmt.Println("connections spawn gate: production binaries, real tunnel, chained write/read + session + live events OK")
 }
 
-// Connections are server.yaml config, here through real binaries. One is
-// declared before first serve, presents as a menu row of its own, refuses
-// mutation on the wire, and carries bytes through the real tunnel. Retiring
-// it means naming it in retired_names and restarting, because the declaration
-// going away is not enough; after that the row disappears, the namespace stops
-// resolving forever, and the remote is untouched.
+// Connections are server.yaml config, here through real binaries: declared
+// before first serve, presenting as a menu row, refusing mutation on the wire.
+// Retiring one means naming it in retired_names and restarting, the
+// declaration going away not being enough.
 func TestConnectionsModeSpawn(t *testing.T) {
 	root := repoRoot(t)
 	bin := filepath.Join(root, "gridwell")
@@ -573,12 +563,10 @@ func awaitConnRoot(t *testing.T, origin, name string) string {
 	}
 }
 
-// A key-form id names a tile on a remote node's plugin that nobody has
-// touched, and it must survive both directions of the chain: the remote
-// derives it, the transport passes it through without reading it as a
-// namespace hop or a malformed row, and a read routed back on it lands on the
-// same entry. Only the real tunnel catches that, because the transport's peel
-// is where a segment shape is classified on the way out.
+// A key-form id must survive both directions of the chain: the remote derives
+// it, the transport passes it through without reading it as a namespace hop,
+// and a read routed back on it lands on the same entry. Only the real tunnel
+// catches that: the transport's peel is where a segment shape is classified.
 func TestKeyFormIdsCrossTheTunnel(t *testing.T) {
 	root := repoRoot(t)
 	bin := filepath.Join(root, "gridwell")
@@ -654,13 +642,10 @@ func TestKeyFormIdsCrossTheTunnel(t *testing.T) {
 		t.Fatalf("ReadContent on a key-form id through the chain = %q (%v)", body, err)
 	}
 
-	// The id also survives a touch made from this side. A durable fact
-	// mints a row on the far node, in the far plugin's namespace of the far
-	// store, and the entry keeps the id its listing answers under. A rename
-	// there would be invisible on either node alone, because the local
-	// client holds a fully qualified chain and a remote row id comes back
-	// wearing the same prefix, so only a re-list through the tunnel tells
-	// the two apart.
+	// The id also survives a touch made from this side: a durable fact mints
+	// a row on the far node and the entry keeps the id its listing answers
+	// under. A rename there is invisible on either node alone, so only a
+	// re-list through the tunnel tells the two apart.
 	placed := rpc(t, localOrigin, "PlaceTile", map[string]any{
 		"tileId": farID, "gridId": fsRoot, "x": 6, "y": 3, "w": 1, "h": 1,
 	})["tile"].(map[string]any)

@@ -1,13 +1,11 @@
 //go:build connections
 
 // The mid-session partition gate: a mount that dies under a live session. It
-// runs the production binaries through a real ssh tunnel, reads through the
-// mount to warm internal/sourcecache, then SIGKILLs the remote node and
-// asserts the offline story end to end. A warmed read serves stale, never-read
-// bytes fail honestly, the offline deep copy copies what is cached and links
-// what is not, and a revived remote answers live again, so the cache never
-// masks a healed mount. The revival re-kicks the prefetch walk, so bytes
-// nobody read survive a second partition.
+// warms internal/sourcecache through a real tunnel, SIGKILLs the remote node,
+// and asserts the offline story end to end: a warmed read serves stale,
+// never-read bytes fail honestly, the offline deep copy copies what is cached
+// and links what is not, and a revived remote answers live and re-kicks the
+// prefetch walk.
 
 package connections_test
 
@@ -81,13 +79,11 @@ func TestMountPartitionServesCache(t *testing.T) {
 		}
 	}
 
-	// One live subscription, as the real client holds one. It carries a
-	// connection's health down through the source cache, and establishing it
-	// triggers the whole-source walk. It opens before the tiles exist and
-	// settles, so that walk cannot have warmed anything below. It lives in
-	// its own goroutine because over HTTP/1.1 the call does not return until
-	// the first event arrives, while the server-side walk starts as soon as
-	// the request lands.
+	// One live subscription, as the real client holds one: it carries the
+	// connection's health through the source cache and triggers the
+	// whole-source walk. It opens before the tiles exist, so that walk cannot
+	// have warmed anything below, and lives in a goroutine because over
+	// HTTP/1.1 the call does not return until the first event arrives.
 	subCtx, subCancel := context.WithCancel(ctx)
 	defer subCancel()
 	health := make(chan *gridwellv1.Event, 64)
@@ -171,12 +167,10 @@ func TestMountPartitionServesCache(t *testing.T) {
 	if err != nil || string(staleBody) != "warmed words" {
 		t.Fatalf("dark warmed read = %q (%v), want the cached bytes", staleBody, err)
 	}
-	// The cache-served grid carries the stale bit through sourcecache, the
-	// server and Connect JSON, which is what the client's offline chip
-	// reads. It polls because the bit waits on the node learning that the
-	// connection is dark, either from a call of its own failing
-	// transport-shaped or from the connection's health on the event stream.
-	// The grid was read seconds ago, so its age says nothing yet.
+	// The stale bit crosses sourcecache, the server and Connect JSON, which
+	// is what the client's offline chip reads. It polls because the bit waits
+	// on the node learning the connection is dark, from a call of its own
+	// failing transport-shaped or from the health on the event stream.
 	deadline = time.Now().Add(60 * time.Second)
 	var g map[string]any
 	for {
@@ -256,11 +250,9 @@ func TestMountPartitionServesCache(t *testing.T) {
 		t.Fatal(fmt.Sprintf("the mount never healed after revival on %s", remoteAddr))
 	}
 
-	// The re-warm. A recovered connection re-kicks the source's prefetch
-	// walk, so the cache holds a recent copy of what nobody read, without a
-	// restart. colderT is never read live, so only that walk can warm it.
-	// The health-up on this stream passed through the cache's arm on the way
-	// here, which is the kick.
+	// A recovered connection re-kicks the source's prefetch walk without a
+	// restart. colderT is never read live, so only that walk can warm it, and
+	// the health-up on this stream passed through the cache's arm.
 	awaitConnHealth(t, health, "partconn1", true)
 	time.Sleep(20 * time.Second)
 	stop2()
