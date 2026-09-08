@@ -29,7 +29,7 @@ type Notice struct {
 	Source   string
 	Message  string
 	Severity Severity
-	Count int
+	Count    int
 	// deadline is zero for sticky sources.
 	deadline time.Time
 }
