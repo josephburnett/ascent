@@ -317,15 +317,14 @@ func nullToInt(n sql.NullInt64) int64 {
 // points at a source grid shared by identity, so it owns no grid. Clone,
 // single-delete and grid teardown all route through it.
 func tileRefs(kind string, childGrid, blob, previewBlob int64) (gridRef, blobRef int64) {
-	switch kind {
-	case rpc.KindWell:
+	switch {
+	case isWellKind(kind):
 		return childGrid, 0
-	case rpc.KindText, rpc.KindPane:
-		// A pane tile owns its layout blob exactly as a text tile owns its
-		// body. The places the layout references are not owned, so deleting a
+	case rpc.IsBodyKind(kind):
+		// The places a pane layout references are not owned, so deleting a
 		// pane tile deletes only the arrangement.
 		return 0, blob
-	case rpc.KindURL, rpc.KindShell:
+	case kind == rpc.KindURL || kind == rpc.KindShell:
 		return 0, previewBlob
 	}
 	return 0, 0

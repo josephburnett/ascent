@@ -18,6 +18,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	pb "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
+	"github.com/josephburnett/gridwell/api/rpc"
 )
 
 // Emergency valves, not tuning knobs: a source that trips one is outside the
@@ -32,10 +33,6 @@ var (
 	// crowds out the user's own reads on a slow link.
 	prefetchPause = 2 * time.Millisecond
 )
-
-// contentKinds are the tile kinds whose bodies the walk fetches. Everything
-// else renders offline from its cached row and preview.
-var contentKinds = map[string]bool{"text": true, "pane": true}
 
 // prefetcher is the walk's single-flight state, one per Client. running keys
 // the walks in flight by what each covers: "" is every source.
@@ -206,7 +203,9 @@ func (w *walker) walkTile(t *pb.Tile) bool {
 	if _, err := w.c.GetTilePreview(w.ctx, &pb.GetTilePreviewRequest{TileId: t.GetId()}); err != nil && gwerr.IsTransport(err) {
 		return false
 	}
-	if contentKinds[t.GetKind()] && w.spent < prefetchContentBudget {
+	// A body is what the walk fetches; everything else renders offline from
+	// its cached row and preview.
+	if rpc.IsBodyKind(t.GetKind()) && w.spent < prefetchContentBudget {
 		if !w.pause() {
 			return false
 		}

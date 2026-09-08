@@ -6,6 +6,7 @@ import (
 	"github.com/josephburnett/gridwell/api/gwerr"
 
 	pb "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
+	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/internal/namespace"
 )
 
@@ -116,7 +117,7 @@ func (rt *router) deepCopyTile(ctx context.Context, src namespace.Namespace, src
 	// Leaf bytes are read before the copy row is created, so an unreachable
 	// source degrades to a link instead of an empty copy that looks whole.
 	var body []byte
-	if (t.Kind == "text" || t.Kind == "pane") && t.BlobId != 0 {
+	if rpc.IsBodyKind(t.Kind) && t.BlobId != 0 {
 		var err error
 		body, err = readAllContent(ctx, src, t.Id)
 		if gwerr.IsTransport(err) {
@@ -143,14 +144,14 @@ func (rt *router) deepCopyTile(ctx context.Context, src namespace.Namespace, src
 	id := created.GetTile().GetId()
 	version := created.GetTile().GetVersion()
 
-	switch t.Kind {
-	case "text", "pane":
+	switch {
+	case rpc.IsBodyKind(t.Kind):
 		if len(body) == 0 {
 			return nil
 		}
 		_, err = writeAllContent(ctx, dst, id, version, body)
 		return err
-	case "url", "shell":
+	case t.Kind == "url" || t.Kind == "shell":
 		// The frozen face travels with the copy. An unreachable preview skips:
 		// the copy's own facts are present and the face re-freezes on the next
 		// live visit, so a link here would deny the copy content the walk has.
