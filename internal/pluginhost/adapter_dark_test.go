@@ -52,16 +52,13 @@ func (d *darkableCP) Probe(ctx context.Context, req *pluginv1.ProbeRequest, opts
 	return d.PluginClient.Probe(ctx, req, opts...)
 }
 
-// A dark plugin — the subprocess is gone — fails honestly. Nothing between the
-// router and the plugin remembers what it said: a plugin is a subprocess on
-// this machine, and pretending it answered would hand the user a room that no
-// longer exists. What the node itself minted is durable, so the arrangement
-// comes back untouched the moment the process does.
-//
-// This crosses the whole seam the production wiring crosses — the adapter,
-// through the registry, the server, and the wire client — because a unit test
-// on either side alone would not catch the two disagreeing about what an
-// unreachable plugin looks like.
+// A dark plugin, whose subprocess is gone, fails honestly: nothing between the
+// router and the plugin remembers what it said, because pretending it answered
+// would hand the user a room that no longer exists. What the node minted is
+// durable, so the arrangement comes back the moment the process does. It runs
+// across the whole production wiring, since a unit test on either side alone
+// would not catch the two disagreeing about what an unreachable plugin looks
+// like.
 func TestADarkPluginFailsHonestlyAndKeepsTheNodesRows(t *testing.T) {
 	root := seedTree(t)
 	memStore, err := store.Open(filepath.Join(t.TempDir(), "mem.db"))
@@ -133,16 +130,13 @@ func TestADarkPluginFailsHonestlyAndKeepsTheNodesRows(t *testing.T) {
 	}
 }
 
-// A dark SOURCE — the plugin answers, its directory does not — is a different
-// outage from a dark plugin, and it must not cost the user their arrangement.
-// A move made while dark is a fact of the node's own, so it lands and reads
-// back immediately, out of the rows the adapter overlays on an empty
-// non-authoritative listing.
-//
-// The arrangement is what a ROW holds, so the test arranges the tile before
-// the dark: an entry nobody has touched has no row and cannot be moved while
-// the source is dark — the node would be minting a thing it cannot describe.
-// That refusal is the last stanza.
+// A dark source, where the plugin answers but its directory does not, is a
+// different outage from a dark plugin and must not cost the user their
+// arrangement: a move made while dark is a fact of the node's own, so it lands
+// and reads back out of the rows overlaid on an empty non-authoritative
+// listing. The arrangement is what a row holds, so the tile is arranged before
+// the dark; an untouched entry has no row and cannot be moved while the source
+// is dark, which is the last stanza.
 func TestASourceGoingDarkDoesNotCostTheUserTheirArrangement(t *testing.T) {
 	root := seedTree(t)
 	memStore, err := store.Open(filepath.Join(t.TempDir(), "mem.db"))

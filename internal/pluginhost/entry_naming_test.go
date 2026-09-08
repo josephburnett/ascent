@@ -113,19 +113,12 @@ func listed(t *testing.T, a *pluginhost.Adapter, gridID, label string) *gridwell
 }
 
 // A plugin entry keeps the id the listing answers it under, across the mint.
-//
-// The key-form address is the entry's one public id: it names the entry by what
-// it IS, so it is derivable forever, and the row the first durable fact mints
-// is bookkeeping the client never has to hear about. When the mint renamed the
-// entry in the listing instead, everything standing on the old name went stale
-// at once — a URL segment naming a directory doorway stopped resolving in the
-// refetched listing (urlwalk.Walk skips an id the grid does not contain, so the
-// restore landed at the plugin root), and a pane descended into a read-only file
-// lost its own content id the moment a ctrl+wheel zoom minted the row, hiding
-// the document with nothing said.
-//
-// Both writes below are the ones the user actually makes mid-descent, and each
-// one mints: SetFraming on the doorway, and the framing verbs under the file.
+// The key-form address names the entry by what it is, so it is derivable
+// forever, and the row a first durable fact mints is bookkeeping the client
+// never hears about. A rename would take the id out from under a URL restore or
+// a descended pane. Both writes below are ones the user makes mid-descent, and
+// each one mints: SetFraming on the doorway, and the framing verbs under the
+// file.
 func TestATouchedEntryKeepsTheIdTheListingAnswers(t *testing.T) {
 	a, rootGrid, _ := treeNode(t, &treePlugin{authoritative: true})
 	ctx := context.Background()

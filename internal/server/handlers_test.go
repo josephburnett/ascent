@@ -27,20 +27,13 @@ const (
 	procPluginUUID = "proc-test-uuid"
 )
 
-// newTestServerWithPlugins builds a server wired to the spawned fs and proc
-// plugins (with the home namespace's uuid set), so file/process-well creation routes
-// through the plugins exactly as in production. Returns the client and the
-// bare local root grid id.
-// newTestServerWithPlugins stands up a rootless server with the primary
-// a home namespace plus built-in fs and proc plugins. The fs plugin is rooted at a
-// fresh temp dir (returned as fsRoot) so a Mount of fsPluginUUID — which
-// attaches with the plugin's default config — lands there.
-// newPluginClient stands up the plugin stack exactly the way the loader does
-// in production — the shipped gridwell-plugin-<kind> binary spawned with cfg,
-// fronted by the node-side pluginhost adapter over a fresh store — and returns
-// the adapter's client. Server tests must exercise the shipped stack rather
-// than a stand-in, and since a plugin lives in its own repository the
-// subprocess is the only way to reach one.
+// newTestServerWithPlugins wires a server to the spawned fs and proc plugins,
+// the fs one rooted at a fresh temp dir returned as fsRoot, so well creation
+// routes through the plugins exactly as in production.
+// newPluginClient stands up the plugin stack the way the loader does: the
+// shipped gridwell-plugin-<kind> binary spawned with cfg, fronted by the
+// pluginhost adapter over a fresh store. A plugin lives in its own repository,
+// so the subprocess is the only way to reach one.
 func newPluginClient(t *testing.T, kind string, cfg map[string]string) namespace.Namespace {
 	t.Helper()
 	memStore, err := store.Open(filepath.Join(t.TempDir(), "mem.db"))

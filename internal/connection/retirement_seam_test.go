@@ -59,16 +59,13 @@ func sharedConnDB(t *testing.T) *DB {
 	return db
 }
 
-// A connection's name is dropped from server.yaml and later declared again.
-// Three boots over ONE store, across the whole seam the reversal touches: the
-// boot reconcile, the row, the routing table, and the roster a client reads a
-// reference's deadness from.
-//
-// Boot 1 declares rtb and learns its landing; a mount reference into it is
-// live. Boot 2 drops the stanza: the row survives with its landing, nothing
-// is tombstoned, the namespace stops resolving, and the reference is DEAD
-// through the roster — a state, not an error, and never a sweep. Boot 3
-// re-declares it and everything comes back on the same landing.
+// A connection's name is dropped from server.yaml and later declared again:
+// three boots over one store, across the boot reconcile, the row, the routing
+// table, and the roster a client reads a reference's deadness from. Boot 1
+// declares rtb and a mount into it is live; boot 2 drops the stanza, and the
+// row survives with its landing while the reference goes dead through the
+// roster, never swept; boot 3 re-declares it and everything comes back on the
+// same landing.
 func TestConnectionSurvivesRemoveThenRestore(t *testing.T) {
 	ctx := context.Background()
 	db := sharedConnDB(t)

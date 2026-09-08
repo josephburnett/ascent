@@ -17,16 +17,12 @@ import (
 	"github.com/josephburnett/gridwell/internal/plugintest"
 )
 
-// Cross-plugin gesture semantics: LEFT-drag
-// across a plugin boundary creates a LINK (one copy of the content — an exit
-// well for a grid, a leaf link via link_target_id for text/url/shell/pane),
-// and RIGHT-drag creates a CLONE (a real copy: leaves copy bytes; a solid
-// well deep-copies — deepcopy.go, with the offline degrade-to-links rule
-// pinned in deepcopy_dark_test.go). The left-drag arrives at the server as a
-// plain CreateTile carrying a qualified reference — the same request shape a
-// + menu plugin-swatch drop uses — so these tests drive both faces through
-// the real router seam. Framing and labels ride every cross-plugin link
-// and copy, so a link looks like what it points at.
+// Cross-plugin gesture semantics: a left-drag across a plugin boundary creates
+// a link, an exit well for a grid or a leaf link for a leaf, and a right-drag
+// creates a real copy, bytes for a leaf and a deep copy for a solid well. The
+// left-drag arrives as a plain CreateTile carrying a qualified reference, the
+// same shape a + menu swatch drop uses, so both faces run through the real
+// router seam. Framing and labels ride every cross-plugin link and copy.
 
 // twoPluginServer stands up a server with two store namespaces and returns the
 // client plus each plugin's uuid and qualified root grid id.

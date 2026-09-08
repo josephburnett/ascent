@@ -4,20 +4,16 @@ package server
 // production loader, the pluginhost adapter, the router, and the /content/
 // door as a browser reaches it.
 //
-// The seam is what is under test, not the plugin's insides. Three things can
-// only be wrong here. The plugin declares one landing grid and names its other
-// collections on the (+) menu — the adapter turns each declared context into a
-// grid id the node can serve, and a menu entry with no grid id is an entry
-// that opens nothing. Every collection has to list through that mapping, not
-// just the root. And an email is a TEXT tile carrying serves_page, whose page
-// the node addresses and the door serves: the plugin never sees a URL and the
-// door never sees the email.
+// Three things can only be wrong here: the adapter turns each declared context
+// into a grid id the node can serve, so a menu entry with no grid id opens
+// nothing; every collection lists through that mapping, not just the root; and
+// an email is a text tile carrying serves_page, so the plugin never sees a URL
+// and the door never sees the email.
 //
-// Nothing is injected: the plugin lives in another repository and the
-// subprocess is its only door. HEY is not injected either — testdata/fake-hey
-// is the CLI's contract as an executable, handed over as the plugin's `binary`
-// config key, so the run, the argv, the environment and the JSON parse are all
-// real. The two repositories share that contract, never a package.
+// Nothing is injected. The plugin lives in another repository, so the
+// subprocess is its only door, and testdata/fake-hey is the CLI's contract as
+// an executable handed over as the `binary` config key, so the run, the argv,
+// the environment and the JSON parse are all real.
 
 import (
 	"net/http"

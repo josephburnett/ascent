@@ -15,17 +15,14 @@ import (
 	pb "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
-// The wire is frozen and these tests are the pin. Records travel to the
-// client as protojson over the generated messages, through
-// connect.WithProtoJSON in NewDefaultClient. Two properties are locked here:
+// The wire is frozen and these tests are the pin. Two properties are locked:
 //
 //   - An exhaustive round trip. The fixture is built by reflection over the
-//     message, so it fills every field automatically and an encoding that
-//     drops a newly added field cannot round-trip green.
-//   - The JSON shape is golden. api/rpc/testdata/*.json records the exact
-//     field names and values a fully-populated record marshals to; the client
-//     and the e2e specs read those names, so a rename is a wire break and
-//     must fail here.
+//     message, so an encoding that drops a newly added field cannot round-trip
+//     green.
+//   - The JSON shape is golden. api/rpc/testdata/*.json records the exact field
+//     names a fully-populated record marshals to; the client and the e2e specs
+//     read those names, so a rename is a wire break.
 
 // fill populates every exported field of the struct pointed at by v with a
 // distinct non-zero value, so a converter that drops or swaps a field cannot

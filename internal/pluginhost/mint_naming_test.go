@@ -9,21 +9,16 @@ import (
 	"github.com/josephburnett/gridwell/internal/plugintest"
 )
 
-// A grid keeps its name after its well is touched. The touch mints rows — the
-// well's and its child grid's — but a row is storage, not a name: the well the
-// next listing answers must keep naming its child grid by the address, and
-// GetGrid must answer that grid under the id the well carries. When the mint
-// leaked the child grid's ROW id into the listing instead, every descent into
-// a previously-touched well died quietly: the client fetched the row id, was
-// answered a grid named by the address, cached it under the answered name, and
-// looked it up forever under the asked one — a pane stuck on "loading", with
-// nothing but 200s on the wire. That is why no gate caught it: every e2e
-// descent was a FIRST descent, and the mismatch only exists on the read after
-// the mint.
+// A grid keeps its name after its well is touched. The touch mints rows, the
+// well's and its child grid's, but a row is storage and not a name: the next
+// listing must still name the child grid by the address, and GetGrid must
+// answer it under the id the well carries. A leaked row id makes the client
+// cache the grid under the answered name and look it up forever under the asked
+// one, a pane stuck on "loading" with nothing but 200s on the wire.
 //
-// This crosses the production seam — adapter, registry, server, wire client —
-// because the two halves of the contract live on opposite sides: the adapter
-// names the child grid, the client resolves a frame by that name.
+// It crosses the production seam because the two halves of the contract live on
+// opposite sides: the adapter names the child grid, the client resolves a frame
+// by that name.
 func TestATouchedWellsChildGridKeepsItsName(t *testing.T) {
 	cl := pluginNode(t, seedTree(t))
 	ctx := context.Background()

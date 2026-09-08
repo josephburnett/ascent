@@ -1,29 +1,17 @@
 package server
 
 // The web door's deadline rule: a Connect server stream held open through the
-// web door shape, over real HTTP, for longer than any deadline WebDoorServer
-// declares, then proven live by an event after the hold.
+// WebDoorServer shape, over real HTTP, for longer than any deadline that shape
+// declares, then proven live by an event after the hold. A declared timeout is
+// a fact, and its test is a wait bound to its value. The web-door twin of
+// door_deadline_test.go.
 //
-// THE RULE: a declared timeout is a fact, and its test is a wait bound to its
-// value; a timeout with no such test is untested. This is the web-door twin of
-// door_deadline_test.go, which holds a raw-gRPC Subscribe through the
-// connection door shape. The web door is a different shape on purpose — it
-// keeps ReadHeaderTimeout because it faces a network and carries no raw-gRPC
-// stream (see WebDoorServer) — so its own long-lived stream, a Connect
-// server-stream Subscribe, needs its own hold past what it declares.
-//
-// Why a Connect stream survives ReadHeaderTimeout: net/http arms that deadline
-// to read the REQUEST headers and clears it once they are read, so an HTTP/1
-// response body streams on indefinitely afterward. A re-added WriteTimeout,
-// though, deadlines the whole response WRITE and would cut this stream at that
-// bound. The hold is DERIVED from WebDoorServer, so it AUTO-TRACKS any deadline
-// added to the shape: today it is ReadHeaderTimeout(10s) + margin, and a stream
-// held that long and still delivering proves the header timeout does not cut
-// it; add a WriteTimeout and the hold lengthens and the stream dies inside it.
-//
-// This runs under `make check` and, bound to the web door's 10s
-// ReadHeaderTimeout, takes ~10.5s — the wait IS the test; it must not be
-// shortened by lowering the door's timeout.
+// net/http arms ReadHeaderTimeout to read the request headers and clears it
+// once they are read, so an HTTP/1 response body streams on afterward; a
+// WriteTimeout would deadline the whole response write and cut this stream.
+// The hold is derived from WebDoorServer, so it tracks any deadline added to
+// the shape. The wait is the test and must not be shortened by lowering the
+// door's timeout.
 
 import (
 	"context"

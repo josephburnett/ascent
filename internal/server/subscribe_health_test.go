@@ -124,16 +124,10 @@ func (p *alwaysFailInfoWatchPlugin) Subscribe(ctx context.Context, _ *pb.Subscri
 	return nil
 }
 
-// TestSubscribeRetriesInfoFailureInsteadOfPermanentlyExcluding is the
-// A regression guard for the second half of the class: an Info failure at
-// Subscribe time must not permanently drop a plugin's fan-in for the life of
-// the client stream. Before the fix, Subscribe's Info fetch happened once,
-// synchronously, before launching fanInEvents at all; a failure there meant
-// `continue` and the plugin's fan-in goroutine was never started at all — no
-// amount of waiting recovered it. Now watchPlugin retries Info with backoff,
-// so a plugin that is merely slow to come up still gets its events fanned in
-// once Info succeeds — observable here as a health-down event (Info failed)
-// followed by a health-recovery event (the retried Info succeeded).
+// An Info failure at Subscribe time must not permanently drop a plugin's
+// fan-in for the life of the client stream: watchPlugin retries Info with
+// backoff, so a plugin merely slow to come up still gets its events fanned in,
+// observable here as a health-down event followed by a health-recovery one.
 func TestSubscribeRetriesInfoFailureInsteadOfPermanentlyExcluding(t *testing.T) {
 	fake := &alwaysFailInfoWatchPlugin{failInfoFirstN: 1}
 	client := fake

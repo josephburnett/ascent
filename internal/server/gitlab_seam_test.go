@@ -20,18 +20,15 @@ import (
 	"github.com/josephburnett/gridwell/internal/plugintest/gitlabfake"
 )
 
-// The gitlab todos plugin through the WHOLE shipped stack — fake
-// GitLab → the spawned gridwell-plugin-gitlab binary → adapter → server →
-// ReadContent — pinning the three promises the design makes at the seam where
-// they are kept: the plugin's hints become the first arrangement and the
-// user's moves win from then on; a todo that leaves GitLab flips to done
-// without moving or changing identity; and a plugin RESTART (empty
-// memory) does not lose the tile — the node remembers it.
+// The gitlab todos plugin through the whole shipped stack — fake GitLab, the
+// spawned binary, the adapter, the server, ReadContent — pinning three
+// promises: the plugin's hints become the first arrangement and the user's
+// moves win after that; a todo that leaves GitLab flips to done without moving
+// or changing identity; and a plugin restart does not lose the tile.
 //
-// The plugin is a subprocess, which is the only door it has: it lives in
-// another repository. So nothing here is injected. The clock is not either:
-// a short refresh: in the config is what makes the second walk happen, and
-// weeks derive from each todo's created_at, never from now.
+// Nothing here is injected. The plugin lives in another repository, so the
+// subprocess is its only door, and the clock is real: a short `refresh:` makes
+// the second walk happen, and weeks derive from each todo's created_at.
 
 // todoTileW mirrors the plugin's hinted todo width — two cells, so the label
 // reads. It is the plugin's own arrangement fact, read back off the wire
@@ -181,19 +178,16 @@ func TestGitLabTodosThroughTheStack(t *testing.T) {
 	}
 }
 
-// The trash gesture on a todo, through the WHOLE stack the user's hand
-// crosses: the wire client → the router → the adapter → the spawned
-// gridwell-plugin-gitlab binary → fake GitLab, with a home namespace beside
-// the plugin so a link can be dragged from another grid.
+// The trash gesture on a todo, through the whole stack the user's hand crosses,
+// with a home namespace beside the plugin so a link can be dragged in from
+// another grid.
 //
-// Delete here means "mark the todo done at GitLab" — the tile stays and
-// changes state — so the node must keep the row it minted. The row is where
-// two durable facts live: the placement the user chose, and the identity every
-// stored reference names (MintRef canonicalizes a link's target to a row id).
-// Retiring it on the plugin's word alone snapped the tile back to its calendar
-// hint under a fresh id and killed every link to it. Nothing but a delete-
-// then-look test on a plugin with keep semantics can see that, which is why
-// this journey moves the tile, links to it, and then trashes it.
+// Delete here means "mark the todo done at GitLab": the tile stays and changes
+// state, so the node must keep the row it minted, which is where the placement
+// the user chose and the identity every stored reference names both live.
+// Retiring it on the plugin's word would snap the tile back under a fresh id
+// and kill every link to it, which is why this journey moves the tile, links
+// to it, and then trashes it.
 func TestTrashingATodoKeepsItsRowItsPlacementAndItsLinks(t *testing.T) {
 	gl := gitlabfake.New(t, gitlabTodo(1, "2026-08-18T10:00:00Z"))
 	// A one-nanosecond refresh window: every read walks GitLab again, so the

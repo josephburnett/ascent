@@ -1,14 +1,10 @@
 package pluginhost_test
 
-// The proc stack through a full server: a dead child is probed and swept
-// while the survivors keep their id and placement, and a retired key never
-// re-mints on reads of an unchanged grid.
-//
-// The plugin is the REAL gridwell-plugin-proc binary over the REAL /proc,
-// rooted at this test process: a plugin lives in another repository now, so
-// there is no in-process stand-in to point at a fake tree, and there is no
-// need for one — the test owns real children, and killing one is exactly the
-// disappearance the sweep arbitrates.
+// The proc stack through a full server: a dead child is probed and swept while
+// the survivors keep their id and placement, and a retired key never re-mints
+// on reads of an unchanged grid. The plugin is the real gridwell-plugin-proc
+// binary over the real /proc, rooted at this test process, so killing a child
+// this test owns is exactly the disappearance the sweep arbitrates.
 
 import (
 	"context"

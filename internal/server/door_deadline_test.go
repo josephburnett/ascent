@@ -1,14 +1,11 @@
 package server_test
 
-// The connection door's server shape, at the seam a mounter lives on: one
-// gRPC Subscribe held open through the door for longer than any deadline the
-// door declares, then proven live by an event. net/http arms
-// ReadHeaderTimeout on the raw conn before the unencrypted HTTP/2 handoff
-// (Go 1.26.6) and the h2 side only disarms a deadline when ReadTimeout is
-// set, so any deadline on the door is a ticking close on every stream through
-// it: the event Subscribe dies at the deadline and a unary call that lands
-// after it sees the same EOF. The hold is derived from the shape under test,
-// so a deadline that returns makes this test wait it out and fail.
+// The connection door's server shape, at the seam a mounter lives on: one gRPC
+// Subscribe held open through the door for longer than any deadline the door
+// declares, then proven live by an event. Any deadline on this door is a
+// ticking close on every stream through it, so the hold is derived from the
+// shape under test and a deadline that returns makes this test wait it out and
+// fail.
 
 import (
 	"context"

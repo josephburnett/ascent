@@ -23,19 +23,12 @@ import (
 // that fails, and the connection's own health on the stream this layer
 // relays.
 
-// TestBothDirectionsLearnTheSameDarkness drives the two directions through
-// every transition and compares them. They are one fact — "can this source be
-// reached" — so the map must end in the same place whichever direction taught
-// it, and the ONLY thing that may differ is whether the discovery is
-// announced: noteReach found it alone and must tell the client, while the
-// health arm is relaying the very event the client is also receiving and must
-// not say it twice.
-//
-// This is the test a second bare writer of c.dark fails. A new `c.dark[x] = y`
-// that skipped setDark would have to reproduce the idempotence and the
-// announce rule exactly, in both directions, to stay green here — which is the
-// point: the announcements are counted, not merely observed, so an arm that
-// grows an emit or loses one is red.
+// The two directions driven through every transition and compared. They are one
+// fact, so the map must end in the same place whichever direction taught it,
+// and the only difference allowed is the announcement: noteReach found it alone
+// and must tell the client, while the health arm is relaying the very event the
+// client is also receiving. The announcements are counted, not merely observed,
+// so a second bare writer of c.dark that grew an emit or lost one is red.
 func TestBothDirectionsLearnTheSameDarkness(t *testing.T) {
 	for _, tc := range []struct {
 		name string
