@@ -10,7 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { WebviewRegistry } from '../main/webviews';
 import { registerWebviewIpc } from '../main/register';
-import type { NavEvent } from '../main/ipc';
+import type { ErrorEvent, NavEvent } from '../main/ipc';
 import { PARK_COORD, SESSION_PARTITION } from '../main/viewutil';
 import { FOCUS_SETTLE_MS } from '../main/focusguard';
 
@@ -358,17 +358,24 @@ app.whenReady().then(async () => {
   // The renderer closes a pane's live view before placing another, so this
   // branch is a renderer bug. The replaced view's freeze has no caller, so the
   // preview is lost and this report is the only evidence.
-  const replaceErrs: string[] = [];
-  const regR = new WebviewRegistry(win, { onError: (ev) => replaceErrs.push(ev.message) });
+  const replaceErrs: ErrorEvent[] = [];
+  const regR = new WebviewRegistry(win, { onError: (ev) => replaceErrs.push(ev) });
   await regR.place('paneR', 'u1/60', DATA_URL, { x: 0, y: 0, width: 400, height: 300 });
+  const replacedWc = regR.webContentsFor('paneR')!;
   await regR.place('paneR', 'u1/61', DATA_URL, { x: 0, y: 0, width: 400, height: 300 });
   if (replaceErrs.length !== 1) fail(`a replaced live view reported ${replaceErrs.length} errors, want 1`);
-  if (!replaceErrs[0].includes('u1/60 → u1/61')) fail(`the replace report does not name both tiles: ${replaceErrs[0]}`);
-  // The replacement stands and the old view is gone: one entry, the new tile.
+  if (replaceErrs[0].source !== 'electron:webview') fail(`the replace report came from ${replaceErrs[0].source}`);
+  if (!replaceErrs[0].message.includes('u1/60 → u1/61')) {
+    fail(`the replace report does not name both tiles: ${replaceErrs[0].message}`);
+  }
+  // The replacement stands and the old view is gone: one entry, the new tile,
+  // and the replaced renderer destroyed rather than left painting over it.
   if (regR.paneIds().length !== 1) fail(`the replace left ${regR.paneIds().length} entries for one pane`);
   if (regR.tileIdFor('paneR') !== 'u1/61') fail(`the replacement did not take (tile ${regR.tileIdFor('paneR')})`);
+  if (regR.webContentsFor('paneR') === replacedWc) fail('the replaced view is still the registered one');
+  if (!(await waitFor(() => replacedWc.isDestroyed(), 4000))) fail('the replaced view leaked: its webContents is alive');
   await regR.remove('paneR');
-  console.log('place replace ok: reported, old view torn down, replacement stands');
+  console.log('place replace ok: reported, old view destroyed, replacement stands');
 
   // ── setBounds returns early when nothing moved ──────────────────────────
   // syncURLViews calls setBounds every frame, so the equal-bounds early return
