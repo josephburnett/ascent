@@ -1,27 +1,17 @@
 import { expect } from '@playwright/test';
 import { test, authenticate } from './fixtures';
 
-// The truncated-boot seam: a wasm download that ends early must say so.
-//
-// The gzip sidecar is served without a Content-Length (ServeContent omits it
-// under Content-Encoding), so a body that stops early ends the stream cleanly
-// and nothing in the transport complains. The only symptom is
-// "WebAssembly.Module doesn't parse ... exceeds the module's remaining size" on
-// a black page. index.html's boot script counts the decoded bytes against the
-// size the server declared in X-Uncompressed-Size, names the fault, and retries
-// once with the cache bypassed.
-//
-// The route interception below is fault injection the real server cannot
-// provide: the first /gridwell.wasm answers with a genuine prefix of the real
-// module and the full declared size; the second goes to the server untouched,
-// so the retry is what boots the client.
+// A wasm download that ends early must say so. The gzip sidecar carries no
+// Content-Length, so a short body ends the stream cleanly and the only symptom
+// is a parse error on a black page; index.html's boot script counts decoded
+// bytes against X-Uncompressed-Size and retries once with the cache bypassed.
+// The route interception is fault injection the real server cannot provide.
 
 test('a short wasm download is named, and one cache-busted retry boots', async ({ serve, page }) => {
   await authenticate(page, serve);
 
-  // The real module, fetched once through the page's own cookie jar, so the
-  // truncated body is a real prefix and instantiateStreaming consumes the whole
-  // stream before it complains, as it does against a raced sidecar.
+  // A real prefix, so instantiateStreaming consumes the whole stream before it
+  // complains, as it does against a raced sidecar.
   const full = await (await page.request.get(serve.origin + '/gridwell.wasm')).body();
   expect(full.length).toBeGreaterThan(1024 * 1024);
 
@@ -43,9 +33,8 @@ test('a short wasm download is named, and one cache-busted retry boots', async (
     });
   });
 
-  // The overlay's message is transient, since the retry can remove the whole
-  // overlay before a poll sees it, so record every message the boot script
-  // writes and assert against the record.
+  // The retry can remove the overlay before a poll sees it, so record every
+  // message the boot script writes and assert against the record.
   await page.addInitScript(() => {
     const seen: string[] = ((window as any).__bootMsgs = []);
     new MutationObserver(() => {
@@ -61,7 +50,6 @@ test('a short wasm download is named, and one cache-busted retry boots', async (
   expect(attempts).toBe(2);
   await expect(page.locator('#gw-boot')).toHaveCount(0);
 
-  // The message names the download and counts both sides.
   const msgs: string[] = await page.evaluate(() => (window as any).__bootMsgs);
   expect(msgs.join('\n')).toMatch(
     new RegExp(`truncated download \\(got \\d+ of ${full.length} bytes\\) — retrying`),

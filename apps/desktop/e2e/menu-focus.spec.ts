@@ -1,8 +1,7 @@
 import { test, expect } from './fixtures';
 
-// The + creation menu appears on exactly one pane, whichever is focused.
-// client/menu owns the rule: SyncFocus closes the menu when focus leaves its
-// pane. This spec proves the wiring end to end through the real app.
+// The + menu appears on exactly one pane, whichever is focused. client/menu's
+// SyncFocus owns the rule; this proves the wiring end to end.
 
 test('the + menu closes when focus leaves its pane', async ({ gw }) => {
   await gw.enterPlugin('home');
@@ -11,15 +10,14 @@ test('the + menu closes when focus leaves its pane', async ({ gw }) => {
   expect(panes.length, 'split produced two panes').toBe(2);
   const [left, right] = panes.slice().sort((a, b) => a.x - b.x);
 
-  // Open the menu on the right pane: its + button sits at the window edge,
-  // clear of the divider, while the left pane's + would overlap the divider's
-  // resize band. Focus it first so a single + click toggles it open.
+  // The right pane's + sits at the window edge, clear of the divider's resize
+  // band, which the left pane's would overlap.
   await gw.focusPane(right);
   await gw.openPalette();
   expect((await gw.palette()).open, 'menu opened on the focused (right) pane').toBe(true);
 
-  // palette() reports the focused pane, so a menu left stranded open on the
-  // right pane reads open after focus leaves and comes back.
+  // palette() reports the focused pane, so a stranded menu reads open after
+  // focus leaves and comes back.
   await gw.focusPane(left);
   await gw.focusPane(right);
   expect(

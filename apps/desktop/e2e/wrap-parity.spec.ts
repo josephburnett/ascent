@@ -1,12 +1,9 @@
 import { test, expect } from './fixtures';
 
-// Raw text must not reflow when pane focus moves. The canvas painter, which is
-// what an unfocused descended pane shows, soft-wraps to the same columns the
-// editing textarea does. This spec crosses the browser-wrap and canvas-wrap seam
-// with the same bytes on both sides: the textarea's rendered row count, its
-// scrollHeight over its line box, must match the rows the canvas painter
-// computes, read through the rawRows hook. A painter that draws one row per
-// source line diverges by dozens of rows on wrapping prose.
+// Raw text must not reflow when pane focus moves, so the canvas painter an
+// unfocused descended pane shows must soft-wrap to the same columns the editing
+// textarea does. The textarea's rendered row count must match the painter's,
+// read through the rawRows hook; one row per source line diverges by dozens.
 
 test('the canvas paints the rows the textarea soft-wraps', async ({ gw, window }) => {
   await gw.enterPlugin('home');
@@ -19,9 +16,8 @@ test('the canvas paints the rows the textarea soft-wraps', async ({ gw, window }
   await gw.descendCell(cx, cy);
   await expect.poll(async () => (await gw.focused()).textFocus).not.toBe('');
 
-  // A paragraph that soft-wraps many times, an unbroken run longer than any line,
-  // which Chromium's textarea break-word char-breaks, and multi-space runs, which
-  // hang at the edge.
+  // A paragraph that soft-wraps, an unbroken run Chromium char-breaks, and
+  // multi-space runs, which hang at the edge.
   const prose = 'wrap parity alpha beta gamma delta epsilon zeta eta theta '.repeat(20);
   const longWord = 'x'.repeat(300);
   await gw.typeText(prose + '\n' + longWord + '\nshort  double  spaces');
@@ -32,8 +28,8 @@ test('the canvas paints the rows the textarea soft-wraps', async ({ gw, window }
     const cs = getComputedStyle(ta);
     const lineH = parseFloat(cs.lineHeight);
     const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
-    // scrollHeight is the larger of the content and the box, so collapse the box
-    // for a beat to read pure content height; the per-frame sync restores it.
+    // scrollHeight is the larger of content and box, so collapse the box for a
+    // beat; the per-frame sync restores it.
     const prevH = ta.style.height;
     ta.style.height = '0px';
     const sh = ta.scrollHeight;
@@ -41,10 +37,9 @@ test('the canvas paints the rows the textarea soft-wraps', async ({ gw, window }
     return Math.round((sh - pad) / lineH);
   });
   const canvasRows = await window.evaluate(() => (window as any).__gridwellTest.rawRows());
-  // Three source lines must have wrapped into many visual rows.
   expect(taRows, 'the content genuinely wraps').toBeGreaterThan(6);
-  // scrollHeight is integer device px, so allow one row of rounding slack. An
-  // unwrapped painter is off by dozens and still fails.
+  // scrollHeight is integer device px, so one row of rounding slack. An
+  // unwrapped painter is off by dozens.
   expect(
     Math.abs(canvasRows - taRows),
     `canvas rows ${canvasRows} must match textarea rows ${taRows}`,

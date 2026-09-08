@@ -1,23 +1,17 @@
 import { test, expect } from './fixtures';
 
-// A palette swatch may only land where the drop target resolves, and
-// dropTargetAt is the one owner of that: it refuses a pane that is descended
-// into a tile, because there is no grid on screen there to drop into.
-//
-// The commit reads that same verdict through dropInputAt and never resolves the
-// destination a second time, so a release over a descended pane cannot create a
-// tile in the grid hidden behind the descent.
-//
-// The verdict is wasm-only and the row is server-visible, so only a real drop
-// across both can see this. The two tests are a pair: the first pins that this
-// gesture, at this point, does create a tile in a pane showing a grid, so the
-// second cannot pass by doing nothing.
+// dropTargetAt is the one owner of where a palette swatch may land, and it
+// refuses a pane descended into a tile, because there is no grid on screen to
+// drop into. The commit reads that same verdict through dropInputAt rather than
+// resolving the destination again, so a release over a descended pane cannot
+// create a tile in the grid hidden behind it. The two tests are a pair: the
+// first pins that this gesture at this point does create a tile, so the second
+// cannot pass by doing nothing.
 
-// dropPoint is the same screen point in both tests: the top edge of the right
-// pane, a few pixels in. It is the farthest the cursor can get from the pane's
-// view center, where a content descent parks the tile it is inside. At a text
-// descent's zoom every point near the center maps back to that tile's own cell,
-// where an overlap check would refuse the drop for the wrong reason.
+// dropPoint is the top edge of the right pane, the farthest the cursor can get
+// from the view center, where a content descent parks the tile it is inside. At
+// a text descent's zoom a point near the center maps back to that tile's own
+// cell, where an overlap check would refuse the drop for the wrong reason.
 const dropPoint = (p: { x: number; w: number; y: number }) => ({
   x: p.x + p.w / 2,
   y: p.y + 6,

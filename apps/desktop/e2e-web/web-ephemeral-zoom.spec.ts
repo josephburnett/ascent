@@ -1,24 +1,17 @@
 import { test, expect } from './fixtures';
 
-// The content-zoom chord inside an EPHEMERAL visit: it must zoom, and it must
-// not write. An ephemeral shell's row lives in the scratch grid and ascent
-// deletes it, so a durable framing write about it leaves a mark on a row nobody
-// asked for and nobody will ever see again. That is the contract stated on
-// possiblyEphemeral (client/wasm/ephemeral.go), which every durable write about
-// a descent reads.
+// The content-zoom chord inside an ephemeral visit must zoom and must not
+// write: the row lives in the scratch grid and ascent deletes it, so a durable
+// framing write marks a row nobody will see again. possiblyEphemeral
+// (client/wasm/ephemeral.go) states the contract.
 //
-// The seam this crosses: the chord goes in at the window keydown, the live
-// terminal's cell grid comes back out of xterm, and the write, or its absence,
-// is counted at the settle-persist dispatcher (persistPosts) and confirmed
-// against the server's own row through the oracle. A unit test on either side
-// sees none of that composition.
-//
-// Browser mode, because a shell is the ephemeral visit every host has: shells
-// ride the web door, so this is the whole chain with no Electron anywhere.
+// The chord goes in at the window keydown, the cell grid comes back out of
+// xterm, and the write's absence is counted at persistPosts and confirmed
+// against the server's row. Browser mode, because a shell is the ephemeral
+// visit every host has.
 
-// cellPx is the live terminal's cell width in screen pixels, derived from two
-// adjacent cell centers. A coarser cell grid is the observable for a zoom that
-// took effect: the font grew and the fit re-ran. 0 when no shell.
+// The live terminal's cell width in screen pixels, from two adjacent cell
+// centers. A coarser grid is the observable for a zoom that took effect.
 const cellPx = async (window: any): Promise<number> => {
   const [a, b] = await window.evaluate(() => [
     (window as any).__gridwellTest.shellCellPx(0, 0),
@@ -37,8 +30,7 @@ test('Ctrl+= in an ephemeral shell zooms live and persists nothing', async ({ wi
 
   await gw.enterPlugin('home');
 
-  // A swatch click, rather than a drag, creates an ephemeral shell off-grid in
-  // the scratch grid and descends into it.
+  // A click, not a drag, creates an ephemeral shell off-grid and descends.
   await gw.clickPaletteSwatch('shell');
   await expect.poll(async () => (await gw.focused()).textFocus, { timeout: 20_000 }).not.toBe('');
   const scratch = await gw.getGrid(scratchGridID);
@@ -50,8 +42,7 @@ test('Ctrl+= in an ephemeral shell zooms live and persists nothing', async ({ wi
   const base = await cellPx(window);
   expect(await zoomPosts(window), 'no zoom write before the chord').toBe(0);
 
-  // Three steps of Ctrl+=: 13px base font to 17px, so the cell grid must get
-  // visibly coarser. Settle between presses, as the desktop zoom spec does.
+  // 13px base font to 17px, so the cell grid must get visibly coarser.
   for (let i = 0; i < 3; i++) {
     await window.keyboard.press('Control+=');
     await gw.waitIdle();
@@ -60,8 +51,7 @@ test('Ctrl+= in an ephemeral shell zooms live and persists nothing', async ({ wi
     .poll(() => cellPx(window), { timeout: 15_000 })
     .toBeGreaterThan(base * 1.1);
 
-  // Both halves of "nothing was written": the dispatcher never posted, and the
-  // server's row still carries no content_zoom.
+  // Both halves of "nothing was written": no post, and no content_zoom.
   expect(await zoomPosts(window), 'no SetContentZoom about a row ascent deletes').toBe(0);
   const after = await gw.getGrid(scratchGridID);
   const shell = (after.tiles ?? []).find((t: any) => t.kind === 'shell')!;

@@ -1,11 +1,8 @@
-// Integration harness for the registry. Boots a real Electron main process,
-// creates a window and a WebviewRegistry, hosts a real WebContentsView on a
-// data: url, then asserts that capturePage yields non-empty JPEG bytes and that
-// a nav event fires. Run with:
+// Integration harness for the registry: a real Electron main process, a real
+// WebContentsView, and the scenarios below run against them. It prints
+// "HARNESS PASS" or "HARNESS FAIL: ..." and exits 0 or 1.
 //
 //   npm run build && xvfb-run -a electron dist/harness/capture-harness.js
-//
-// Prints "HARNESS PASS" or "HARNESS FAIL: ..." and exits 0 or 1.
 import { app, BaseWindow, BrowserWindow, Menu, WebContentsView } from 'electron';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
@@ -17,15 +14,11 @@ import type { NavEvent } from '../main/ipc';
 import { PARK_COORD, SESSION_PARTITION } from '../main/viewutil';
 import { FOCUS_SETTLE_MS } from '../main/focusguard';
 
-// A throwaway Chromium profile per run. The storage-flush scenario asserts what
-// is on disk under SESSION_PARTITION, and a previous run's bytes would answer
-// for this one. It also keeps the harness out of the developer's own Electron
-// profile. Must be set before app is ready.
-//
-// The sweep runs at the start because app.exit() runs no process 'exit'
-// handler, and a cleanup that did run would be followed by Chromium writing a
-// fresh profile skeleton on its way out. Sweeping first leaves at most one
-// run's profile at rest.
+// A throwaway Chromium profile per run, set before app is ready: the
+// storage-flush scenario asserts what is on disk under SESSION_PARTITION, and a
+// previous run's bytes would answer for this one. The sweep runs at the start
+// because app.exit() runs no process 'exit' handler, and Chromium writes a
+// fresh profile skeleton on its way out anyway.
 const PROFILE_PREFIX = 'gridwell-harness-';
 for (const name of fs.readdirSync(os.tmpdir())) {
   if (!name.startsWith(PROFILE_PREFIX)) continue;
@@ -38,11 +31,9 @@ for (const name of fs.readdirSync(os.tmpdir())) {
 const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), PROFILE_PREFIX));
 app.setPath('userData', profileDir);
 
-// The touch-scroll scenario synthesizes TouchEvents inside the hosted page.
 // Chromium exposes the Touch and TouchEvent constructors only when touch events
-// are on. A real touchscreen turns them on by detection; the harness forces
-// them so the synthetic gesture can be built. The production app sets no such
-// switch, because detection is the product behavior.
+// are on, which a real touchscreen does by detection. The production app sets no
+// such switch, because detection is the product behavior.
 app.commandLine.appendSwitch('touch-events', 'enabled');
 
 const DATA_URL =
@@ -69,9 +60,8 @@ async function waitForNonEmptyCapture(
   return '';
 }
 
-// startPage serves one tiny html page on loopback. A data: url has an opaque
-// origin, so it has no localStorage and no same-document navigation; the
-// scenarios that need either need a real origin.
+// A data: url has an opaque origin, so it has no localStorage and no
+// same-document navigation; the scenarios that need either need a real one.
 async function startPage(): Promise<{ url: string; close: () => void }> {
   const server = http.createServer((_req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -110,9 +100,8 @@ app.whenReady().then(async () => {
   console.log(`freeze ok: ${freeze.jpegBase64.length} base64 chars, title=${JSON.stringify(freeze.title)}`);
 
   // ── goBack walks the view's real navigation history ─────────────────────
-  // The bar's back button and the context menu's Back share one owner,
-  // registry.goBack. This pins it against Electron's navigationHistory on a
-  // real view: two loads, one goBack, and the first url is current again.
+  // The bar's back button and the context menu's Back share one owner, pinned
+  // here against Electron's navigationHistory on a real view.
   const FIRST_URL = 'data:text/html,' + encodeURIComponent('<title>First</title>first');
   const SECOND_URL = 'data:text/html,' + encodeURIComponent('<title>Second</title>second');
   await registry.place('paneb', 'u1/46', FIRST_URL, { x: 0, y: 0, width: 400, height: 300 });
@@ -139,10 +128,8 @@ app.whenReady().then(async () => {
   console.log('goBack ok: second → first, no-op at the start');
 
   // ── a view placed while an overlay is open starts parked ────────────────
-  // PlaceArgs.hidden is the renderer's verdict for this frame. A view placed
-  // while the palette is open must land at PARK_COORD, never on top of the
-  // canvas overlay for even one round trip, and the next setHidden(false) moves
-  // it to its real bounds.
+  // A view placed while the palette is open must land at PARK_COORD, never on
+  // top of the canvas overlay for even one round trip.
   const hiddenBounds = { x: 10, y: 20, width: 300, height: 200 };
   await registry.place('pane1h', 'u1/45', DATA_URL, hiddenBounds, 0, '', false, true);
   const parked = registry.viewBoundsFor('pane1h');
@@ -156,12 +143,9 @@ app.whenReady().then(async () => {
   console.log('hidden place ok: parked at PARK_COORD, un-parked to its bounds');
 
   // ── a dead view yields an empty freeze, never a throw ──────────────────
-  // Ascending out of a crashed tab: every view-bound read in remove() throws
-  // once the webContents is gone, and remove() must still complete and hand
-  // back an empty freeze. The wasm side skips the freeze writeback on an
-  // all-empty result, so nothing overwrites the good preview. The crash is
-  // reported too, so the user knows why the tile fell back to its last good
-  // preview.
+  // Ascending out of a crashed tab: every view-bound read in remove() throws,
+  // and remove() must still complete with an empty freeze, which the wasm side
+  // skips writing back. The crash is reported, so the user knows why.
   const deadErrs: string[] = [];
   const reg2 = new WebviewRegistry(win, { onError: (ev) => deadErrs.push(ev.message) });
   await reg2.place('pane2', 'u1/43', DATA_URL, { x: 0, y: 0, width: 400, height: 300 });
@@ -179,12 +163,9 @@ app.whenReady().then(async () => {
   console.log('dead-view remove ok: empty freeze, no throw, the crash reported');
 
   // ── single-finger touch scroll over a live view ─────────────────────────
-  // A finger drag over live web content must scroll the page with the content
-  // following the finger; urlview-preload.ts owns the mechanism. This crosses
-  // the real seam: page TouchEvents, preload listener, IPC through the
-  // production registerWebviewIpc wiring, registry.touchScroll, sendInputEvent,
-  // and Chromium scrolls. It also pins the delta sign against real Chromium:
-  // start mid-page, drag the finger up, and the scroll offset must increase.
+  // The whole seam: page TouchEvents, preload listener, IPC through the
+  // production wiring, registry.touchScroll, sendInputEvent, Chromium scrolls.
+  // It also pins the delta sign: drag the finger up, the offset must increase.
   const rootWin = new BrowserWindow({ show: false });
   const reg3 = new WebviewRegistry(win, {});
   registerWebviewIpc(reg3, rootWin.webContents, win);
@@ -196,9 +177,8 @@ app.whenReady().then(async () => {
   }
   const wc3 = reg3.webContentsFor('pane3')!;
   await wc3.executeJavaScript('window.scrollTo(0, 1000)');
-  // The preload forwards physical screen coords, and the registry converts them
-  // back through getContentBounds and the view bounds. The view sits at content
-  // (0,0), so screen equals the content origin plus the client position.
+  // The view sits at content (0,0), so screen equals the content origin plus
+  // the client position.
   const cb3 = win.getContentBounds();
   await wc3.executeJavaScript(
     `(() => {
@@ -227,13 +207,10 @@ app.whenReady().then(async () => {
   rootWin.destroy();
 
   // ── a view placed on an unfocused pane may not keep OS focus ────────────
-  // Only the focused pane's view may hold OS keyboard focus. A pane goes live
-  // on paths that are not a gesture on the focused pane, such as a workspace
-  // restore walking every leaf, and attaching a WebContentsView and loading a
-  // url hands the new widget focus. The renderer owns the fact and carries it
-  // on PlaceArgs. A registry that assumed the placement was focused would let
-  // the guard return early and the user's next keystrokes would land in a page
-  // they never clicked on.
+  // A pane goes live on paths that are not a gesture on the focused pane, such
+  // as a workspace restore, and attaching a view hands the new widget focus. A
+  // registry that assumed the placement was focused would land the user's next
+  // keystrokes in a page they never clicked on.
   const steals: string[] = [];
   const regF = new WebviewRegistry(win, { onFocusStolen: (ev) => steals.push(ev.paneId) });
   await regF.place('paneU', 'u1/47', DATA_URL, { x: 0, y: 0, width: 400, height: 300 }, 0, '', false, false, false);
@@ -241,8 +218,7 @@ app.whenReady().then(async () => {
     fail(`place(focused=false) recorded focused=${String(regF.focusedFor('paneU'))}`);
   }
   const wcU = regF.webContentsFor('paneU')!;
-  // Force the grab the guard exists for. Chromium emits 'focus' on the
-  // webContents, which is where the guard sits.
+  // Chromium emits 'focus' on the webContents, which is where the guard sits.
   wcU.focus();
   const stealDeadline = Date.now() + 5000;
   while (steals.length === 0 && Date.now() < stealDeadline) {
@@ -263,16 +239,11 @@ app.whenReady().then(async () => {
   console.log('place focus ok: unfocused placement bounced, focused placement kept');
 
   // ── the user's own click into an unfocused live pane is not a steal ──────
-  // Chromium focuses the widget while it routes the press and forwards the
-  // press afterwards, so at the `focus` event neither the browser-process
-  // input-event nor the preload's IPC has arrived. A guard that decided there
-  // would report a steal for the click the user just made.
-  //
-  // The order below is the measured one: focus first, then the press. The press
-  // is a real sendInputEvent, so it raises the same `input-event` on the same
-  // webContents an OS click does. Only the widget-focus half is stood in for,
-  // because sendInputEvent bypasses Chromium's browser-process focus routing
-  // and cannot produce a `focus` event.
+  // At the `focus` event neither the browser-process input-event nor the
+  // preload's IPC has arrived, so a guard deciding there would report a steal
+  // for the click the user just made. The order below is the measured one:
+  // focus first, then a real sendInputEvent press. Only the widget-focus half
+  // is stood in for, because sendInputEvent cannot produce a `focus` event.
   const rootView = new WebContentsView({ webPreferences: { sandbox: false } });
   win.contentView.addChildView(rootView);
   rootView.setBounds({ x: 0, y: 0, width: 800, height: 600 });
@@ -309,10 +280,9 @@ app.whenReady().then(async () => {
   await regC.remove('paneC');
   console.log('click-into-unfocused ok: the press explains the focus, no bounce');
 
-  // Park the view of a fresh steal-scenario registry on an unfocused pane with
-  // OS focus sitting on the root, which is the precondition every steal starts
-  // from. The placement's own grab is bounced first, so the recorder starts
-  // empty and only the deliberate grab below counts.
+  // The precondition every steal starts from: an unfocused pane with OS focus
+  // on the root. The placement's own grab is bounced first, so the recorder
+  // starts empty.
   const armSteal = async (paneId: string, tileId: string, steals: string[]) => {
     const reg = new WebviewRegistry(win, { onFocusStolen: (ev) => steals.push(ev.paneId) });
     await reg.place(paneId, tileId, DATA_URL, { x: 0, y: 0, width: 400, height: 300 }, 0, '', false, false, false);
@@ -334,11 +304,10 @@ app.whenReady().then(async () => {
   };
 
   // ── a page grab is bounced, then confirmed once, then stops ──────────────
-  // Chromium's widget-focus commit can land after the bounce with no further
-  // focus event, so the guard confirms once at FOCUS_SETTLE_MS. Nothing here
-  // hands focus back, so the view still holds it at the confirmation and the
-  // second bounce fires. It must then stop, or a chain would report a steal
-  // every 120 ms forever for a view the app has given up on.
+  // The widget-focus commit can land after the bounce with no further focus
+  // event, so the guard confirms once at FOCUS_SETTLE_MS. Nothing here hands
+  // focus back, so the second bounce fires; it must then stop, or a chain would
+  // report a steal every 120 ms forever.
   const settleSteals: string[] = [];
   const { reg: regD, wc: wcD } = await armSteal('paneD', 'u1/50', settleSteals);
   wcD.focus(); // the page-initiated grab: no press behind it
@@ -366,11 +335,10 @@ app.whenReady().then(async () => {
   console.log('press-during-settle ok: the second bounce is suppressed');
 
   // ── the view dies under the settle timer ────────────────────────────────
-  // remove() cancels the timer, but that only covers a teardown that went
-  // through the registry. A render-process crash or a host-side close leaves
-  // the timer armed over a destroyed WebContents, where every read throws
-  // uncaught inside a timer and hangs main behind an error dialog. Unguarded,
-  // this harness never reaches HARNESS PASS.
+  // remove() cancels the timer only for a teardown that went through the
+  // registry. A crash or a host-side close leaves it armed over a destroyed
+  // WebContents, where every read throws uncaught inside a timer and hangs main
+  // behind an error dialog.
   const deadSteals: string[] = [];
   const { reg: regH, wc: wcH } = await armSteal('paneH', 'u1/52', deadSteals);
   const uncaught: string[] = [];
@@ -387,10 +355,9 @@ app.whenReady().then(async () => {
   console.log('died-under-settle ok: no throw, no phantom steal');
 
   // ── a place() into a pane that already holds a view is loud ─────────────
-  // The renderer closes a pane's live view before placing another, and never
-  // re-places the tile already live there, so this branch is a renderer bug.
-  // The replaced view's freeze has no caller to land in, so the tile's preview
-  // is lost and this report is the only evidence.
+  // The renderer closes a pane's live view before placing another, so this
+  // branch is a renderer bug. The replaced view's freeze has no caller, so the
+  // preview is lost and this report is the only evidence.
   const replaceErrs: string[] = [];
   const regR = new WebviewRegistry(win, { onError: (ev) => replaceErrs.push(ev.message) });
   await regR.place('paneR', 'u1/60', DATA_URL, { x: 0, y: 0, width: 400, height: 300 });
@@ -406,10 +373,8 @@ app.whenReady().then(async () => {
   // ── setBounds returns early when nothing moved ──────────────────────────
   // syncURLViews calls setBounds every frame, so the equal-bounds early return
   // is the difference between a no-op and re-applying the composed zoom sixty
-  // times a second. Zoom makes it observable: the registry only touches
-  // zoomFactor through applyMinWidthZoom, so moving it out from under the
-  // registry and calling setBounds with the same bounds must leave it alone,
-  // while a real bounds change must recompute it.
+  // times a second. Zoom makes it observable, because applyMinWidthZoom is the
+  // only thing in the registry that touches zoomFactor.
   const regB = new WebviewRegistry(win, {});
   const narrow = { x: 0, y: 0, width: 320, height: 300 };
   await regB.place('paneB2', 'u1/62', DATA_URL, narrow);
@@ -427,9 +392,8 @@ app.whenReady().then(async () => {
 
   // ── setHidden carries a focus change with no view change ────────────────
   // Focus and visibility ride the same call because syncURLViews reports both
-  // every frame. A focus-only change must be recorded, since the steal guard
-  // reads it, and must not move the view: the pane did not become hidden, so
-  // parking it would blank live content on a focus move.
+  // every frame. A focus-only change must be recorded and must not move the
+  // view, or a focus move would blank live content.
   const regFo = new WebviewRegistry(win, {});
   const foBounds = { x: 5, y: 6, width: 400, height: 300 };
   await regFo.place('paneFo', 'u1/63', DATA_URL, foBounds, 0, '', false, false, false);
@@ -446,10 +410,9 @@ app.whenReady().then(async () => {
   console.log('setHidden focus ok: tracked on the entry, the view never moved');
 
   // ── remove() cannot detach: the blank-overlay report ────────────────────
-  // A live view left sitting on top of the pane the user just ascended out of.
-  // Forced by destroying the window under the registry, which is what a
-  // host-side window close does: removeChildView then throws, and remove() must
-  // still complete and say why a blank rectangle is covering a pane.
+  // Destroying the window under the registry, which is what a host-side close
+  // does, makes removeChildView throw. remove() must still complete and say why
+  // a blank rectangle is covering a pane.
   const detachErrs: string[] = [];
   const doomed = new BaseWindow({ width: 300, height: 200, show: false });
   const regX = new WebviewRegistry(doomed, { onError: (ev) => detachErrs.push(ev.message) });
@@ -465,8 +428,7 @@ app.whenReady().then(async () => {
   // ── remove() commits DOM storage before the renderer dies ───────────────
   // Chromium flushes localStorage lazily, so an abrupt close can drop a site's
   // unsubmitted draft. The claim is about bytes on disk, so this reads the
-  // partition's own leveldb before and after the remove. A data: url has an
-  // opaque origin and no storage, hence the loopback server.
+  // partition's own leveldb before and after.
   const lsPage = await startPage();
   const MARKER = 'GWFLUSHMARKER12345';
   const lsDir = path.join(
@@ -499,11 +461,9 @@ app.whenReady().then(async () => {
   console.log('storage flush ok: the write was in memory, remove() put it on disk');
 
   // ── remove() cancels a pending settle timer ─────────────────────────────
-  // The timer's closure holds the view, and firing after webContents.close()
-  // would throw uncaught in main. The cancel is invisible from outside, so the
-  // scenario watches the timer itself: every FOCUS_SETTLE_MS timeout the
-  // registry arms is recorded, and the one still pending at the remove must be
-  // the one cleared.
+  // The closure holds the view, and firing after close() would throw uncaught
+  // in main. The cancel is invisible from outside, so this records every
+  // FOCUS_SETTLE_MS timeout the registry arms and checks the pending one.
   const armedSettles: unknown[] = [];
   const clearedSettles: unknown[] = [];
   const realSetTimeout = globalThis.setTimeout;
@@ -533,11 +493,9 @@ app.whenReady().then(async () => {
 
   // ── F11 inside a live view toggles the host window ──────────────────────
   // window.ts owns F11 on the canvas, but a focused live view holds OS keyboard
-  // focus, so that handler never sees the key and the registry mirrors it. The
-  // host window is a stand-in because real fullscreen needs a window manager
-  // and there is none under xvfb, so asserting isFullScreen() on a real
-  // BaseWindow would test the display server. What is pinned is the relay in
-  // both directions: the key reaches the window's own toggle.
+  // focus, so the registry mirrors it. The host window is a stand-in, because
+  // real fullscreen needs a window manager and there is none under xvfb. What
+  // is pinned is the relay: the key reaches the window's own toggle.
   let fullScreen = false;
   const fsCalls: boolean[] = [];
   const fakeWin = {
@@ -565,11 +523,9 @@ app.whenReady().then(async () => {
   console.log('F11 relay ok: the key toggles the host window, both directions');
 
   // ── a same-document navigation is still a navigation ────────────────────
-  // did-navigate fires for a document load; a hash change or a pushState fires
-  // did-navigate-in-page only. Both change the tile's address, and the
-  // renderer's cached address is what the bar shows and what a freeze persists,
-  // so both must emit. A data: url has an opaque origin and can do neither,
-  // hence the loopback page.
+  // A hash change or a pushState fires did-navigate-in-page only, and both
+  // change the tile's address, which is what the bar shows and what a freeze
+  // persists, so both must emit.
   const inPageNavs: NavEvent[] = [];
   const navPage = await startPage();
   const regN = new WebviewRegistry(win, { onNav: (ev) => inPageNavs.push(ev) });
@@ -591,10 +547,9 @@ app.whenReady().then(async () => {
   console.log('in-page nav ok: a hash change and a pushState both report the new address');
 
   // ── a crashed renderer says so ──────────────────────────────────────────
-  // Unreported, render-process-gone leaves the view blank with no signal. The
-  // message names the page, so getURL() is read on a webContents whose renderer
-  // has just died, the read wrapped in a try/catch so a throw cannot swallow
-  // the notice.
+  // Unreported, the view just sits blank. The message names the page, so
+  // getURL() is read on a webContents whose renderer has just died, inside a
+  // try/catch so a throw cannot swallow the notice.
   const crashErrs: string[] = [];
   const regP = new WebviewRegistry(win, { onError: (ev) => crashErrs.push(ev.message) });
   await regP.place('paneP', 'u1/70', DATA_URL, { x: 0, y: 0, width: 400, height: 300 });
@@ -609,9 +564,8 @@ app.whenReady().then(async () => {
   console.log('render-process-gone ok: the crash is reported and names the page');
 
   // ── the min-width zoom survives a navigation ────────────────────────────
-  // zoomFactor is per-document: Chromium resets it across a navigation, so a
-  // narrow pane would reflow to a cramped mobile layout on the second page
-  // unless did-finish-load re-applies the composed factor.
+  // Chromium resets zoomFactor across a navigation, so a narrow pane would
+  // reflow to a cramped mobile layout unless did-finish-load re-applies it.
   const regZ = new WebviewRegistry(win, {});
   await regZ.place('paneZ', 'u1/71', DATA_URL, { x: 0, y: 0, width: 320, height: 300 });
   const wcZ = regZ.webContentsFor('paneZ')!;
@@ -625,10 +579,8 @@ app.whenReady().then(async () => {
   console.log('zoom re-apply ok: the composed factor is back after a navigation');
 
   // ── a mirror capture that fails leaves evidence, once per streak ────────
-  // Otherwise the pane shows a stale frame and nothing says why. The report
-  // fires on the transition into failure and not once per captured frame,
-  // because the pump captures every live pane on a timer and a per-frame report
-  // would bury the log.
+  // Otherwise the pane shows a stale frame and nothing says why. The pump
+  // captures on a timer, so a per-frame report would bury the log.
   const capErrs: string[] = [];
   const regM = new WebviewRegistry(win, { onError: (ev) => capErrs.push(ev.message) });
   await regM.place('paneM', 'u1/72', DATA_URL, { x: 0, y: 0, width: 400, height: 300 });
@@ -643,27 +595,22 @@ app.whenReady().then(async () => {
   console.log('capture streak ok: the failure is reported once, not per frame');
 
   // ── a crashed renderer's frozen mirror is reported, and its recovery too ─
-  // A crashed renderer is not a destroyed view: reading webContents works and
-  // capturePage answers, with an empty image, a rejection, or nothing before
-  // the time box. Each of those opens the streak, and reloading the crashed
-  // renderer is the success that closes it and reports the recovery.
+  // A crashed renderer is not a destroyed view: capturePage still answers, with
+  // an empty image, a rejection, or nothing before the time box. Each opens the
+  // streak, and reloading closes it.
   const streakErrs: string[] = [];
   const regCrash = new WebviewRegistry(win, { onError: (ev) => streakErrs.push(ev.message) });
   await regCrash.place('paneCrash', 'u1/75', DATA_URL, { x: 0, y: 0, width: 400, height: 300 });
   if ((await waitForNonEmptyCapture(regCrash, 'paneCrash', 6000)).length === 0) fail('streak scenario: no frame within 6s');
-  // A control pane in its own registry, never crashed, captured the same way.
-  // A renderer crash sometimes takes the viz process with it under xvfb, and
-  // then capturePage rejects with UnknownVizError for every view in the process
-  // forever, so no mirror can recover because nothing can capture. The control
-  // tells that environment collapse from the product bug this scenario looks
-  // for.
+  // A crash sometimes takes the viz process with it under xvfb, and then
+  // capturePage rejects for every view forever. A control pane that never
+  // crashed tells that environment collapse from the product bug.
   const ctlErrs: string[] = [];
   const regCtl = new WebviewRegistry(win, { onError: (ev) => ctlErrs.push(ev.message) });
   await regCtl.place('paneCtl', 'u1/76', DATA_URL, { x: 400, y: 0, width: 400, height: 300 });
   if ((await waitForNonEmptyCapture(regCtl, 'paneCtl', 6000)).length === 0) fail('control pane: no frame within 6s');
   const wcCrash = regCrash.webContentsFor('paneCrash')!;
   wcCrash.forcefullyCrashRenderer();
-  // The pump is what captures in production; here the harness is the pump.
   // Capture until the report lands, so a crash that takes a moment to reach
   // capturePage is not read as a missing report.
   let sawFailing = false;
@@ -693,9 +640,8 @@ app.whenReady().then(async () => {
     await new Promise((r) => setTimeout(r, 100));
   }
   if (!recoveredFrame && ctlMisses >= 3) {
-    // Nothing in this process can capture, so there is no recovery to observe.
-    // The failing half above already asserted, and capturestreak.test.ts owns
-    // the transition.
+    // Nothing in this process can capture, so there is no recovery to observe;
+    // capturestreak.test.ts owns the transition.
     console.log(
       'capture streak SKIPPED the recovery half: the crash took the compositor with it, ' +
         `so the untouched control pane stopped capturing too (xvfb artifact) — control said ${JSON.stringify(ctlErrs)}`,
@@ -706,8 +652,7 @@ app.whenReady().then(async () => {
     if (recovered.length !== 1) {
       fail(`recovery was reported ${recovered.length} times, want 1 (errors: ${JSON.stringify(streakErrs)})`);
     }
-    // The streak is closed, so a further good capture says nothing more, and
-    // the failing report never fired per frame while the renderer was down.
+    // The streak is closed, so a further good capture says nothing more.
     if ((await regCrash.capture('paneCrash')).length === 0) fail('a recovered mirror stopped capturing');
     if (streakErrs.filter((m) => m.includes('mirror capture recovered')).length !== 1) {
       fail('a healthy capture re-reported recovery');
@@ -722,11 +667,9 @@ app.whenReady().then(async () => {
 
   // ── Freeze Page appears only where there is something to freeze ─────────
   // canFreeze is the registry's half of the gating; contextmenu.test.ts owns
-  // the template's arms and url-circle-menu.spec.ts the durable positive. Here
-  // the registry reads `durable` off the entry: an ephemeral visit has no tile
-  // to re-descend into, so offering the item would promise a freeze that lands
-  // nowhere. The menu is built for real and popped through a stand-in, because
-  // a native popup under xvfb cannot be read back.
+  // the template's arms. An ephemeral visit has no tile to re-descend into, so
+  // offering the item would promise a freeze that lands nowhere. The menu is
+  // popped through a stand-in, because a native popup under xvfb cannot be read.
   const menuCtor = Menu as unknown as {
     buildFromTemplate: (t: { label?: string }[]) => { popup: (o?: unknown) => void };
   };
