@@ -1,14 +1,7 @@
-// Package tmux owns the gridwell-private tmux server: its socket location, its
-// config file, and the commands to create, attach, kill, and enumerate
-// sessions. It spawns no PTYs. It composes the argv for `tmux ...` and shells
-// out for the metadata commands, and shelldriver drives the PTY-attaching
-// exec.
-//
-// One Controller is one tmux server. `-L <socket>` isolates that server from
-// the user's daily tmux, so an arbitrary user .tmux.conf never leaks into a
-// shell tile and gridwell's session names collide with nothing the user runs
-// by hand. `-f <our-config>` pins the prefix, scrollback, status bar, and TERM
-// to what gridwell expects.
+// Package tmux owns the gridwell-private tmux server. It spawns no PTYs;
+// shelldriver drives the PTY-attaching exec. One Controller is one tmux
+// server, isolated by `-L <socket>` so a user .tmux.conf never leaks into a
+// shell tile and session names collide with nothing run by hand.
 package tmux
 
 import (
@@ -23,24 +16,17 @@ import (
 	"strings"
 )
 
-// gridwellConfig is the tmux server config gridwell writes once at New(). It
-// carries no user-facing chrome:
+// gridwellConfig is written once at New:
 //
-//   - status off: a bottom status bar would duplicate Gridwell's own pane
-//     chrome.
-//   - history-limit 50000: per-pane scrollback. The default 2000 is far too
-//     small for a working shell.
-//   - default-terminal: match the xterm-256color xterm.js claims upstream, so
-//     $TERM is sane inside bash.
-//   - escape-time 0: tmux's default 500ms meta-key delay interferes with
-//     terminal apps reading raw escape sequences.
-//   - allow-passthrough on: the gridwell-open shim emits its OSC 5522 url
-//     sequence through tmux's DCS passthrough, which is off by default.
-//   - mouse on: xterm.js keeps the tmux client in the alternate buffer, where
-//     a wheel is arrow keys and the history above is reachable only by C-b [.
-//     With mouse on, wheel-up enters copy-mode and scrolls the 50k-line
-//     history and wheel-down at the bottom drops back to live. Apps that
-//     request mouse reporting still receive it through passthrough.
+//   - status off: a status bar would duplicate Gridwell's pane chrome.
+//   - history-limit: the default 2000 is too small for a working shell.
+//   - default-terminal: what xterm.js claims upstream.
+//   - escape-time 0: the 500ms meta delay interferes with apps reading raw
+//     escape sequences.
+//   - allow-passthrough on: the shim's OSC 5522 rides tmux's DCS passthrough.
+//   - mouse on: without it xterm.js keeps the client in the alternate buffer,
+//     where a wheel is arrow keys. Apps requesting mouse reporting still
+//     receive it through passthrough.
 const gridwellConfig = `set-option -g status off
 set-option -g history-limit 50000
 set-option -g default-terminal "xterm-256color"
@@ -49,12 +35,10 @@ set-option -g allow-passthrough on
 set-option -g mouse on
 `
 
-// browserShimScript is the $BROWSER target injected into every new shell
-// session. It hands the url back to the gridwell terminal as an OSC 5522
-// sequence, which the client turns into an ephemeral url descent, rather than
-// launching a browser on the host. Inside tmux the sequence rides the DCS
-// passthrough wrapper with inner ESCs doubled, which is what allow-passthrough
-// unwraps for the outer terminal.
+// browserShimScript is the $BROWSER target injected into every new session. It
+// hands the url back as an OSC 5522 sequence, which the client turns into an
+// ephemeral url descent. Inside tmux that rides the DCS passthrough wrapper
+// with inner ESCs doubled.
 const browserShimScript = `#!/bin/sh
 # gridwell-open: hand a url back to the gridwell terminal (issue #90).
 url="$1"
@@ -65,22 +49,18 @@ else
 fi
 `
 
-// shadowLauncherNames are the url-opening commands shadowed in front of PATH
-// for new shell sessions. $BROWSER alone is not enough: emacs browse-url execs
-// xdg-open directly, and a desktop-backed xdg-open resolves the handler
-// through the desktop environment without ever reading $BROWSER. gio stays
-// unshadowed because it is a general-purpose file tool and every flow that
-// would reach `gio open` goes through the shadowed xdg-open first.
+// shadowLauncherNames go in front of PATH because $BROWSER alone is not
+// enough: emacs browse-url execs xdg-open directly, and a desktop-backed
+// xdg-open resolves the handler without reading $BROWSER. gio stays unshadowed,
+// every flow reaching `gio open` passing the shadowed xdg-open first.
 var shadowLauncherNames = []string{
 	"xdg-open", "gnome-open", "kde-open",
 	"x-www-browser", "www-browser", "sensible-browser",
 }
 
-// shadowLauncherScript is the body of every shadow launcher. Web urls go to
-// the gridwell-open shim, the first %q. Anything else, since xdg-open opens
-// files too, falls through to the real command of the same name by stripping
-// the shadow dir, the second %q, from PATH and re-exec'ing, so host workflows
-// keep working and the script can never exec itself.
+// shadowLauncherScript sends web urls to the shim (the first %q) and falls
+// through to the real command of the same name by stripping the shadow dir
+// (the second %q) from PATH, so it can never exec itself.
 const shadowLauncherScript = `#!/bin/sh
 # gridwell shadow launcher (issue #166): web urls come back to gridwell.
 case "$1" in
@@ -99,39 +79,25 @@ export PATH="$newpath"
 exec "$(basename "$0")" "$@"
 `
 
-// Controller is one gridwell-owned tmux server. Construct with New; the
-// returned cleanup removes the on-disk config file.
+// Controller is one gridwell-owned tmux server. Construct with New.
 type Controller struct {
-	// binary is the tmux executable, which tests point at a stub.
-	binary string
-	// socketName is passed to `tmux -L <name>`. With the runtime socket dir,
-	// /tmp/tmux-<uid> by default, it is the server's gridwell-only address.
+	// binary: tests point it at a stub.
+	binary     string
 	socketName string
-	// configPath is the file passed to `tmux -f <path>`, under os.TempDir.
 	configPath string
-	// shell is the login shell spawned inside a newly-created session,
-	// resolved once in New and used verbatim by Args. Only ModeCreate
-	// consults it: an existing tmux session keeps the shell it was created
-	// with.
+	// shell: only ModeCreate consults it, an existing session keeping the
+	// shell it was created with.
 	shell string
-	// browserShim is the path of the gridwell-open script, which ModeCreate
-	// injects as $BROWSER so terminal apps hand urls back to gridwell.
+	// browserShim is injected as $BROWSER by ModeCreate.
 	browserShim string
-	// shadowDir is the directory of shadow launchers ModeCreate prepends to
-	// the session PATH, catching programs that exec a system opener directly
-	// instead of reading $BROWSER.
+	// shadowDir catches programs that exec a system opener instead of
+	// reading $BROWSER.
 	shadowDir string
 }
 
-// New initializes a Controller on the given socket name, writing the config
-// file and the shim scripts under os.TempDir; the returned cleanup func
-// removes them. It errors only on filesystem failures, because tmux is not
-// invoked here: the server is lazy-started by the first command.
-//
-// binary may be "" to default to "tmux" looked up on $PATH. shell is the login
-// shell for newly-created sessions, from the `shell:` config key, and this is
-// the one place it is resolved: "" falls back to $SHELL, then "bash". An
-// existing tmux session keeps the shell it was created with.
+// New errors only on filesystem failures, tmux not being invoked here: the
+// server is lazy-started by the first command. It is the one place shell is
+// resolved: "" falls back to $SHELL, then "bash".
 func New(socketName, binary, shell string) (*Controller, func() error, error) {
 	if socketName == "" {
 		return nil, nil, errors.New("tmux: socketName must be non-empty")
@@ -145,11 +111,8 @@ func New(socketName, binary, shell string) (*Controller, func() error, error) {
 	if shell == "" {
 		shell = "bash"
 	}
-	// Stable per-socket paths, one directory per tmux socket, overwritten on
-	// every New because the contents are static. A per-boot temp path would
-	// leak an artifact per server start and would let a /tmp cleaner delete a
-	// running session's shim; a stable path survives restarts, so a restarted
-	// server's long-lived sessions still resolve the same shim.
+	// Stable per-socket paths. A per-boot temp path would leak an artifact
+	// per start and let a /tmp cleaner delete a running session's shim.
 	dir := filepath.Join(os.TempDir(), "gridwell-tmux-"+socketName)
 	shadowDir := filepath.Join(dir, "shadow-bin")
 	if err := os.MkdirAll(shadowDir, 0o700); err != nil {
@@ -183,10 +146,7 @@ func New(socketName, binary, shell string) (*Controller, func() error, error) {
 	return c, cleanup, nil
 }
 
-// writeShadowLaunchers fills the shadow bin dir: one launcher per
-// shadowLauncherNames, each forwarding web urls to the gridwell-open shim at
-// shimPath and falling through to the real command otherwise. dir is the
-// stable per-socket location, and contents overwrite idempotently.
+// writeShadowLaunchers overwrites idempotently.
 func writeShadowLaunchers(dir, shimPath string) error {
 	body := fmt.Sprintf(shadowLauncherScript, shimPath, dir)
 	for _, name := range shadowLauncherNames {
@@ -201,23 +161,10 @@ func writeShadowLaunchers(dir, shimPath string) error {
 	return nil
 }
 
-// Args returns the argv for spawning a tmux client connected to the
-// session named by tileID. Suitable for handing to shelldriver.Start
-// (the first element is the executable; the rest are its arguments).
-//
-// When mode is ModeCreate the session is created if missing (`-A`
-// flag on new-session): used for fresh tiles where no snapshot yet
-// exists. When mode is ModeAttach the client attaches to an EXISTING
-// session and tmux exits non-zero if the session is gone: used for
-// snapshotted tiles where "session gone" must surface to the wasm so
-// the refresh button can hide.
-//
-// startDir is the cwd for the shell process inside a newly-created
-// session; ignored on attach (tmux already remembers where the shell
-// is). Empty defaults to $HOME inside the spawned process.
-//
-// cols and rows seed the tmux window size; tmux propagates SIGWINCH
-// from later client resizes through the existing PTY interface.
+// Args is the argv for shelldriver.Start. ModeAttach exits non-zero if the
+// session is gone, so that surfaces to the wasm and the refresh button can
+// hide. startDir is ignored on attach and "" defaults to $HOME; later resizes
+// ride SIGWINCH through the PTY.
 func (c *Controller) Args(tileID string, mode Mode, cols, rows uint16, startDir string) []string {
 	name := SessionName(tileID)
 	args := []string{c.binary, "-L", c.socketName, "-f", c.configPath}
@@ -228,10 +175,7 @@ func (c *Controller) Args(tileID string, mode Mode, cols, rows uint16, startDir 
 			args = append(args, "-c", startDir)
 		}
 		if c.browserShim != "" {
-			// Terminal apps that read $BROWSER hand the url to the
-			// gridwell-open shim, which sends it back as an OSC and
-			// descends into an ephemeral url tile instead of opening a
-			// host browser.
+			// See browserShimScript.
 			args = append(args, "-e", "BROWSER="+c.browserShim)
 		}
 		args = append(args,
@@ -244,16 +188,11 @@ func (c *Controller) Args(tileID string, mode Mode, cols, rows uint16, startDir 
 	return args
 }
 
-// Env returns the environment for spawning the tmux client that may
-// lazy-start the gridwell tmux server. tmux refuses to apply a PATH from -e
-// or set-environment to panes — a pane's PATH comes only from the server
-// process's environment — so the shadow-launcher dir must ride the env of the
-// client that starts the server. The shadow therefore takes effect when the
-// gridwell tmux server starts, and a server already running keeps its old
-// PATH until it exits, like any existing session's env. TERM is defaulted
-// here because handing shelldriver an explicit env bypasses its own fallback.
-// This is best-effort: a login script that hard-resets PATH drops the shadow,
-// as it would any env-based injection.
+// Env carries the shadow dir on the client that may lazy-start the server,
+// because tmux refuses to apply a PATH from -e or set-environment to panes; a
+// server already running keeps its old PATH until it exits, and a login script
+// that hard-resets PATH drops the shadow. TERM is defaulted here because an
+// explicit env bypasses shelldriver's own fallback.
 func (c *Controller) Env() []string {
 	env := filterEnv(os.Environ(), "PATH", "TERM")
 	path := os.Getenv("PATH")
@@ -273,35 +212,27 @@ func (c *Controller) Env() []string {
 	return env
 }
 
-// Mode is the create-or-attach choice made once per attach. internal/local's
-// shell stream owns it, deriving allowCreate from the tile's PreviewBlobID.
+// Mode is owned by internal/local's shell stream, which derives allowCreate
+// from the tile's PreviewBlobID.
 type Mode int
 
 const (
-	// ModeCreate creates the session if missing and attaches otherwise. It
-	// is used for fresh tiles, with no snapshot yet: the only case where
-	// silently spawning a new shell is the right behavior.
+	// ModeCreate is for fresh tiles with no snapshot, the only case where
+	// silently spawning a new shell is right.
 	ModeCreate Mode = iota
-	// ModeAttach attaches to an existing session and fails if it is gone. It
-	// is used when the tile has been snapshotted: silently spawning fresh
-	// state would discard whatever the user thought was still running.
+	// ModeAttach fails if the session is gone. A snapshotted tile silently
+	// spawning fresh state would discard what the user thought was running.
 	ModeAttach
 )
 
-// SessionName is the canonical mapping from a qualified tile id to a tmux
-// session name. The tile id is the globally qualified "<plugin-uuid>/<id>",
-// so shells in different namespaces never collide. It is base64url-encoded
-// because tmux session names cannot contain "/", ".", or ":", and the
-// encoding is reversible through ParseSessionName so the orphan sweep can map
-// a session back to its tile id. It is stable across restarts, so the same
-// tile reattaches.
+// SessionName takes a qualified id, so shells in different namespaces never
+// collide, and base64url-encodes it because a tmux session name cannot contain
+// "/", "." or ":". It is stable across restarts.
 func SessionName(tileID string) string {
 	return "gridwell-" + base64.RawURLEncoding.EncodeToString([]byte(tileID))
 }
 
-// ParseSessionName is the inverse of SessionName. Returns the qualified tile id
-// and ok=true when name matches the gridwell prefix and decodes cleanly. Used
-// by the startup orphan cleanup to map listed sessions back to tile ids.
+// ParseSessionName is the inverse of SessionName, for the orphan cleanup.
 func ParseSessionName(name string) (string, bool) {
 	const prefix = "gridwell-"
 	if !strings.HasPrefix(name, prefix) {
@@ -314,15 +245,9 @@ func ParseSessionName(name string) (string, bool) {
 	return string(raw), true
 }
 
-// HasSession reports whether the gridwell session for tileID exists on this
-// controller's socket, through `tmux has-session`, which exits 0 if present.
-// The error return is non-nil only on infrastructure failures such as a
-// missing binary or an unwritable config. Both "session does not exist" and
-// the first-launch "no server running yet" yield (false, nil); they are
-// equivalent for the caller.
-//
-// Concurrency: safe to call from multiple goroutines; tmux's IPC
-// serializes commands on the socket.
+// HasSession errors only on infrastructure failures. Both "session does not
+// exist" and the first-launch "no server running yet" yield (false, nil). It
+// is safe to call concurrently; tmux's IPC serializes on the socket.
 func (c *Controller) HasSession(tileID string) (bool, error) {
 	name := SessionName(tileID)
 	out, err := c.run("has-session", "-t", name)
@@ -335,9 +260,7 @@ func (c *Controller) HasSession(tileID string) (bool, error) {
 	return false, fmt.Errorf("tmux has-session %s: %w (output: %q)", name, err, strings.TrimSpace(string(out)))
 }
 
-// KillSession terminates the session for tileID. It is a no-op if the
-// session is already gone or the tmux server is not running, and returns an
-// error only on infrastructure failures.
+// KillSession is a no-op if the session or the server is already gone.
 func (c *Controller) KillSession(tileID string) error {
 	name := SessionName(tileID)
 	out, err := c.run("kill-session", "-t", name)
@@ -350,10 +273,8 @@ func (c *Controller) KillSession(tileID string) error {
 	return fmt.Errorf("tmux kill-session %s: %w (output: %q)", name, err, strings.TrimSpace(string(out)))
 }
 
-// ListSessions returns the tile ids of every gridwell-prefixed session on
-// this controller's socket. Sessions whose names do not match the gridwell
-// pattern are ignored. An empty result with no error means the tmux server
-// is not running yet.
+// ListSessions ignores names that do not match the gridwell pattern; an empty
+// result with no error means the server is not running yet.
 func (c *Controller) ListSessions() ([]string, error) {
 	out, err := c.run("list-sessions", "-F", "#{session_name}")
 	if err != nil {
@@ -375,10 +296,8 @@ func (c *Controller) ListSessions() ([]string, error) {
 	return ids, nil
 }
 
-// PaneCommand returns the command running in the foreground of the tile's
-// tmux session: what tmux shows as the window's automatic name. Returns ""
-// with no error when the session is gone or the server is not running, so
-// callers can skip relabeling.
+// PaneCommand is tmux's automatic window name, "" with no error when the
+// session is gone so callers skip relabeling.
 func (c *Controller) PaneCommand(tileID string) (string, error) {
 	name := SessionName(tileID)
 	out, err := c.run("display-message", "-t", name, "-p", "#{pane_current_command}")
@@ -391,10 +310,9 @@ func (c *Controller) PaneCommand(tileID string) (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
-// run executes `tmux -L <socket> -f <config> <args...>`. It returns combined
-// stdout and stderr so callers can sniff for the "no session" and "no server"
-// sentinels, and inherits the parent process's environment minus TMUX so the
-// gridwell server can run inside the user's own tmux without recursing.
+// run returns combined output so callers can sniff for the "no session" and
+// "no server" sentinels, and drops TMUX so the gridwell server can run inside
+// the user's own tmux without recursing.
 func (c *Controller) run(args ...string) ([]byte, error) {
 	full := append([]string{"-L", c.socketName, "-f", c.configPath}, args...)
 	cmd := exec.Command(c.binary, full...)
@@ -406,18 +324,8 @@ func (c *Controller) run(args ...string) ([]byte, error) {
 	return buf.Bytes(), err
 }
 
-// isMissingSessionErr distinguishes "tmux says no such session"
-// from any other failure. tmux's exact wording varies by command:
-//
-//   - has-session / kill-session for a missing session by name:
-//     "can't find session: NAME"
-//   - attach-session when there are no sessions at all:
-//     "no sessions"
-//   - older / non-OpenBSD ports occasionally use "session not found"
-//     or "no such session"
-//
-// Match all of them so a renamed diagnostic in a future tmux release does
-// not silently break the "is the session alive?" path.
+// isMissingSessionErr matches every wording tmux uses, so a renamed diagnostic
+// in a future release does not silently break the liveness path.
 func isMissingSessionErr(out []byte, err error) bool {
 	if err == nil {
 		return false
@@ -429,14 +337,7 @@ func isMissingSessionErr(out []byte, err error) bool {
 		strings.Contains(low, "no sessions")
 }
 
-// isNoServerErr distinguishes the expected first-launch "tmux server is not
-// running yet" from a real failure. The observed messages on tmux 3.x are:
-//
-//   - "no server running on /tmp/tmux-NNN/socketname" (some commands)
-//   - "error connecting to /tmp/tmux-NNN/socketname (No such file or
-//     directory)" (others, when the socket file is missing)
-//
-// Both mean the same thing: nothing exists for us to talk to.
+// isNoServerErr matches both tmux 3.x wordings for a server not running yet.
 func isNoServerErr(out []byte, err error) bool {
 	if err == nil {
 		return false
@@ -447,9 +348,7 @@ func isNoServerErr(out []byte, err error) bool {
 		strings.Contains(low, "no such file or directory")
 }
 
-// filterEnv returns env minus any entry whose key matches one of drop. It
-// strips TMUX from the spawned process so a tmux server running this process
-// never causes recursion when shelling out for metadata commands.
+// filterEnv drops TMUX; see run.
 func filterEnv(env []string, drop ...string) []string {
 	out := make([]string, 0, len(env))
 	dropSet := map[string]bool{}
