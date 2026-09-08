@@ -6,20 +6,11 @@ import (
 	"strings"
 )
 
-// The three shapes a chain segment can take. An id is a chain of segments
-// (see QualifyID); every reader that has to tell "is this a namespace hop or
-// a tile?" — the router's peel, the URL grammar — asks ShapeOf, so the shapes
-// are decided once and cannot drift apart segment by segment.
-//
-//   - ShapeNamespace: a plugin or node id, letter-leading by
-//     idshape.NewShortID, or a connection name.
-//   - ShapeRow: a store row id, decimal digits ("14").
-//   - ShapeKey: a plugin key carried in the id itself — "~" followed by the
-//     key's unpadded base64url. A tile a plugin has never had to mint a row
-//     for is named by what it IS, not by a row that browsing wrote.
-//
+// SegmentShape is what one segment of a chained id is: a namespace (a plugin
+// or node id, or a connection name), a store row id, or a plugin key carried
+// in the id itself so a tile no plugin minted a row for is still nameable.
 // The three are disjoint by construction: a row is all digits, a key form
-// leads with "~", and a namespace segment is neither.
+// leads with "~", a namespace segment is neither.
 type SegmentShape string
 
 const (
@@ -29,27 +20,23 @@ const (
 )
 
 // keyTilePrefix marks a key-form tile segment. "~" is unreserved in a URL
-// path (RFC 3986), is not a base64url character, and cannot begin a row id or
-// a letter-leading namespace segment, so one byte separates all three shapes.
+// path, is not a base64url character, and cannot begin a row id or a
+// letter-leading namespace segment.
 const keyTilePrefix = "~"
 
-// keyTileEncoding is the key codec: unpadded base64url, decoded strictly so
-// that exactly one segment spells any given key. Its alphabet excludes "/",
-// which is what keeps a key chain-safe however many slashes the key itself
-// contains, and needs no percent-escaping in a URL path.
+// keyTileEncoding is strict, so exactly one segment spells any given key. Its
+// alphabet excludes "/", which keeps a key chain-safe however many slashes
+// the key contains, and needs no escaping in a URL path.
 var keyTileEncoding = base64.RawURLEncoding
 
-// KeyTileID renders a plugin key as a tile segment: "~" plus the key's
-// unpadded base64url. Any byte string is a legal key — a filesystem path, a
-// URL, an opaque handle — and round-trips through TileKey.
+// KeyTileID renders a plugin key as a tile segment. Any byte string is a legal
+// key and round-trips through TileKey.
 func KeyTileID(key string) string {
 	return keyTilePrefix + keyTileEncoding.EncodeToString([]byte(key))
 }
 
-// TileKey decodes a key-form tile segment back to its plugin key. ok is false
-// for a segment of any other shape, and for a "~" segment whose payload is
-// not canonical base64url — the encoding is strict, so TileKey(seg) succeeds
-// exactly when ShapeOf(seg) is ShapeKey.
+// TileKey decodes a key-form tile segment. It succeeds exactly when ShapeOf is
+// ShapeKey.
 func TileKey(seg string) (key string, ok bool) {
 	rest, cut := strings.CutPrefix(seg, keyTilePrefix)
 	if !cut {
@@ -62,9 +49,8 @@ func TileKey(seg string) (key string, ok bool) {
 	return string(b), true
 }
 
-// ShapeOf classifies one chain segment. It is total: a segment that is
-// neither a row id nor a well-formed key form is a namespace segment, which
-// is what a reader with no other information must assume.
+// ShapeOf is total: anything that is neither a row id nor a well-formed key
+// form is a namespace segment.
 func ShapeOf(seg string) SegmentShape {
 	if _, err := strconv.ParseInt(seg, 10, 64); err == nil {
 		return ShapeRow
@@ -75,36 +61,18 @@ func ShapeOf(seg string) SegmentShape {
 	return ShapeNamespace
 }
 
-// IsTileSegment reports whether a segment names a tile inside a namespace
-// rather than a hop to another one. It is the URL grammar's split rule and
-// the routing peel's shape question, asked in one place.
+// IsTileSegment: a tile inside a namespace, rather than a hop to another one.
 func IsTileSegment(seg string) bool {
 	s := ShapeOf(seg)
 	return s == ShapeRow || s == ShapeKey
 }
 
-// OwnerNamespaceOf returns the namespace the node whose id is nodeID hands a
-// qualified id to: the segments its router peels before anything else sees
-// them. It is Server.resolve's peel as a value, so a node and a client ask
-// the same question of the same id and cannot answer differently — which is
-// how a client can tell that a reference names a namespace this node does not
-// declare.
-//
-// The answer is the first segment, except under the node's own id, where a
-// second NAMESPACE segment is a connection name and belongs to it
-// ("<node>/<conn>"); a tile segment there is the home store, whose namespace
-// is the node itself. Deeper segments are the far node's frame and are never
-// this node's to name. "" for a bare, unqualified id, which names no
-// namespace at all.
-//
-// Not NamespaceOf, which is everything before an id's LAST segment — the
-// store-identity question ("do these two ids live in the same store"). The
-// two differ on every chain longer than one hop, and only this one answers
-// "which of my namespaces owns this".
-//
-// nodeID may be "" for a reader that does not know the node's own id; the
-// answer is then always the first segment, which is what a receiver with no
-// home of its own can say.
+// OwnerNamespaceOf returns the namespace the node whose id is nodeID routes a
+// qualified id to: Server.resolve's peel as a value, so a client and a node
+// cannot disagree about whether a reference names a namespace this node
+// declares. The answer is the first segment, except under the node's own id,
+// where a second namespace segment is a connection name and belongs to it. ""
+// for a bare id. Not NamespaceOf, which answers store identity instead.
 func OwnerNamespaceOf(id, nodeID string) string {
 	first, rest, ok := SplitID(id)
 	if !ok {
@@ -124,18 +92,9 @@ func OwnerNamespaceOf(id, nodeID string) string {
 }
 
 // ChainedThrough reports whether a qualified id is served through the
-// namespace chain ns: the inverse of QualifyID, at any depth. Chains compose
-// by concatenation — every hop prepends exactly one segment to ids AND to a
-// health event's plugin uuid alike (TransitQualifyGrid, QualifyEventIDs) — so
-// "is this id behind that namespace" is exactly "does the chain start with
-// it", on a segment boundary. "n1/laptop" is chained through neither "n1x"
-// nor "n1/laptop" itself, and "n1/laptop/far9xyz/1" is chained through both
-// "n1/laptop" and "n1/laptop/far9xyz".
-//
-// Not OwnerNamespaceOf, which peels only what ONE node routes by and stops:
-// it cannot name a far node's plugin, and a health event names exactly that
-// once the transition crosses a hop. Whoever asks "which ids does this source
-// answer for" needs the whole chain, not one node's peel.
+// namespace chain ns: a prefix on a segment boundary, so "n1/laptop" is
+// chained through neither "n1x" nor itself. Whoever asks which ids a source
+// answers for needs the whole chain, which OwnerNamespaceOf does not give.
 func ChainedThrough(id, ns string) bool {
 	return ns != "" && strings.HasPrefix(id, ns+"/")
 }

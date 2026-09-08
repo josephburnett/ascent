@@ -1,24 +1,16 @@
 package rpc
 
-// Beacon bodies for the unload flush. An ordinary RPC is fire-and-forget
-// and the page dies first, so a quit or reload inside the settle window
-// loses the last write. navigator.sendBeacon survives the page but needs a
-// raw (path, body) pair; these helpers produce the exact Connect-unary wire
-// form the ordinary client call would send, as proto-JSON, which the Connect
-// handler accepts on its unary POSTs.
-//
-// The WriteContent beacon hand-builds the one Connect client-streaming
-// envelope (a single enveloped message; the request stream ends with the
-// body) so unsaved text survives a tab close. That envelope is pinned to
-// the real Connect handler by a seam test in internal/server, so a shift in
-// the protocol framing fails the pin rather than the user's last paragraph.
+// Beacon bodies for the unload flush. An ordinary RPC dies with the page, so a
+// quit inside the settle window loses the last write; these hand
+// navigator.sendBeacon the raw (path, body) pair of the Connect request the
+// ordinary call would have sent, pinned to the real handlers by a seam test in
+// internal/server.
 //
 // The framing and url-state beacons carry no version claim, so nothing they
-// send can be refused for losing a race the page is no longer around to
-// re-run. The WriteContent beacon claims the save basis, as every content
-// write must; a conflict there is a genuine concurrent edit that the beacon
-// cannot resolve, so that one write is lost visibly on the next load rather
-// than silently overwriting the other edit.
+// send is refused for losing a race the page cannot re-run. The WriteContent
+// beacon claims the save basis, as every content write must, so a genuine
+// concurrent edit is lost visibly on the next load rather than silently
+// overwriting the other.
 
 import (
 	"encoding/binary"
@@ -33,8 +25,8 @@ import (
 // BeaconJSONType is the content type every unary beacon body carries.
 const BeaconJSONType = "application/json"
 
-// BeaconStreamType is the content type of the WriteContent beacon's
-// enveloped body (the Connect streaming protocol over proto-JSON).
+// BeaconStreamType is the content type of the WriteContent beacon's enveloped
+// body.
 const BeaconStreamType = "application/connect+json"
 
 func beacon(procedure string, m proto.Message) (path string, body []byte) {
@@ -45,11 +37,9 @@ func beacon(procedure string, m proto.Message) (path string, body []byte) {
 	return procedure, b
 }
 
-// SetTileBeacon is the beacon form of Client.SetTile. The preview jpeg is
-// dropped: the beacon queue budget is about 64 KB, which a jpeg would
-// exhaust, and the store skips an empty preview, so the tile keeps its
-// previous frozen face rather than losing the address, title, and history a
-// live page navigated to.
+// SetTileBeacon drops the preview jpeg, which would exhaust the roughly 64 KB
+// beacon budget; the store skips an empty preview, so the tile keeps its old
+// face and still gets the address and title the live page navigated to.
 func SetTileBeacon(req *pb.SetTileRequest) (path string, body []byte) {
 	r := proto.Clone(req).(*pb.SetTileRequest)
 	r.Preview = nil
@@ -62,23 +52,17 @@ func SetFramingBeacon(req *pb.SetFramingRequest) (path string, body []byte) {
 	return beacon(gridwellv1connect.GridwellSetFramingProcedure, req)
 }
 
-// DeleteTileBeacon is the beacon form of Client.DeleteTile. Only one delete
-// parks and therefore reaches the unload drain: the ephemeral visit's
-// cleanup, which is off-grid — nothing on screen says it did not happen, and
-// a shell's tmux session outlives it.
+// DeleteTileBeacon: the only delete that parks and so reaches the unload drain
+// is the ephemeral visit's off-grid cleanup.
 func DeleteTileBeacon(req *pb.DeleteTileRequest) (path string, body []byte) {
 	return beacon(gridwellv1connect.GridwellDeleteTileProcedure, req)
 }
 
-// WriteContentBeacon is the beacon form of Client.WriteContent, and the one
-// streaming beacon. The Connect client-streaming request body is a sequence
-// of enveloped messages (1 flags byte, 4-byte big-endian length, payload),
-// and a complete WriteContent is one message (tile_id, version, data — the
-// same single-message shape writeAllContent sends), so the whole request is
-// exactly one envelope. Returns a nil body when data will not fit the
-// roughly 64 KB beacon queue budget, so the caller falls back to the
-// ordinary async post rather than beaconing something the browser will
-// refuse or truncate.
+// WriteContentBeacon is the one streaming beacon: a complete WriteContent is a
+// single Connect envelope (1 flags byte, 4-byte big-endian length, payload).
+// Returns a nil body when the data will not fit the beacon budget, so the
+// caller falls back to the ordinary async post rather than beaconing something
+// the browser truncates.
 func WriteContentBeacon(tileID string, version int64, data []byte) (path string, body []byte) {
 	const beaconBudget = 60 * 1024
 	m, err := protojson.Marshal(&pb.WriteContentRequest{TileId: tileID, Version: version, Data: data})
