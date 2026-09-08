@@ -31,25 +31,6 @@ func drawImageContain(c js.Value, img js.Value, x, y, w, h float64) {
 	c.Call("drawImage", img, dx, dy, dw, dh)
 }
 
-// pagePreviewBlobID is the cache key for a serves_page tile's preview. Page
-// tiles have no preview_blob_id, because the owning plugin derives the frozen
-// face from the content itself, so there is no generation counter to key
-// freshness by. A fixed sentinel fetches once per session.
-const pagePreviewBlobID = -1
-
-// previewBlobKey resolves the urlPreview cache key for a tile, 0 meaning no
-// preview and no fetch. The one keying rule for every preview draw and
-// fetch.
-func previewBlobKey(n *gridwellv1.Tile) int64 {
-	if n.PreviewBlobId != 0 {
-		return n.PreviewBlobId
-	}
-	if n.ServesPage {
-		return pagePreviewBlobID
-	}
-	return 0
-}
-
 // drawPreviewFace paints a content tile's frozen face, running fallback when
 // nothing is cached. One owner of "cached preview or stand-in", so no tile
 // kind drifts into its own answer.
@@ -83,8 +64,8 @@ func (a *App) drawURLTileInPane(n *gridwellv1.Tile, x, y, w, h float64) {
 	// The native view paints over this box, so the JPEG here shows while it
 	// is parked during a gesture. Bounds are syncURLViews'.
 	withClip(a.cctx, x, y, w, h, func() {
-		a.drawPreviewFace(n, x, y, w, h, colorFileInnerBg, previewBlobKey(n), func() {
-			a.fetchURLPreview(rpc.ContentID(n), previewBlobKey(n))
+		a.drawPreviewFace(n, x, y, w, h, colorFileInnerBg, preview.BlobKey(n), func() {
+			a.fetchURLPreview(rpc.ContentID(n), preview.BlobKey(n))
 			label := n.UrlString
 			if label == "" {
 				label = n.AltText // a page tile has no address
@@ -101,9 +82,9 @@ func (a *App) drawURLTileInPane(n *gridwellv1.Tile, x, y, w, h float64) {
 // content.
 func (a *App) drawPageTile(n *gridwellv1.Tile, x, y, w, h float64, selected, outside, dashed bool) {
 	withClip(a.cctx, x, y, w, h, func() {
-		a.drawPreviewFace(n, x, y, w, h, colorFileInnerBg, previewBlobKey(n), func() {
+		a.drawPreviewFace(n, x, y, w, h, colorFileInnerBg, preview.BlobKey(n), func() {
 			a.drawPreviewPlaceholder(n.AltText, x, y, w, h)
-			a.fetchURLPreview(rpc.ContentID(n), previewBlobKey(n))
+			a.fetchURLPreview(rpc.ContentID(n), preview.BlobKey(n))
 		})
 
 		line := colorMarkdownLine
