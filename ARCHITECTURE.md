@@ -230,13 +230,14 @@ own `media_type`.
 
 ## The client
 
-`client/*` packages are pure Go with unit tests: `pane`, `cache`, `outbox`,
-`zoomtrans`, `gesture`, `wsbar`, `markdown`, `menu`, `shellstream`,
-`shellwire`, `clientsync`, `errsurface`, `deadref`, `transition`, `scratch`.
-`client/wasm` is the shim: canvas,
-DOM, and the RPC calls. `make check` compiles the shim but executes none of
-it; only the e2e gates see it. A decision that lives only in the shim is a
-defect — extract it.
+Every `client/*` package except `client/wasm` is pure Go with unit tests —
+`ls client/` is the list. The two exceptions are decided: a `_js.go` file
+behind a build tag where a package must touch the browser directly
+(`preview`'s image decoder), and `shellws`, which has no unit test because
+one would assert against a second spelling of the protocol.
+`client/wasm` is the shim: canvas, DOM, and the RPC calls. `make check`
+compiles the shim but executes none of it; only the e2e gates see it. A
+decision that lives only in the shim is a defect — extract it.
 
 **Place.** A pane's place is one stack of frames (`client/pane/place.go`). A
 frame is the grid you are in, the tile you came through, and your viewport
