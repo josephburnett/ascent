@@ -43,7 +43,7 @@ func (rt *router) deepCopyWell(ctx context.Context, src namespace.Namespace, src
 
 	created, err := dst.CreateTile(ctx, &pb.CreateTileRequest{
 		GridId: dstGrid,
-		Tile: &pb.Tile{Kind: "well", X: x, Y: y, W: srcLocalTile.W, H: srcLocalTile.H,
+		Tile: &pb.Tile{Kind: rpc.KindWell, X: x, Y: y, W: srcLocalTile.W, H: srcLocalTile.H,
 			AltText: srcLocalTile.AltText},
 	})
 	if err != nil {
@@ -78,16 +78,16 @@ func (rt *router) deepCopyTile(ctx context.Context, src namespace.Namespace, src
 	q := qualifyTilesFor(srcTransit, srcUUID, []*pb.Tile{t})[0]
 
 	switch {
-	case q.Kind == "well" && q.Reference:
+	case rpc.IsWellKind(q.Kind) && q.Reference:
 		// A reference copies as a reference: the shared child, qualified.
 		_, err := dst.CreateTile(ctx, &pb.CreateTileRequest{
 			GridId: dstGrid,
-			Tile: &pb.Tile{Kind: "well", X: t.X, Y: t.Y, W: t.W, H: t.H,
+			Tile: &pb.Tile{Kind: rpc.KindWell, X: t.X, Y: t.Y, W: t.W, H: t.H,
 				AltText: t.AltText, ChildGridId: q.ChildGridId,
 				ViewCx: t.ViewCx, ViewCy: t.ViewCy, ViewZoom: t.ViewZoom},
 		})
 		return err
-	case q.Kind == "well":
+	case rpc.IsWellKind(q.Kind):
 		created, err := rt.deepCopyWell(ctx, src, srcTransit, srcUUID, t, dst, dstGrid, t.X, t.Y)
 		// Degrade only when nothing was created. Degrading with a partial in
 		// place would stack a link on the cell it occupies, and the user
@@ -98,7 +98,7 @@ func (rt *router) deepCopyTile(ctx context.Context, src namespace.Namespace, src
 			// walk or leaving an empty well that lies about being a copy.
 			_, lerr := dst.CreateTile(ctx, &pb.CreateTileRequest{
 				GridId: dstGrid,
-				Tile: &pb.Tile{Kind: "well", X: t.X, Y: t.Y, W: t.W, H: t.H,
+				Tile: &pb.Tile{Kind: rpc.KindWell, X: t.X, Y: t.Y, W: t.W, H: t.H,
 					AltText: t.AltText, ChildGridId: q.ChildGridId,
 					ViewCx: t.ViewCx, ViewCy: t.ViewCy, ViewZoom: t.ViewZoom},
 			})
@@ -151,7 +151,7 @@ func (rt *router) deepCopyTile(ctx context.Context, src namespace.Namespace, src
 		}
 		_, err = writeAllContent(ctx, dst, id, version, body)
 		return err
-	case t.Kind == "url" || t.Kind == "shell":
+	case t.Kind == rpc.KindURL || t.Kind == rpc.KindShell:
 		// The frozen face travels with the copy. An unreachable preview skips:
 		// the copy's own facts are present and the face re-freezes on the next
 		// live visit, so a link here would deny the copy content the walk has.

@@ -757,7 +757,7 @@ func (a *Adapter) SetTile(ctx context.Context, req *gridwellv1.SetTileRequest) (
 	default:
 		t := req.GetTile()
 		switch t.GetKind() {
-		case "text":
+		case rpc.KindText:
 			if err := a.mem.SetTextView(id, t.GetTextX(), t.GetTextY(), t.GetTextW(), t.GetTextH(), t.GetTextMode()); err != nil {
 				return nil, err
 			}

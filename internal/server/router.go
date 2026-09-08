@@ -424,7 +424,7 @@ func (rt *router) cloneAcrossPlugins(ctx context.Context, m *pb.CloneTileRequest
 	}
 	var copyBody []byte
 	switch {
-	case st.Kind == "well" && st.Reference:
+	case rpc.IsWellKind(st.Kind) && st.Reference:
 		// Cloning a link copies the link: the same shared child grid and
 		// framing, as a within-plugin clone of an exit well does. This is
 		// also how a mount is made.
@@ -432,7 +432,7 @@ func (rt *router) cloneAcrossPlugins(ctx context.Context, m *pb.CloneTileRequest
 		create.Tile.ViewCx = st.ViewCx
 		create.Tile.ViewCy = st.ViewCy
 		create.Tile.ViewZoom = st.ViewZoom
-	case st.Kind == "well":
+	case rpc.IsWellKind(st.Kind):
 		// A deep copy (deepcopy.go) is top-down by necessity, so a mid-walk
 		// failure leaves a visible, deletable partial with the error
 		// surfaced.
@@ -471,7 +471,7 @@ func (rt *router) cloneAcrossPlugins(ctx context.Context, m *pb.CloneTileRequest
 	case st.LinkTargetId != "":
 		// The tile being copied is a reference, so the copy is one too.
 		create.Tile.LinkTargetId = st.LinkTargetId
-	case st.Kind == "text":
+	case st.Kind == rpc.KindText:
 		// The bytes follow the create as a WriteContent below; an unreachable
 		// source degrades the copy to a link, the deep walk's rule.
 		if copyBody, err = readAllContent(ctx, src, srcLocal); err != nil {
@@ -482,11 +482,11 @@ func (rt *router) cloneAcrossPlugins(ctx context.Context, m *pb.CloneTileRequest
 			}
 			return nil, err
 		}
-	case st.Kind == "url":
+	case st.Kind == rpc.KindURL:
 		create.Tile.UrlString = st.UrlString
-	case st.Kind == "shell":
+	case st.Kind == rpc.KindShell:
 		// A PTY session is namespace-local, so the copy is a fresh shell.
-	case st.Kind == "pane":
+	case st.Kind == rpc.KindPane:
 		// A pane tile clones as a byte copy of its blob. Its ids are
 		// owner-frame-relative, so the copy's panes keep naming the original
 		// places: link semantics carried in bytes, not a child_grid_id.

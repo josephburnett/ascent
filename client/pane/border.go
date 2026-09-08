@@ -1,5 +1,7 @@
 package pane
 
+import "github.com/josephburnett/gridwell/api/rpc"
+
 // BorderColors is the renderer's palette, one saturated and one faded string
 // per Family. The functions here are pure and indifferent to which CSS colors
 // they are.
@@ -57,14 +59,14 @@ func FamilyOf(s BorderInput) Family {
 				return FamilyEphemeral
 			}
 			switch s.TileKind {
-			case "url":
+			case rpc.KindURL:
 				if s.URLLive {
 					return FamilyURLLive
 				}
 				return FamilyURL
-			case "shell":
+			case rpc.KindShell:
 				return FamilyShell
-			case "text":
+			case rpc.KindText:
 				if s.InHostGrid {
 					return FamilyExit
 				}

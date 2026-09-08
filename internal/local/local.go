@@ -118,7 +118,7 @@ func (p *Plugin) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwell
 		return nil, errToStatus(err)
 	}
 	return &gridwellv1.InfoResponse{
-		Glyph:         "well",
+		Glyph:         rpc.GlyphWell,
 		Kind:          "home",
 		DisplayName:   "home",
 		SchemaVersion: int64(p.st.SchemaVersion()),

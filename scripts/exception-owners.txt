@@ -17,8 +17,10 @@
 # the face and color switches and the content-zoom switch (render.go,
 # content_zoom.go), the rename rule (a text kind derives its name from its
 # first line, page or not), and the cache's content key. Every "is this the
-# document" question takes TextDocument instead.
-KindText\b api/rpc/|client/cache/|client/wasm/render\.go|client/wasm/content_zoom\.go|client/wasm/rename_overlay\.go
+# document" question takes TextDocument instead. pane's border classifier is
+# one of those family switches; it is handed the kind because its caller has
+# already resolved the descended tile.
+KindText\b api/rpc/|client/cache/|client/pane/border\.go|client/wasm/render\.go|client/wasm/content_zoom\.go|client/wasm/rename_overlay\.go
 # text_presentation: the faces a text tile has. textedit.ToggleVisible (which
 # faces exist) and textedit.PresentationHTML (which renderer draws one) are its
 # two owners, in a package `make check` executes.
