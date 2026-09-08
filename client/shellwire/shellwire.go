@@ -1,19 +1,14 @@
 // Package shellwire is the shell transport's wire grammar, the one place the
-// client and the server agree on how PTY bytes cross the web door. Shells ride
-// a WebSocket on that door, so the primitive set is identical on every host.
-//
-// The grammar, in full:
+// client and the server agree on how PTY bytes cross the web door:
 //
 //	GET <origin>/shell?tile_id=<qualified>&cols=N&rows=N   (Upgrade: websocket)
 //	  · gated by the same auth cookie as every other page request
 //	    (internal/server/auth.go) and strict same-origin;
-//	  · binary frames in both directions are raw PTY bytes, keystrokes up and
-//	    terminal output down, with nothing wrapping them;
+//	  · binary frames both ways are raw PTY bytes, nothing wrapping them;
 //	  · text frames are JSON Control messages. Up "resize", down "exit", sent
 //	    once immediately before the close.
 //
-// A seam test dials the real handler with these functions
-// (internal/server/shell_door_seam_test.go).
+// internal/server/shell_door_seam_test.go dials the real handler with these.
 package shellwire
 
 import (
@@ -26,9 +21,8 @@ import (
 // Path is the door's address on the web mux.
 const Path = "/shell"
 
-// ReadLimit bounds one frame at both ends. A paste is one frame of whatever
-// the user pasted, and the library default of 32 KiB would tear the socket
-// down on a large one.
+// ReadLimit bounds one frame at both ends. A paste is one frame, and the
+// library default of 32 KiB would tear the socket down on a large one.
 const ReadLimit = 8 << 20
 
 // Query keys of the bind. The bind rides the handshake rather than a first
@@ -51,20 +45,18 @@ const (
 // not use are omitted, so each kind's JSON is exactly its own facts.
 type Control struct {
 	Kind string `json:"kind"`
-	// Cols/Rows: KindResize.
+	// KindResize.
 	Cols int `json:"cols,omitempty"`
 	Rows int `json:"rows,omitempty"`
-	// Message/SessionGone: KindExit. SessionGone means the PTY session no longer
-	// exists rather than the transport failing, and the client flips the refresh
-	// affordance off for it.
+	// KindExit. SessionGone means the PTY session is gone rather than the
+	// transport failing, and the client flips the refresh affordance off.
 	Message     string `json:"message,omitempty"`
 	SessionGone bool   `json:"session_gone,omitempty"`
 }
 
 // AttachURL is the address a client dials to attach to tileID's PTY. origin is
-// the page's own http(s) origin, whose scheme is swapped to ws(s) because a
-// WebSocket URL carries no other. cols/rows are the terminal's initial size;
-// shellsvc.ClampSize owns the bounds, so nothing is re-clamped here.
+// the page's own http(s) origin, whose scheme is swapped to ws(s).
+// shellsvc.ClampSize owns the size bounds, so nothing is re-clamped here.
 func AttachURL(origin, tileID string, cols, rows int) (string, error) {
 	u, err := url.Parse(origin)
 	if err != nil {
@@ -94,14 +86,14 @@ func AttachURL(origin, tileID string, cols, rows int) (string, error) {
 // Attach is the bind AttachURL encodes, as the door reads it back.
 type Attach struct {
 	TileID string
-	// Cols/Rows are 0 when absent or unparseable, and the serving plugin
+	// Cols/Rows are 0 when absent or unparseable; the serving plugin
 	// substitutes its defaults, so the door never invents a size.
 	Cols int
 	Rows int
 }
 
 // ParseAttach reads the bind out of a request's query string. A missing
-// tile_id is the one hard error, because there is nothing to attach to.
+// tile_id is the one hard error.
 func ParseAttach(q url.Values) (Attach, error) {
 	a := Attach{TileID: q.Get(QueryTileID)}
 	if a.TileID == "" {
@@ -120,18 +112,16 @@ func atoiOrZero(s string) int {
 	return n
 }
 
-// EncodeResize builds the client→server winsize frame.
 func EncodeResize(cols, rows int) []byte {
 	return mustJSON(Control{Kind: KindResize, Cols: cols, Rows: rows})
 }
 
-// EncodeExit builds the server→client end-of-stream frame.
 func EncodeExit(message string, sessionGone bool) []byte {
 	return mustJSON(Control{Kind: KindExit, Message: message, SessionGone: sessionGone})
 }
 
-// DecodeControl parses a text frame. Both ends use it, so an unreadable frame
-// is a failure at the sender rather than a silent drop.
+// DecodeControl is used by both ends, so an unreadable frame is a failure at
+// the sender rather than a silent drop.
 func DecodeControl(b []byte) (Control, error) {
 	var c Control
 	if err := json.Unmarshal(b, &c); err != nil {
