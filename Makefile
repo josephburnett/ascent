@@ -179,7 +179,9 @@ MODULES := api internal/doctype apps/gridwell
 # check depends on wasm because web/embed.go embeds the built gridwell.wasm,
 # so a fresh checkout cannot `go build ./...` before one exists. It depends on
 # plugins because the seam tests spawn the real binaries, which is the only
-# door a plugin has into this repo.
+# door a plugin has into this repo. `go vet ./...` runs at the host GOOS and
+# so sees none of the js/wasm-tagged files, which is why they are vetted
+# again under GOOS=js: this is the only gate that looks at them at all.
 check: fmt-check proto-check wasm plugins
 	go build ./...
 	go vet ./...
@@ -190,6 +192,7 @@ check: fmt-check proto-check wasm plugins
 		(cd $$m && GOWORK=off go build ./... && GOWORK=off go vet ./... && GOWORK=off go test ./...) || exit 1; \
 	done
 	GOOS=js GOARCH=wasm go build -o /tmp/gridwell.wasm ./client/wasm
+	GOOS=js GOARCH=wasm go vet ./client/...
 	GOOS=windows GOARCH=amd64 go build -o /dev/null ./...
 	GOOS=darwin GOARCH=arm64 go build -o /dev/null ./...
 	./scripts/check-tracked-binaries.sh

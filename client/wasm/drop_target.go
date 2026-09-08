@@ -4,6 +4,9 @@ package main
 
 import (
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
+
+	"google.golang.org/protobuf/proto"
+
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/dragdrop"
 	"github.com/josephburnett/gridwell/client/pane"
@@ -143,13 +146,6 @@ func (a *App) dropTargetAt(sx, sy float64, excludeTileID string) (*dropTarget, b
 	}, true
 }
 
-// tileCopy returns a copy owned by the caller, because the cache may rewrite
-// its tile map underneath one retained across event boundaries.
-func tileCopy(n *gridwellv1.Tile) *gridwellv1.Tile {
-	c := *n
-	return &c
-}
-
 // gridHostContent reports the grid's declared host_content, false for a
 // Gridwell-owned or unknown grid.
 func (a *App) gridHostContent(gridID string) bool {
@@ -210,7 +206,9 @@ func (a *App) childTileAtScreen(p *pane.Pane, r pane.Rect, well *gridwellv1.Tile
 	cellX, cellY := dragdrop.FloorCellAt(cp.OriginX, cp.OriginY, cp.CellPx, sx, sy)
 	for _, n := range g.Tiles {
 		if dragdrop.TileContainsCell(n.X, n.Y, n.W, n.H, cellX, cellY) {
-			return tileCopy(n)
+			// Caller-owned, because the pull-out gesture outlives the event
+			// this row was read in and the cache may rewrite its map.
+			return proto.CloneOf(n)
 		}
 	}
 	return nil
