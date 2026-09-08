@@ -1,11 +1,7 @@
 // Package textcursor converts between a character offset into a text buffer
-// and a (row, col) coordinate, and back. It is the pure core of the textarea
-// cursor math used by URL save and restore, kept here so it gets test
-// coverage; the wasm callers are build-tag-excluded from `go test`.
-//
-// Coordinates are 0-indexed. A '\n' ends a line and '\r' is an ordinary
-// character, so CRLF leaves the '\r' as the last column of the line, matching
-// the browser textarea's own counting.
+// and a 0-indexed (row, col), and back. A '\n' ends a line and '\r' is an
+// ordinary character, so CRLF leaves the '\r' as the line's last column,
+// matching the browser textarea's own counting.
 package textcursor
 
 // OffsetFromRowCol returns the offset of col on row. Negative row or col clamp
@@ -42,9 +38,8 @@ func OffsetFromRowCol(src string, row, col int) int {
 	return lineStart + col
 }
 
-// RowColFromOffset returns the (row, col) of a character offset into src,
-// clamped to [0, len(src)]. It inverts OffsetFromRowCol on in-bounds inputs
-// that respect line lengths.
+// RowColFromOffset returns the (row, col) of an offset into src, clamped to
+// [0, len(src)].
 func RowColFromOffset(src string, off int) (row, col int) {
 	if off > len(src) {
 		off = len(src)
