@@ -1,16 +1,8 @@
-// Package inflight owns two rules about the client's RPCs: every one is
-// bounded, and a deduped fetch is deduped by key and never outlives the link
-// it rode. Only the two long-lived streams, the event Subscribe and the shell
-// WebSocket, are unbounded, because waiting is what they are for.
-//
-// The renderer fires a fetch on every cache miss, every frame, so a claim on
-// the key keeps a second request from dogpiling the server. A claim that
-// outlives its request would dedupe every later attempt away against a
-// request that will never answer, leaving the pane loading with no error and
-// no retry. So a claim ends in exactly two ways: the fetch returns, or
-// CancelIf declares the link it rode gone. Deadline is the backstop for the
-// reconnect that never comes, and done is scoped to the claim that made it,
-// so a late release cannot free a fresher claim's key.
+// Package inflight bounds every client RPC and dedupes fetches by key. A
+// claim ends when its fetch returns or CancelIf declares its link gone; a
+// claim that outlived its request would dedupe every retry away and leave a
+// pane loading with no error. Only the event Subscribe and the shell
+// WebSocket are unbounded.
 package inflight
 
 import (
@@ -20,45 +12,35 @@ import (
 	"time"
 )
 
-// Deadline is the outside bound on any one client RPC. It is long enough for
-// a plugin building its first listing over a slow link, and short enough that
-// a request lost to a dead socket becomes a visible failure and a retry.
+// Deadline is the outside bound on any one client RPC: long enough for a
+// plugin's first listing over a slow link, short enough that a request lost
+// to a dead socket becomes a visible failure.
 const Deadline = 30 * time.Second
 
-// Bounded is the context every client RPC that holds no dedupe claim uses: a
-// write, a nav walk's read, a probe, the boot handshake. It is the one door
-// to Deadline for a caller with no Set of its own, so no call site decides
-// the bound itself. The caller must cancel it.
-//
-// A write needs it because its answer acknowledges the outbox entry parked
-// before it was sent, and a call that never returns would leave the user's
-// bytes parked with no verdict and no drain.
+// Bounded is the context for a client RPC that holds no dedupe claim: one
+// door to Deadline, so no call site picks its own bound. The caller cancels.
 func Bounded() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), Deadline)
 }
 
-// Set is the live claims for one kind of fetch (grids, tiles, tile content),
-// keyed by the id being fetched.
+// Set is the live claims for one kind of fetch, keyed by id.
 type Set struct {
 	mu sync.Mutex
 	d  time.Duration
 	m  map[string]*claim
 }
 
-// claim is one key's in-flight fetch. Identity is the pointer, so two claims
-// on the same key over time are different claims and a late release is told
-// from its successor's.
+// claim is one key's in-flight fetch. Identity is the pointer, so a late
+// release is told from its successor's.
 type claim struct{ cancel context.CancelFunc }
 
-// New returns an empty Set whose fetches are bounded by d.
 func New(d time.Duration) *Set {
 	return &Set{d: d, m: map[string]*claim{}}
 }
 
-// Begin claims key for one fetch. ok is false when a fetch already holds the
-// key, and the caller must not start a second one. The fetch must use the
-// returned context, which carries the deadline and is what CancelIf cancels,
-// and must call done when it returns.
+// Begin claims key for one fetch; ok is false when one already holds it. The
+// fetch must use the returned context, which is what CancelIf cancels, and
+// must call done when it returns.
 func (s *Set) Begin(key string) (ctx context.Context, done func(), ok bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -71,15 +53,15 @@ func (s *Set) Begin(key string) (ctx context.Context, done func(), ok bool) {
 	return ctx, func() { s.release(key, c) }, true
 }
 
-// Context is a bounded context with no claim, for a fetch that is not
-// deduped. CancelIf cannot reach it, so the caller must cancel it.
+// Context is a bounded context with no claim. CancelIf cannot reach it, so
+// the caller must cancel it.
 func (s *Set) Context() (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.Background(), s.d)
 }
 
-// release drops c's claim on key if c still holds it. A fetch CancelIf
-// cancelled returns after a fresh fetch has taken the key, and freeing the
-// fresh claim would drop the dogpile guard for as long as it runs.
+// release drops c's claim on key if c still holds it. A cancelled fetch
+// returns after a fresh one has taken the key, and freeing the fresh claim
+// would drop the dogpile guard for as long as it runs.
 func (s *Set) release(key string, c *claim) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -90,10 +72,8 @@ func (s *Set) release(key string, c *claim) {
 }
 
 // CancelIf drops and cancels every claim whose key match reports, returning
-// those keys sorted. Their link is gone, so they will never answer and their
-// claims would keep every retry away. The caller chooses both which keys lost
-// a link and which to ask for again, because one source going dark leaves
-// every other source's fetches alive and still owed an answer.
+// those keys sorted. The caller chooses which keys lost a link, because one
+// source going dark leaves every other source's fetches still owed an answer.
 func (s *Set) CancelIf(match func(key string) bool) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -122,7 +102,6 @@ func (s *Set) Keys() []string {
 	return keys
 }
 
-// Len is how many fetches are in flight.
 func (s *Set) Len() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
