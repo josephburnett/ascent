@@ -7,19 +7,15 @@ package palette
 
 import "github.com/josephburnett/gridwell/client/pane"
 
-// Rect is the client's one screen-space rectangle type.
 type Rect = pane.Rect
 
 // Config is the tunable layout for the + button and the popover.
 type Config struct {
 	// PlusRadius fits inside the bottom bar's band (wsbar.RowH) with margin.
-	PlusRadius float64
-	// TileMinPx and TileMaxPx clamp the per-tile size in screen pixels.
+	PlusRadius           float64
 	TileMinPx, TileMaxPx float64
-	// GapPx is the gutter between tiles and around the popover border.
-	GapPx float64
-	// CellPx is the renderer's base cell size at zoom 1.0.
-	CellPx float64
+	GapPx                float64
+	CellPx               float64
 	// ToggleH is the disclosure strip's height. The strip is a control the
 	// user presses, not a swatch, so it is not sized as one.
 	ToggleH float64
@@ -40,8 +36,7 @@ func Default() Config {
 
 // Layout snapshots one palette's input. Every method is pure.
 type Layout struct {
-	Cfg Config
-	// PlusX and PlusY are the + button's center.
+	Cfg          Config
 	PlusX, PlusY float64
 	NumTiles     int
 	// TopRow is how many of NumTiles sit in the first row. Either count may
@@ -73,8 +68,7 @@ func (l Layout) rowCount() int {
 	return n
 }
 
-// toggleRow is the row the strip sits above; rows from there down are pushed
-// by its band.
+// toggleRow: rows from there down are pushed by the strip's band.
 func (l Layout) toggleRow() int {
 	if l.topCount() > 0 {
 		return 1
@@ -112,7 +106,7 @@ func (l Layout) TilePx() float64 {
 	return l.Cfg.CellPx * 0.75
 }
 
-// PopoverRect is anchored above the + button and sized to the rows it holds.
+// PopoverRect is anchored above the + button.
 func (l Layout) PopoverRect() Rect {
 	tile := l.TilePx()
 	w := max(l.rowWidthPx(l.topCount()), l.rowWidthPx(l.bottomCount()))
@@ -161,8 +155,7 @@ func (l Layout) ToggleRect() Rect {
 	}
 }
 
-// PointInToggle is false when there is no toggle, so a caller needs no second
-// guard.
+// PointInToggle is false with no toggle, so a caller needs no second guard.
 func (l Layout) PointInToggle(x, y float64) bool {
 	if !l.Toggle {
 		return false
@@ -171,7 +164,7 @@ func (l Layout) PointInToggle(x, y float64) bool {
 	return x >= r.X && x <= r.X+r.W && y >= r.Y && y <= r.Y+r.H
 }
 
-// TileIndexAt is -1 for a gutter or a point outside the popover.
+// TileIndexAt is -1 off a swatch.
 func (l Layout) TileIndexAt(x, y float64) int {
 	for i := range l.NumTiles {
 		r := l.TileRect(i)
