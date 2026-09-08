@@ -1,10 +1,8 @@
-// Package eventhub is the one event fan-out: a publisher never blocks on a slow
-// subscriber and no distinct change is ever dropped. The home store and the
-// connection transport both use it. Each subscriber owns a coalescing queue
-// drained by a pump goroutine, keyed by the changed entity through the caller's
-// key func. A newer event replaces the older undelivered one for that entity,
-// which matches the client cache upserting by id. Distinct entities never
-// coalesce, so the queue is bounded by the entities touched while the consumer
+// Package eventhub is the one event fan-out: a publisher never blocks on a
+// slow subscriber and no distinct change is dropped. Each subscriber owns a
+// coalescing queue keyed by the changed entity, so a newer event replaces the
+// older undelivered one for that entity, matching the client cache's upsert by
+// id, and the queue is bounded by the entities touched while a consumer
 // stalls. An unkeyable event, key "", gets a unique key and never coalesces.
 package eventhub
 
@@ -13,14 +11,13 @@ import (
 	"sync"
 )
 
-// Hub fans events of type T out to every subscriber.
 type Hub[T any] struct {
 	key  func(T) string
 	mu   sync.Mutex
 	subs map[*subscriber[T]]struct{}
 }
 
-// New returns an empty hub whose subscribers coalesce by key(ev).
+// New's subscribers coalesce by key(ev).
 func New[T any](key func(T) string) *Hub[T] {
 	return &Hub[T]{key: key, subs: map[*subscriber[T]]struct{}{}}
 }
@@ -35,8 +32,7 @@ type subscriber[T any] struct {
 	out     chan T        // consumer-facing stream, closed by the pump
 }
 
-// Subscribe registers a subscriber and returns its event stream. Call the
-// returned cancel to detach; the pump then closes the stream.
+// Subscribe's cancel detaches, and the pump then closes the stream.
 func (h *Hub[T]) Subscribe() (<-chan T, func()) {
 	sub := &subscriber[T]{
 		pending: map[string]T{},
@@ -60,7 +56,7 @@ func (h *Hub[T]) Subscribe() (<-chan T, func()) {
 	return sub.out, cancel
 }
 
-// Publish hands the event to every subscriber's queue. It never blocks.
+// Publish never blocks.
 func (h *Hub[T]) Publish(ev T) {
 	key := h.key(ev)
 	h.mu.Lock()
