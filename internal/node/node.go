@@ -185,7 +185,7 @@ func Start(opts Options) (*Node, error) {
 	}
 	var connLn net.Listener
 	if sock := cfg.Federation.Socket; sock != "" {
-		connLn, err = listenConnectionDoor(sock)
+		connLn, err = server.ListenConnectionDoor(sock)
 		if err != nil {
 			ln.Close()
 			cancel()
@@ -258,23 +258,6 @@ func closeImpl(impl any) {
 	if err := c.Close(); err != nil {
 		log.Printf("gridwell: close: %v", err)
 	}
-}
-
-// listenConnectionDoor unlinks a stale socket from a crashed serve (the serve
-// lock guarantees no live holder) and creates one 0600.
-func listenConnectionDoor(path string) (net.Listener, error) {
-	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("connection door: %w", err)
-	}
-	ln, err := net.Listen("unix", path)
-	if err != nil {
-		return nil, fmt.Errorf("connection door: %w", err)
-	}
-	if err := os.Chmod(path, 0o600); err != nil {
-		ln.Close()
-		return nil, fmt.Errorf("connection door: %w", err)
-	}
-	return ln, nil
 }
 
 // ServeBackground starts serving; the returned channel carries the first serve

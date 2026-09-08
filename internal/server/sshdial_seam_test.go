@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/josephburnett/gridwell/internal/namespace"
 	"io"
-	"net"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -54,7 +53,7 @@ func remoteNode(t *testing.T) (string, namespace.Namespace) {
 	// The connection door is a unix socket; the test sshd
 	// forwards direct-streamlocal to it, exactly like a real sshd.
 	sock := filepath.Join(t.TempDir(), "federation.sock")
-	ln, err := net.Listen("unix", sock)
+	ln, err := server.ListenConnectionDoor(sock)
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}

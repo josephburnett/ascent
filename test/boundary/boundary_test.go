@@ -214,26 +214,27 @@ func TestNoPluginImplementation(t *testing.T) {
 	}
 }
 
-// doorServerOwners maps each source file allowed to construct a door server to
-// why it may, so a harness cannot serve a door configured differently from the
-// node's. nodeexport.go owns the node doors; the other two entries are not node
-// doors, being a plugin subprocess's own server and a throwaway for the
-// namespace codec round trip.
+// doorServerOwners maps each source file allowed to construct a door server or
+// its listener to why it may, so a harness cannot serve a door configured
+// differently from the node's. nodeexport.go owns the node doors; the other two
+// entries are not node doors, being a plugin subprocess's own server and a
+// throwaway for the namespace codec round trip.
 var doorServerOwners = map[string]string{
-	"internal/server/nodeexport.go":        "the node's door owner: WebDoorServer, ConnectionDoorServer, ConnectionHandler",
+	"internal/server/nodeexport.go":        "the node's door owner: WebDoorServer, ConnectionDoorServer, ConnectionHandler, ListenConnectionDoor",
 	"internal/plugintest/plugintest.go":    "not a node door: the plugin subprocess's own gRPC server",
 	"internal/namespace/roundtrip_test.go": "not a node door: a throwaway gRPC server for the namespace codec test",
 }
 
-// No file here, test files included, builds a raw http.Server or gRPC server
-// outside the owners above. A harness that built its own would serve a shape
-// the node never runs, and every seam test through it would cross a door that
-// does not exist in production.
+// No file here, test files included, builds a raw http.Server or gRPC server or
+// opens a raw unix listener outside the owners above. A harness that built its
+// own would serve a shape the node never runs, and every seam test through it
+// would cross a door that does not exist in production.
 func TestOneDoorServerOwner(t *testing.T) {
 	root := repoRoot(t)
 	// Concatenated so this file does not match its own needles.
 	httpNeedle := "&http.Server" + "{"
 	grpcNeedle := "grpc.NewServer" + "("
+	unixNeedle := "net.Listen(" + `"unix"`
 	skipDir := map[string]bool{".git": true, "node_modules": true}
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -268,6 +269,9 @@ func TestOneDoorServerOwner(t *testing.T) {
 			}
 			if strings.Contains(text, grpcNeedle) {
 				t.Errorf("%s:%d builds a raw gRPC server — the node door's gRPC server lives in %s; if this is not a node door, exempt it in doorServerOwners with the reason", rel, line, "internal/server/nodeexport.go")
+			}
+			if strings.Contains(text, unixNeedle) {
+				t.Errorf("%s:%d opens a raw unix listener — the connection door's listener has one owner (server.ListenConnectionDoor), and its 0600 mode is the door's whole gate; route through it or exempt this file in doorServerOwners with the reason", rel, line)
 			}
 		}
 		return nil

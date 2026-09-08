@@ -6,7 +6,12 @@ package server
 // there is no name-based selection and no scoping header.
 
 import (
+	"errors"
+	"fmt"
+	"io/fs"
+	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"google.golang.org/grpc"
@@ -36,7 +41,7 @@ func WebDoorServer(h http.Handler) *http.Server {
 
 // ConnectionHandler is the connection door: the Gridwell service over raw gRPC,
 // what a remote mounter's ssh tunnel dials. Its gate is the kernel, the 0600
-// unix socket node.listenConnectionDoor opens, and ssh is the authenticated
+// unix socket ListenConnectionDoor opens, and ssh is the authenticated
 // transport between nodes. Serve it with ConnectionDoorServer. It and
 // internal/connection/dial are the connection hop's two ends.
 func (s *Server) ConnectionHandler() http.Handler {
@@ -56,6 +61,24 @@ func (s *Server) ConnectionHandler() http.Handler {
 // and gRPC keepalive polices a silent one.
 func ConnectionDoorServer(h http.Handler) *http.Server {
 	return &http.Server{Handler: h, Protocols: NodeProtocols()}
+}
+
+// ListenConnectionDoor opens the connection door's one listener shape: a 0600
+// unix socket, whose mode is the door's whole gate. It unlinks a stale socket
+// from a crashed serve first; the serve lock guarantees no live holder.
+func ListenConnectionDoor(path string) (net.Listener, error) {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("connection door: %w", err)
+	}
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, fmt.Errorf("connection door: %w", err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		ln.Close()
+		return nil, fmt.Errorf("connection door: %w", err)
+	}
+	return ln, nil
 }
 
 // NodeProtocols is the protocol set for the connection door: HTTP/1.1 plus
