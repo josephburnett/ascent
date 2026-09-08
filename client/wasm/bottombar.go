@@ -6,6 +6,8 @@ import (
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"syscall/js"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/barslot"
 	"github.com/josephburnett/gridwell/client/bartitle"
@@ -451,7 +453,10 @@ func (a *App) bottomBarClick(sx, sy float64, button int) bool {
 // template-shaped drag whose item carries the origin pane.
 func (a *App) startPromoteDrag(p *pane.Pane, t *gridwellv1.Tile, seg wsbar.Segment, bx, top, sx, sy float64) {
 	square := min(seg.W, wsbar.RowH)
-	ghost := t
+	// cache.Grid hands out the cached rows themselves, so the ghost is a
+	// clone: shaping it to 1x1 through t would resize the visit the crumb is
+	// standing on.
+	ghost := proto.CloneOf(t)
 	ghost.W, ghost.H = 1, 1
 	a.dragging = &dragState{
 		originPaneID:  p.ID,

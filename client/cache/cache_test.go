@@ -4,6 +4,8 @@ import (
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"testing"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
@@ -635,4 +637,57 @@ func TestGridDeclarationsAreNilSafe(t *testing.T) {
 	if missing.HostContent() || missing.Stale() {
 		t.Error("an unfetched grid declares nothing")
 	}
+}
+
+// Grid hands out the cached rows themselves, so a gesture that shapes one
+// into something of its own clones first: the bar's promote drag carries the
+// visited row at 1x1, and writing that through the handed-out pointer would
+// resize the row the crumb is standing on. A gesture is a read, and a read
+// leaves the cache byte-identical.
+func TestShapingAHandedOutRowLeavesTheCachedRowAlone(t *testing.T) {
+	c := New()
+	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{
+		{Id: "100", GridId: "1", Kind: rpc.KindURL, X: 4, Y: 7, W: 3, H: 2, Version: 9},
+	})
+	before := proto.CloneOf(mustRow(t, c, "1", "100"))
+
+	ghost := proto.CloneOf(mustRow(t, c, "1", "100"))
+	ghost.W, ghost.H = 1, 1
+
+	if got := mustRow(t, c, "1", "100"); !proto.Equal(got, before) {
+		t.Errorf("a read mutated the cache: row = %v, want %v", got, before)
+	}
+	if ghost.W != 1 || ghost.H != 1 {
+		t.Errorf("ghost = %dx%d, want 1x1", ghost.W, ghost.H)
+	}
+}
+
+// The other half of the same contract: a caller that means the change hands
+// the clone back, and only then does the cached row move.
+func TestAClonedRowLandsThroughUpdateTile(t *testing.T) {
+	c := New()
+	c.PutGrid(&gridwellv1.Grid{Id: "1"}, []*gridwellv1.Tile{
+		{Id: "100", GridId: "1", Kind: rpc.KindURL, X: 4, Y: 7, W: 3, H: 2, Version: 9},
+	})
+
+	patched := proto.CloneOf(mustRow(t, c, "1", "100"))
+	patched.UrlString = "https://example.com/"
+	c.UpdateTile("1", patched)
+
+	if got := mustRow(t, c, "1", "100"); got.UrlString != "https://example.com/" {
+		t.Errorf("url_string = %q, want the handed-back clone's", got.UrlString)
+	}
+}
+
+func mustRow(t *testing.T, c *Cache, gridID, tileID string) *gridwellv1.Tile {
+	t.Helper()
+	g, ok := c.Grid(gridID)
+	if !ok {
+		t.Fatalf("grid %s not cached", gridID)
+	}
+	n, ok := g.Tiles[tileID]
+	if !ok {
+		t.Fatalf("tile %s not cached", tileID)
+	}
+	return n
 }

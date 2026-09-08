@@ -7,6 +7,8 @@ import (
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"math"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/caps"
 	"github.com/josephburnett/gridwell/client/errsurface"
@@ -58,7 +60,9 @@ func (a *App) startPaletteDrag(p *pane.Pane, r pane.Rect, idx int, sx, sy float6
 // paletteItemGhostNode synthesizes the 1x1 tile the ghost renderer paints, so
 // an in-flight item takes the same draw path as a real tile. A plugin item
 // carries the plugin's uuid as its id, so the health tint and the
-// not-enterable descent guard can name it.
+// not-enterable descent guard can name it. Every answer is caller-owned:
+// primitives share one template apiece, and a caller placing the ghost at a
+// cell would otherwise leave those coordinates on the next gesture's swatch.
 func paletteItemGhostNode(item paletteItem) *gridwellv1.Tile {
 	if item.isPlugin {
 		t := rpc.PluginWellTile(item.plugin)
@@ -66,7 +70,7 @@ func paletteItemGhostNode(item paletteItem) *gridwellv1.Tile {
 		return t
 	}
 	if pr, ok := primitiveFor(item.primitive); ok {
-		return pr.ghost
+		return proto.CloneOf(pr.ghost)
 	}
 	return &gridwellv1.Tile{}
 }
