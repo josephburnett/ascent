@@ -10,16 +10,11 @@ import (
 	"github.com/josephburnett/gridwell/api/rpc"
 )
 
-// Wire-boundary tests: every Create* RPC at the proto3-default-value
-// input. This is the codec edge where silent bugs hide — proto3 omits
-// default-valued fields on the wire, so a request with Data=[]byte{}
-// from the client reaches the server as Data=nil. The store layer has
-// to handle that without surprising the user.
-//
-// Each case asserts the *exact* outcome the user-facing path needs:
-// success for empty-content tiles (a fresh palette drop of markdown
-// arrives with empty Data and must persist), InvalidArgument for
-// semantically required fields (empty URL, empty FSPath, PID=0).
+// Every Create* RPC at the proto3-default-value input. proto3 omits
+// default-valued fields on the wire, so a client's Data=[]byte{} reaches the
+// server as Data=nil, and each case asserts the exact outcome the user-facing
+// path needs: success for empty-content tiles, InvalidArgument for
+// semantically required fields.
 
 func TestCreateTextEmptyData(t *testing.T) {
 	_, cl, root := newTestServer(t)

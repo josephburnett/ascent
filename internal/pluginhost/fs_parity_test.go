@@ -1,14 +1,10 @@
 package pluginhost_test
 
-// The fs stack — the REAL gridwell-plugin-fs binary, the adapter, and the
-// store — through a full server: placement and framing persist, sweeps remove
-// only the dead, the node's own rows answer when the source goes dark, and a
-// retired id never returns.
-//
-// The plugin is spawned, never linked: it is another repository's module now,
-// and the subprocess is the only door it has. So the source goes dark the way
-// a real one does — an unreadable directory — instead of through an injected
-// reader.
+// The fs stack through a full server — the real gridwell-plugin-fs binary, the
+// adapter, the store: placement and framing persist, sweeps remove only the
+// dead, the node's own rows answer when the source goes dark, and a retired id
+// never returns. The plugin is spawned, never linked, so the source goes dark
+// the way a real one does, through an unreadable directory.
 
 import (
 	"context"

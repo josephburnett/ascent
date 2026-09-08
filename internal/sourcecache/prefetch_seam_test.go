@@ -339,16 +339,12 @@ func awaitHealth(t *testing.T, events <-chan *pb.Event, conn string, want bool) 
 	}
 }
 
-// TestOneConnectionsRecoveryReWalksThatSource pins the second trigger, across
-// the real seam. kickPrefetch's first trigger is Layer.Subscribe, and the
-// layer's upstream subscription is the TRANSPORT's hub stream, which is one
-// stream for every connection and survives any one of them dying — so a
-// single connection's recovery would never reach the walk that way. What
-// reaches it is the health round trip the layer relays and applies: the
-// health-up transition in applyEvent kicks the walk for that source, because
-// a source that has been away is exactly where "the cache holds a recent copy
-// of what you did not happen to read" has gone most stale. The client's blunt
-// refetch covers the grids it holds; this covers the ones nobody re-opened.
+// The second trigger across the real seam. The layer's upstream subscription is
+// the transport's hub stream, one for every connection, which survives any one
+// of them dying, so a single connection's recovery never reaches the walk that
+// way. What reaches it is the health-up transition applyEvent sees, which kicks
+// the walk for that source: the client's own refetch covers the grids it holds,
+// and this covers the ones nobody re-opened.
 func TestOneConnectionsRecoveryReWalksThatSource(t *testing.T) {
 	var reads *gridReads
 	cc, far, farRoot, conn := connFixtureWith(t, Options{Prefetch: true},
@@ -460,15 +456,12 @@ func TestARecoveryWalksOnlyTheSourceThatRecovered(t *testing.T) {
 	}
 }
 
-// A connection that flaps is a trigger storm, and the guard is the walk's own
-// single-flight, now keyed by source: at most one walk per source is ever in
-// flight, and a trigger arriving during one is satisfied by it. Twenty
-// recoveries must not mean twenty traversals of the same machine.
-//
-// The health arm is driven directly here, not through a real connection: a
-// storm is a matter of the layer's own timing, and a real fan-in's backoff
-// cannot produce one. TestOneConnectionsRecoveryReWalksThatSource is what
-// pins that the relayed stream reaches this arm at all.
+// A connection that flaps is a trigger storm, and the guard is the walk's
+// single-flight keyed by source: twenty recoveries must not mean twenty
+// traversals of the same machine. The health arm is driven directly, because a
+// storm is a matter of the layer's own timing and a real fan-in's backoff
+// cannot produce one; TestOneConnectionsRecoveryReWalksThatSource pins that the
+// relayed stream reaches this arm at all.
 func TestAFlapStormDoesNotStackWalks(t *testing.T) {
 	var reads *gridReads
 	cc, far, farRoot, conn := connFixtureWith(t, Options{Prefetch: true},

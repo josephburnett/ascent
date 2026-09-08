@@ -4,24 +4,17 @@ package server
 // production loader, the pluginhost adapter, the router, and the /content/
 // door as a browser reaches it.
 //
-// The seam is what is under test, not the plugin's insides. The plugin
-// declares one landing grid — the inbox — and names Starred on the (+) menu;
-// the adapter has to turn each declared context into a grid id the node can
-// serve, both grids have to list through that mapping, and a message is a TEXT
-// tile carrying serves_page whose page the node addresses and the door serves.
+// What the seam has to hold: the adapter turns each declared context into a
+// grid id the node can serve, both grids list through that mapping, and a
+// message is a text tile carrying serves_page whose page the door serves. The
+// config crosses it too — the node hands over paths to the user's credential
+// and token, never their contents, plus a private state directory, and nothing
+// cached there carries a secret.
 //
-// And the config crosses this seam too: the node hands the plugin PATHS to the
-// user's credential and token, never their contents, plus a private state
-// directory. What that has to add up to is only visible from here — the
-// spawned binary reads both paths and reaches Gmail with the token they hold,
-// and nothing it caches in the state directory carries a secret.
-//
-// Nothing is injected: the plugin lives in another repository and the
-// subprocess is its only door. Gmail is not injected either — testdata/gmail
-// holds the JSON shapes Gmail answers with, served over http at the address
-// the plugin's `endpoint` config key names, so the real generated Gmail client
-// does the real parse. The two repositories share those shapes as data, never
-// as a package.
+// Nothing is injected. The plugin lives in another repository, so the
+// subprocess is its only door, and testdata/gmail holds the JSON shapes Gmail
+// answers with, served at the address the `endpoint` config key names, so the
+// real generated client does the real parse.
 
 import (
 	"encoding/json"

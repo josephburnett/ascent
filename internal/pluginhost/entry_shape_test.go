@@ -59,18 +59,12 @@ func listedBy(t *testing.T, entries ...*pluginv1.Entry) (*gridwellv1.Grid, []*gr
 	return resp.Grid, resp.Tiles, nil
 }
 
-// A url entry and a page entry are different things: a url entry supplies the
-// address it opens (url_string), while a page has no address of its own and
-// is served at the node's /content/ door. An entry declaring BOTH is neither,
-// and it used to fail in silence — the client's webAddress answers UrlString
-// first, so the page never served and nothing said why. The node refuses the
-// shape at the door instead, which is the only place that can close it: with
-// the entry gone, no client can be handed the combination at all.
-//
-// Why it was not caught: the shape has no producer. Every shipped plugin
-// declares one or the other, so no test built an entry with both, and neither
-// the adapter nor the client had anything to say about a combination that
-// only the wire permitted.
+// A url entry supplies the address it opens; a page has no address of its own
+// and is served at the node's /content/ door. An entry declaring both is
+// neither, and it fails in silence, because the client answers UrlString first
+// and the page never serves. The node refuses the shape at the door, which is
+// the only place that can close it: with the entry gone, no client can be
+// handed the combination at all.
 func TestAUrlEntryThatAlsoServesAPageIsRefused(t *testing.T) {
 	_, _, err := listedBy(t, &pluginv1.Entry{
 		Key: "both", Kind: "url", Label: "both", ServesPage: true,

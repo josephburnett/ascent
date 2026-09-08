@@ -13,19 +13,15 @@ import (
 )
 
 // The state directory across a restart, through the whole shipped stack: fake
-// GitLab → the spawned gridwell-plugin-gitlab binary → adapter.
+// GitLab, the spawned binary, the adapter.
 //
 // The node hands the plugin a private directory as state_dir and never empties
-// it. The gitlab plugin keeps its walked todo list there, so the process that
-// comes back answers every listing from the file — no GitLab request at all
-// while the last walk is still inside the refresh window. That is the whole
-// point of the directory, and it is only true at the seam: the plugin's unit
-// tests can prove the file round-trips, but only a spawn proves the node hands
-// the key over, that the value is a directory the plugin may write, and that
-// the file survives the process that wrote it.
-//
-// The restart runs over a FRESH node store, so the node remembers nothing of
-// its own: every entry below can only have come out of the plugin's file.
+// it, so the process that comes back answers every listing from its own file
+// with no GitLab request while the last walk is inside the refresh window. Only
+// a spawn proves the node hands the key over, that the value is a directory the
+// plugin may write, and that the file survives the process that wrote it. The
+// restart runs over a fresh node store, so every entry below can only have come
+// out of the plugin's file.
 func TestGitLabPluginServesFromItsStateDirAfterARestart(t *testing.T) {
 	done := gitlabTodo(3, "2026-08-19T10:00:00Z")
 	done.State = "done"

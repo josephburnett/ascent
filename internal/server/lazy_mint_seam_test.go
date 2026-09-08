@@ -145,19 +145,11 @@ func TestListingAHundredEntriesMintsNothing(t *testing.T) {
 	}
 }
 
-// The derived answer IS the arrangement: touching every tile in a fresh grid
-// changes NOTHING the client can see — same ids, keys, kinds, labels,
-// placements, in the same order. That is what makes lazy minting invisible: the
-// grid a user sees before they touch anything is the grid mint-on-list used to
-// write, and the row the touch stores is bookkeeping underneath it.
-//
-// The id half is the whole of #297. This test used to require the opposite —
-// that a touch RENAME every tile — which is how the drift stayed invisible: the
-// lazy-minting decision said a plugin thing keeps its key-form address for
-// good, and nothing pinned what the LISTING answers across a mint. A rename
-// takes the id out from under whoever is standing on it: a URL segment naming a
-// directory doorway stopped resolving once the descent's own reframe minted it,
-// and a pane inside a read-only file lost its content id to a scroll.
+// The derived answer is the arrangement: touching every tile in a fresh grid
+// changes nothing the client can see — same ids, keys, kinds, labels,
+// placements, in the same order. The row a touch stores is bookkeeping
+// underneath the grid the user already sees, and a rename would take the id out
+// from under whoever is standing on it.
 func TestTouchingEveryTileChangesNothingTheClientCanSee(t *testing.T) {
 	cl, _, _, fsRoot := lazyStack(t)
 	ctx := context.Background()

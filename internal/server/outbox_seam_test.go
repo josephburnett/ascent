@@ -276,21 +276,16 @@ func echoesOf(t *testing.T, cl *rpc.Client, tileID string, basis int64) (resp, e
 	}
 }
 
-// TestEchoInterlockAcrossTheSeam (e): the interlock, over the real wire. Both
-// sides are unit-tested — the store's version rule here, cache.Apply's
-// "n.Version < cur.Version" drop in client/cache — and a unit test on each
-// side of a contract cannot catch a mismatch (CLAUDE.md §4). What crosses the
-// seam is a REAL response row and a REAL echo of the same write, which the
-// client sees on two independent paths with no ordering between them. Feed
-// them in every order those two paths can produce and the cached row must only
-// ever move forward: a version that goes back is a tile the user watches roll
-// back and then forward, a mutation nobody made.
+// The echo interlock over the real wire: a real response row and a real echo of
+// the same write reach the client on two independent paths with no ordering
+// between them. Fed in every order those paths can produce, the cached row must
+// only ever move forward; a version that goes back is a tile the user watches
+// roll back, a mutation nobody made.
 //
-// Three orderings are fixed, and everything else is free. Response 1 precedes
-// response 2 and echo 2, because write 2's basis IS write 1's response row —
-// it cannot even be sent before that lands. Echo 1 precedes echo 2, because
-// one Subscribe stream is ordered. What is free is a response against the
-// other write's echo, and that is the race the interlock exists for.
+// Three orderings are fixed: response 1 precedes response 2 and echo 2, because
+// write 2's basis is write 1's response row, and echo 1 precedes echo 2,
+// because one Subscribe stream is ordered. What is free is a response against
+// the other write's echo, which is the race the interlock exists for.
 func TestEchoInterlockAcrossTheSeam(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()
@@ -361,18 +356,11 @@ func TestEchoInterlockAcrossTheSeam(t *testing.T) {
 	}
 }
 
-// TestAResponseRowObeysTheInterlock is the case the one above deliberately
-// does not reach: the older row arrives as a write RESPONSE rather than an
-// echo. It used to be a hole. `Cache.UpdateTile` was a second door into the
-// grid's tile map that wrote the row with no version comparison at all, so an
-// older response landing after a newer row rolled the tile back, and the only
-// thing keeping that unreachable was `App.textSaves` serializing content saves
-// per tile three layers away.
-//
-// The interlock is a property of the map now, not of the door: both paths go
-// through `putTileLocked`, so a response and an echo of the same fact are
-// refused on the same rule. This test drives the response path with the same
-// real rows the seam test uses and asserts the row only ever moves forward.
+// The case the one above does not reach: the older row arrives as a write
+// response rather than an echo. The interlock is a property of the map, not of
+// the door — both paths go through `putTileLocked` — so a response and an echo
+// of the same fact are refused on the same rule. This drives the response path
+// with the same real rows and asserts the row only ever moves forward.
 func TestAResponseRowObeysTheInterlock(t *testing.T) {
 	_, cl, root := newTestServer(t)
 	ctx := context.Background()

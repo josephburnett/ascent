@@ -1,16 +1,10 @@
 package server
 
-// The shell door, crossed for real: the CLIENT stack (client/shellstream +
-// client/shellws, the very packages the wasm client runs) dials the SERVER
-// handler (WebHandler, behind the auth cookie) and the bytes come back
-// through the whole chain — WebSocket → shell door → OpenShell → the home
-// namespace → the PTY.
-//
-// Charter §4: a unit test on each side of a contract cannot catch a
-// contract mismatch, and the mismatch is the bug. Everything here that
-// could drift — the address, the frame kinds, the exit verdict — has
-// exactly one owner (client/shellwire) and this test proves both ends read
-// it the same way.
+// The shell door, crossed for real: the client stack the wasm client runs
+// (client/shellstream, client/shellws) dials WebHandler behind the auth cookie
+// and the bytes come back through the whole chain to the PTY. Everything that
+// could drift — the address, the frame kinds, the exit verdict — has one owner
+// in client/shellwire, and this proves both ends read it the same way.
 
 import (
 	"context"
@@ -203,16 +197,12 @@ func TestShellDoorReportsSessionGone(t *testing.T) {
 	}
 }
 
-// A platform with no PTY refuses at the driver, and that refusal must reach
-// the user like any other failed open: an exit frame carrying the reason.
-// This is the seam the Windows build lands on — shelldriver's no-PTY Start
-// returns ErrShellsUnavailable, shellsvc hands it up, and the door turns it
-// into the client's exit message. A refusal that only logged would look to
-// the user like the shell silently vanished.
-//
-// Not SessionGone: nothing here went away. The tile has no session because
-// this node cannot host one, which is the same shape as any open that
-// failed.
+// A platform with no PTY refuses at the driver, and that refusal reaches the
+// user as an exit frame carrying the reason: shelldriver returns
+// ErrShellsUnavailable, shellsvc hands it up, and the door turns it into the
+// client's exit message. A refusal that only logged would look like the shell
+// silently vanished. Not SessionGone: nothing went away, the node simply
+// cannot host one.
 func TestShellDoorSurfacesADriverThatCannotOpen(t *testing.T) {
 	f := newShellDoorFixture(t, Config{})
 	f.fake.OpenErr = shelldriver.ErrShellsUnavailable

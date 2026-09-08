@@ -52,17 +52,12 @@ func destroyPane(t *testing.T, cl *rpc.Client, tileID string) {
 	}
 }
 
-// TestReapReadsTheSameFieldTheSweepProtects: "which content tiles does a pane
-// blob reference" has one owner, api/panelayout.TextFocusIDs — the `text_focus`
-// projection the boot sweep's protection set reads. The delete-time reap must
-// answer from that same field, not from a second derivation of its own.
-//
-// The blob here is one no encoder writes: a `place` frame stack whose top
-// frame is a content descent on the scratch shell, with `text_focus` omitted.
-// A reap that re-derives the content id from `place` reaps that shell; the
-// boot sweep, reading `text_focus`, never protected it in the first place. The
-// two answers must not differ, and the field the sweep reads is the one that
-// decides.
+// "Which content tiles does a pane blob reference" has one owner,
+// api/panelayout.TextFocusIDs, the `text_focus` projection the boot sweep's
+// protection set reads, and the delete-time reap must answer from that same
+// field. The blob here is one no encoder writes: a `place` frame stack whose
+// top frame is a content descent, with `text_focus` omitted. A reap that
+// re-derives from `place` reaps a shell the sweep never protected.
 func TestReapReadsTheSameFieldTheSweepProtects(t *testing.T) {
 	ctx := context.Background()
 	cl, root, scratch := reapFixture(t)

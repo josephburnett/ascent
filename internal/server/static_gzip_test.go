@@ -15,16 +15,12 @@ import (
 	"github.com/josephburnett/gridwell/web"
 )
 
-// The compressed-static class: any static file with a fresh
-// .gz sidecar serves gzipped to a client that accepts it — the case that
-// matters is gridwell.wasm (~33 MB raw, ~8 MB gzipped; a phone on a
-// relayed tailscale link reads it every boot, and uncompressed that is
-// minutes of blank page). The contract has four sides: negotiation
-// (gzip in, identity out when the client can't), byte fidelity (the
-// decompressed body is EXACTLY the raw file), type fidelity (Content-Type
-// stays the raw extension's — instantiateStreaming refuses anything but
-// application/wasm), and freshness (a sidecar older than the raw file is
-// ignored — a rebuilt wasm must never be shadowed by last build's gz).
+// Any static file with a fresh .gz sidecar serves gzipped to a client that
+// accepts it. Four sides: negotiation, identity out when the client cannot
+// take gzip; byte fidelity, the decompressed body is exactly the raw file;
+// type fidelity, Content-Type stays the raw extension's, since
+// instantiateStreaming refuses anything but application/wasm; and freshness, a
+// sidecar older than the raw file is ignored.
 
 func gzipStaticServer(t *testing.T) (hs *httptest.Server, dir string, raw []byte) {
 	t.Helper()

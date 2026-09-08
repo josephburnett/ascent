@@ -17,15 +17,13 @@ import (
 	"github.com/josephburnett/gridwell/internal/plugin"
 )
 
-// The offline deep-copy seam:
-// cloning a partially-reachable remote grid never refuses and never leaves
-// a silent hole — a tile whose bytes the source cannot serve degrades to a
-// LINK to the original; a nested room whose grid is unreachable degrades
-// to a well link; a url whose preview is unreachable copies faceless (its
-// fact — the address — is present). The degrade keys on TRANSPORT failures
-// only: a source that ANSWERS "gone" still aborts the walk (gone is never
-// a link). darkSource simulates the source cache's offline shape —
-// metadata served, selected reads Unavailable.
+// The offline deep-copy seam: cloning a partially-reachable remote grid never
+// refuses and never leaves a silent hole. A tile whose bytes the source cannot
+// serve degrades to a link, an unreachable nested room to a well link, and a
+// url with an unreachable preview copies faceless. The degrade keys on
+// transport failures only: a source that answers "gone" still aborts the walk.
+// darkSource is the source cache's offline shape, metadata served and selected
+// reads Unavailable.
 
 // darkSource wraps a real plugin client, failing selected calls the way a
 // dark mount does (codes.Unavailable) — or with an injected verdict, for

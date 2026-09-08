@@ -314,15 +314,10 @@ func TestConnectionEventsArrivePrefixed(t *testing.T) {
 	}
 }
 
-// TestConnectionHealthArrivesQualified is the other half of the event seam:
-// TestConnectionEventsArrivePrefixed proves TILE ids gain the node segment,
-// and rpc.QualifyEventIDs' handling of the health uuid is pure-tested
-// (routing_pure_test.go:TestQualifyEvent) — but nothing ran a real
-// connection's darkness through the real router onto a real client stream.
-// The uuid is what the client keys its sticky notice on
-// (App.reportPluginHealth's "plugin:<node>/<conn>"), so a hop that forgot to
-// qualify it would post a notice nothing could ever resolve, and both unit
-// tests would stay green.
+// A real connection's darkness through the real router onto a real client
+// stream: the health uuid is what the client keys its sticky notice on, so a
+// hop that forgot to qualify it would post a notice nothing could resolve,
+// while the unit tests on each side stayed green.
 func TestConnectionHealthArrivesQualified(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -444,17 +439,11 @@ func TestShellDoorThroughAConnection(t *testing.T) {
 	}
 }
 
-// TestTwoSubscribersEachSeeExactlyOnePrefix is the MESSAGE-OWNERSHIP seam
-// (namespace's contract): with no wire between the router and its
-// namespaces, one *pb.Event travels to every subscriber by pointer — the
-// transport's hub fans the same value out, and the router qualifies it per
-// hop. Qualification therefore has to CLONE (api/rpc.TransitQualifyTiles,
-// server.qualifyTiles); if any hop rewrote ids in place, the second
-// subscriber would read "lnode1/lnode1/geneva/…" or worse, and the
-// corruption would be invisible to a single-subscriber test. gRPC used to
-// hide this by handing every stream its own decoded copy — the reason a
-// general deep-copy layer looks unnecessary is that the clone already lives
-// in the one place that mutates.
+// The message-ownership seam: with no wire between the router and its
+// namespaces, one *pb.Event travels to every subscriber by pointer, so
+// qualification has to clone. A hop that rewrote ids in place would give the
+// second subscriber "lnode1/lnode1/geneva/…", and a single-subscriber test
+// could not see it.
 func TestTwoSubscribersEachSeeExactlyOnePrefix(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -517,15 +506,12 @@ func TestTwoSubscribersEachSeeExactlyOnePrefix(t *testing.T) {
 	}
 }
 
-// A leaf link on the local home whose target lives through a connection —
-// an ordinary ctrl + right-drag out of a mounted node — resolves at the
-// serving node like any other link. contentRoute is the one resolution
-// point, and it must follow the target through the SAME routing lookup the
-// rest of the node uses: a connection-chained target
-// ("<node>/<conn>/<remote>/<tile>") is owned by the transport, not by home,
-// so a follow that peels only the first segment answers home and the read
-// 404s. Both content doors that resolve a link — ReadContent and
-// GetTilePreview — cross the seam here.
+// A leaf link on the local home whose target lives through a connection
+// resolves at the serving node like any other link. contentRoute must follow
+// the target through the same routing lookup the rest of the node uses: a
+// connection-chained target is owned by the transport, not by home, so a follow
+// that peels only the first segment answers home and the read 404s. Both
+// content doors that resolve a link cross the seam here.
 func TestLeafLinkToConnectionTargetResolves(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
