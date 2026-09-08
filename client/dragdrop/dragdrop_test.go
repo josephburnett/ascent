@@ -110,14 +110,12 @@ func TestTileContainsCell(t *testing.T) {
 	}
 }
 
-// TestFloorCellAtCoversWholeCell pins that every interior point of a cell
-// reports that cell. SnapToCell would round the lower-right portion forward
-// and miss half of every tile.
+// SnapToCell would round the lower-right portion forward and miss half of
+// every tile.
 func TestFloorCellAtCoversWholeCell(t *testing.T) {
 	const origin = 100.0
 	const cs = 10.0
-	// Every case wanting (0, 0) would have rounded elsewhere under
-	// SnapToCell.
+	// Every case wanting (0, 0) would round elsewhere under SnapToCell.
 	cases := []struct {
 		sx, sy float64
 		wantX  int64
@@ -149,8 +147,7 @@ func TestFloorCellAtCoversWholeCell(t *testing.T) {
 	}
 }
 
-// TestHiddenMatchByTileIDNotLineage pins that the predicate keys on the row
-// id. A match on anything a clone shares with its source would suppress every
+// A match on anything a clone shares with its source would suppress every
 // clone of the dragged tile.
 func TestHiddenMatchByTileIDNotLineage(t *testing.T) {
 	const sourceID = "5"
@@ -287,9 +284,8 @@ func TestPaneCellAt(t *testing.T) {
 	}
 }
 
-// TestDecideDropFocusOnly pins that a bare click on a pane unfocused at
-// press time only moves focus, whatever sits under the cursor, so clicking a
-// pane to focus it never descends into a tile.
+// Clicking a pane to focus it never descends into a tile, whatever sits under
+// the cursor.
 func TestDecideDropFocusOnly(t *testing.T) {
 	unfocused := DropInput{Started: false, OriginFocused: false, TileID: "u/1"}
 	if got := DecideDrop(unfocused); got != DropFocusOnly {
@@ -299,16 +295,14 @@ func TestDecideDropFocusOnly(t *testing.T) {
 	if got := DecideDrop(focused); got != DropNavigate {
 		t.Errorf("bare click on focused pane = %v, want DropNavigate", got)
 	}
-	// A real drag acts whatever the prior focus, because only the bare
-	// click is ambiguous.
+	// Only the bare click is ambiguous, so a real drag acts either way.
 	drag := DropInput{Started: true, OriginFocused: false, TileID: "u/1", HasTarget: true}
 	if got := DecideDrop(drag); got != DropMove {
 		t.Errorf("drag from unfocused pane = %v, want DropMove", got)
 	}
 }
 
-// TestDecideDropTargetReadOnly pins that any intent onto a read-only grid is
-// rejected before the RPC, so no reconcile notice follows.
+// Rejected before the RPC, so no reconcile notice follows.
 func TestDecideDropTargetReadOnly(t *testing.T) {
 	base := DropInput{Started: true, TileID: "u/1", HasTarget: true, TargetReadOnly: true}
 	if got := DecideDrop(base); got != DropRejected {
@@ -326,9 +320,8 @@ func TestDecideDropTargetReadOnly(t *testing.T) {
 	}
 }
 
-// TestDecideDropReadOnlyPlacement pins that read-only gates arrivals and not
-// placement. A same-grid left-drag is a rearrangement the node persists on
-// every grid, while copies and links still create.
+// Read-only gates arrivals, not placement: a same-grid left-drag is a
+// rearrangement the node persists on every grid.
 func TestDecideDropReadOnlyPlacement(t *testing.T) {
 	rearrange := DropInput{Started: true, TileID: "u/1", HasTarget: true,
 		TargetReadOnly: true, SameGrid: true}
@@ -342,9 +335,8 @@ func TestDecideDropReadOnlyPlacement(t *testing.T) {
 	}
 }
 
-// TestMoveForbidden pins the move-drop policy to the server's placement
-// rule. Host to host across grids is the case an XOR check would report
-// allowed, inviting a drop the server then rejects.
+// Host to host across grids is the case an XOR check would report allowed,
+// inviting a drop the server then rejects.
 func TestMoveForbidden(t *testing.T) {
 	cases := []struct {
 		name             string
@@ -359,9 +351,8 @@ func TestMoveForbidden(t *testing.T) {
 		{"cross host->regular", false, false, true, false, true},
 		{"cross regular->host", false, false, false, true, true},
 		{"cross host->host (regression)", false, false, true, true, true},
-		// A drag across an id namespace is not a move at all; it becomes
-		// a link. The host arms are exempt too, and TargetReadOnly gates
-		// a read-only destination.
+		// A drag across an id namespace is a link, so the host arms are
+		// exempt and TargetReadOnly gates the destination.
 		{"cross-plugin left-drag is a link, not forbidden", false, true, false, false, false},
 		{"cross-plugin from a host grid links too", false, true, true, false, false},
 	}
@@ -374,10 +365,8 @@ func TestMoveForbidden(t *testing.T) {
 	}
 }
 
-// TestIntentCreates pins which intents put a new tile at the destination.
-// Three call sites branch on it, so a wrong answer lets a copy land on its
-// own source or gates a rearrangement a read-only grid should accept. The
-// zero value stays IntentMove, which a palette template drag leaves unset.
+// Three call sites branch on this, so a wrong answer lets a copy land on its
+// own source or gates a rearrangement a read-only grid should accept.
 func TestIntentCreates(t *testing.T) {
 	var zero Intent
 	if zero != IntentMove {
