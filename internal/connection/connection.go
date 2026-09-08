@@ -37,7 +37,8 @@ import (
 type Dialer func(cfg dial.Config) (namespace.Namespace, func(), error)
 
 // bootDialWait bounds how long ConnectAll waits for each connection at boot
-// before serving anyway. The dial keeps trying in the background.
+// before serving anyway. The dial keeps trying in the background. A var so a
+// test can wait it out; see bootwait_test.go.
 var bootDialWait = 5 * time.Second
 
 // Server is the transport: a namespace.Namespace whose ids are chains through
