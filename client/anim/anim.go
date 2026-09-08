@@ -1,6 +1,5 @@
-// Package anim holds the interpolation the client uses for drag snap-to-cell
-// and snap-back animations. It is pure Go with no syscall/js, so go test runs
-// it.
+// Package anim holds the client's drag and transition interpolation. It is
+// pure Go with no syscall/js, so go test runs it.
 package anim
 
 import "math"
@@ -39,7 +38,7 @@ func Progress(nowMs, startMs, durationMs float64) float64 {
 	return t
 }
 
-// Animation describes a 2D motion in whatever units the caller chooses.
+// Animation is a 2D motion in whatever units the caller chooses.
 type Animation struct {
 	FromX, FromY float64
 	ToX, ToY     float64
@@ -57,11 +56,11 @@ func (a Animation) At(nowMs float64) (x, y float64, done bool) {
 	return
 }
 
-// SplitN apportions totalMs across phases by their relative distances. A phase
-// under the epsilon gets zero time; if every phase is under it the time divides
-// equally, so the transition does not complete instantly. The last phase with
-// distance absorbs rounding, because a spurious or negative duration on a
-// zero-distance phase breaks the transition stepper.
+// SplitN apportions totalMs across phases by relative distance. A phase under
+// the epsilon gets zero time; if every phase is, the time divides equally so
+// the transition does not complete instantly. The last phase with distance
+// absorbs rounding: a negative duration on a zero-distance phase breaks the
+// transition stepper.
 func SplitN(distances []float64, totalMs float64) []float64 {
 	out := make([]float64, len(distances))
 	if len(distances) == 0 {
@@ -93,9 +92,8 @@ func SplitN(distances []float64, totalMs float64) []float64 {
 	return out
 }
 
-// LerpExp interpolates between from and to in log space, because perceived zoom
-// level is logarithmic in scale. If either end is not positive it falls back to
-// Lerp.
+// LerpExp interpolates in log space, because perceived zoom is logarithmic in
+// scale. A non-positive end falls back to Lerp.
 func LerpExp(from, to, t float64) float64 {
 	if from <= 0 || to <= 0 {
 		return Lerp(from, to, t)
