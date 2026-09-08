@@ -5,10 +5,9 @@ import (
 	"strings"
 )
 
-// renderedCSSRules is the one reading stylesheet for rendered text. The focused
-// overlay div (#gw-rendered-view) and the rasterized grid preview both wear it
-// through RenderedCSS, so a preview cannot drift from what the descent shows.
-// Sizes are em-relative so the base font size scales everything.
+// renderedCSSRules is the one reading stylesheet for rendered text. The
+// focused overlay div and the rasterized grid preview both wear it, so a
+// preview cannot drift from the descent. Sizes are em-relative.
 const renderedCSSRules = `
 SCOPE { color: #d8d9de; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; line-height: 1.5; }
 SCOPE h1 { font-size: 1.7em; margin: 0.6em 0 0.4em; }
@@ -33,13 +32,11 @@ func RenderedCSS(sel string) string {
 	return strings.ReplaceAll(renderedCSSRules, "SCOPE", sel)
 }
 
-// PreviewSVG wraps an XML-serialized rendered body in an SVG foreignObject,
-// which rasterizes styled HTML onto a canvas without a second layout engine.
-// RenderHTML stays the one renderer and the preview draws its output as an
-// image. xhtml must be well-formed XML, so the wasm caller serializes the
-// sanitized DOM through XMLSerializer; goldmark's HTML5 output leaves <br> and
-// <img> unclosed. The base font size is the overlay's 14px at scale 1, and the
-// caller's drawImage applies the preview scale.
+// PreviewSVG wraps a rendered body in an SVG foreignObject, which rasterizes
+// styled HTML without a second layout engine, so RenderHTML stays the one
+// renderer. xhtml must be well-formed XML, goldmark's HTML5 output leaving
+// <br> and <img> unclosed, so the wasm caller serializes through
+// XMLSerializer. The base font size is 14px at scale 1.
 func PreviewSVG(xhtml string, w, h float64, bg string) string {
 	return fmt.Sprintf(
 		`<svg xmlns="http://www.w3.org/2000/svg" width="%.0f" height="%.0f">`+

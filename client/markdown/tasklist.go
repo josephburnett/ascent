@@ -1,14 +1,10 @@
 package markdown
 
 // Interactive task-list checkboxes: the rendered view's <input> elements map
-// back to "[ ]" and "[x]" markers in the source, and toggling one edits the
-// source through the normal text-edit door. The wasm overlay owns that wiring;
-// this file owns the mapping.
-//
-// The N-th checkbox the renderer emits is the N-th TaskCheckBox node in the
-// parsed AST, because RenderHTML and this scan share gmRenderer's parser
-// configuration. A literal "- [ ]" inside a code fence is neither, so it
-// cannot shift the numbering. TestToggleTaskRenderParity pins that.
+// back to "[ ]" and "[x]" markers in the source. The N-th checkbox the renderer
+// emits is the N-th TaskCheckBox node in the AST, because RenderHTML and this
+// scan share gmRenderer's parser; a literal "- [ ]" in a code fence is neither
+// and cannot shift the numbering.
 
 import (
 	"github.com/yuin/goldmark/ast"
@@ -16,8 +12,7 @@ import (
 	gmtext "github.com/yuin/goldmark/text"
 )
 
-// taskMarkerOffsets returns the source byte offset of every task-list marker's
-// "[", in the order the rendered view's checkboxes appear in the DOM.
+// taskMarkerOffsets returns each marker's "[" offset, in DOM checkbox order.
 func taskMarkerOffsets(src []byte) []int {
 	root := gmRenderer.Parser().Parse(gmtext.NewReader(src))
 	var offs []int
@@ -42,19 +37,17 @@ func taskMarkerOffsets(src []byte) []int {
 	return offs
 }
 
-// isTaskMarker verifies the bytes at off spell a task marker before anything
-// writes there. If the AST's segment arithmetic drifts from the source, the
-// toggle refuses instead of corrupting a document.
+// isTaskMarker checks the bytes before anything writes there, so segment
+// arithmetic that drifts refuses instead of corrupting a document.
 func isTaskMarker(src []byte, off int) bool {
 	return off >= 0 && off+2 < len(src) &&
 		src[off] == '[' && src[off+2] == ']' &&
 		(src[off+1] == ' ' || src[off+1] == 'x' || src[off+1] == 'X')
 }
 
-// ToggleTask flips the index-th task checkbox in src, counting from 0 in
-// document order, and returns (nil, false) when index addresses no checkbox.
-// src is never mutated and the output differs in exactly one byte, so every
-// other byte of the document stays as the user left it.
+// ToggleTask flips the index-th task checkbox in document order. src is never
+// mutated and the output differs in exactly one byte, so every other byte
+// stays as the user left it.
 func ToggleTask(src []byte, index int) ([]byte, bool) {
 	offs := taskMarkerOffsets(src)
 	if index < 0 || index >= len(offs) {
