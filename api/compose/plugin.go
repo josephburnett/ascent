@@ -17,8 +17,8 @@ import (
 // ConfigEnvVar carries the plugin's config map to the guest as JSON.
 const ConfigEnvVar = "GRIDWELL_PLUGIN_CONFIG"
 
-// HostPIDEnvVar carries the host's pid so the guest can exit when the host
-// dies. go-plugin gives the guest no other host-death signal here.
+// HostPIDEnvVar carries the host's pid; go-plugin gives the guest no other
+// host-death signal.
 const HostPIDEnvVar = "GRIDWELL_HOST_PID"
 
 // PluginName is the go-plugin dispatch key for the plugin service.
@@ -34,25 +34,23 @@ func (p *pluginGRPCPlugin) GRPCServer(_ *plugin.GRPCBroker, s *grpc.Server) erro
 	return nil
 }
 
-// GRPCClient hands back the connection rather than a typed client, because
-// internal/plugin keeps one plugin.v1 client for the life of the plugin and
-// swaps the process underneath it.
+// GRPCClient hands back the connection, not a typed client: internal/plugin
+// keeps one client for the plugin's life and swaps the process under it.
 func (p *pluginGRPCPlugin) GRPCClient(_ context.Context, _ *plugin.GRPCBroker, c *grpc.ClientConn) (interface{}, error) {
 	return c, nil
 }
 
-// PluginMap is the go-plugin plugin map. impl is set on the guest side and
-// nil on the host side.
+// PluginMap is the go-plugin plugin map. impl is set guest-side, nil
+// host-side.
 func PluginMap(impl pluginv1.PluginServer) map[string]plugin.Plugin {
 	return map[string]plugin.Plugin{
 		PluginName: &pluginGRPCPlugin{Impl: impl},
 	}
 }
 
-// Process is one running plugin subprocess. A supervisor holds one and
-// replaces it when the process goes away.
+// Process is one running plugin subprocess.
 type Process struct {
-	// Conn carries every plugin.v1 call. Build a client over it with
+	// Conn carries every plugin.v1 call; wrap it with
 	// pluginv1.NewPluginClient.
 	Conn   grpc.ClientConnInterface
 	client *plugin.Client
@@ -62,14 +60,14 @@ type Process struct {
 func (p *Process) ID() string { return p.client.ID() }
 
 // Exited reports whether the subprocess is gone. go-plugin offers no channel
-// to select on, so a supervisor polls this.
+// to select on, so callers poll.
 func (p *Process) Exited() bool { return p.client.Exited() }
 
 // Kill terminates the subprocess and waits for it. Safe to call twice.
 func (p *Process) Kill() { p.client.Kill() }
 
-// LoadPlugin spawns a plugin binary and returns the running process. The
-// config map and the host pid ride the spawn environment.
+// LoadPlugin spawns a plugin binary. The config map and the host pid ride
+// the spawn environment.
 func LoadPlugin(binaryPath string, cfg map[string]string) (*Process, error) {
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:   "plugin-host",

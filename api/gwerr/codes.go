@@ -6,10 +6,9 @@ import (
 )
 
 // codePairs is the one gRPC-to-Connect status-code table. Gridwell answers
-// in gRPC status codes everywhere and one hop translates, the Connect codec
-// on the way to a browser (server.asConnectError). The table is total and
-// injective over the gRPC enum (TestCodeTableIsTotal), so a missing code
-// fails a test here instead of a user's write.
+// in gRPC codes everywhere; the Connect codec in server.asConnectError is
+// the one hop that translates. TestCodeTableIsTotal keeps the table total
+// and injective over the gRPC enum.
 var codePairs = []struct {
 	G codes.Code
 	C connect.Code
@@ -32,8 +31,8 @@ var codePairs = []struct {
 	{codes.Unauthenticated, connect.CodeUnauthenticated},
 }
 
-// ConnectCode maps a gRPC status code to its Connect twin. codes.OK has no
-// Connect error code and maps to Internal, as does any code off the table.
+// ConnectCode maps a gRPC status code to its Connect twin. codes.OK and any
+// code off the table map to Internal.
 func ConnectCode(c codes.Code) connect.Code {
 	for _, p := range codePairs {
 		if p.G == c {
