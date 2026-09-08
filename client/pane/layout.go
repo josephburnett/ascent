@@ -173,8 +173,6 @@ func nearerSide(dNear, dFar float64, near, far Side, bandPx float64) (Side, bool
 	return near, dNear < bandPx
 }
 
-// nearHalfPx is dragdrop.NearPx's tolerance, inlined to keep pane
-// dependency-free.
 func nearHalfPx(a, b float64) bool {
 	d := a - b
 	if d < 0 {
