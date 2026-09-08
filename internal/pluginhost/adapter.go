@@ -1,35 +1,19 @@
-// Package pluginhost adapts a plugin.v1 plugin to the full Gridwell service:
-// the node-side half of the split. The adapter joins the plugin's content
-// answers — keys, kinds, labels, bytes — with the plugin's namespace of the
-// node's store, which holds the ids, the placement, and the framing, and
-// registers in the plugin registry, so the router, the client, and every
-// connection never know the difference.
+// Package pluginhost adapts a plugin.v1 plugin to the full Gridwell service. It
+// joins the plugin's content answers with the plugin's namespace of the node's
+// store, which holds the ids, the placement and the framing. Every merge
+// decision lives in the store and every content derivation in the plugin, so
+// presentation verbs terminate here and content verbs pass through.
 //
-// This is the seam where two owners' facts meet, which is why it stays thin:
-// every merge decision lives in the store (store.Namespace, unit-tested),
-// every content derivation lives in the plugin, and the adapter only converts
-// and forwards. Presentation verbs terminate here; content verbs pass
-// through.
+// Listing writes nothing: a grid's answer is a join of the plugin's List with
+// store.Namespace.Overlay, and every entry is answered under its derived
+// address (address.go), row or no row. A row appears only when the user makes
+// a durable fact about an entry, which is Adapter.mint.
 //
-// Listing writes nothing. A grid's answer is a JOIN: the plugin's List
-// supplies the entries, store.Namespace.Overlay lays the minted rows over
-// them, and every entry is answered under its derived address (see
-// address.go), row or no row — an entry with no row is answered at a derived
-// placement too. A row appears only when the user makes a durable fact about
-// an entry — a move, a resize, a framing — and that is the one mint,
-// Adapter.mint. A reference does not mint: it stores the address.
-//
-// Outages split by whose fact is missing. A dark source — the plugin answers,
-// but its directory, its API, or its process table does not — costs only what
-// the source says: the adapter overlays an empty non-authoritative listing, so
-// every row it minted still reads, with the same ids, placement, and labels,
-// stamped stale and retiring nothing. An entry with no row has nothing to
-// answer from and is simply absent until the source speaks again. A dark
-// plugin, whose subprocess is gone, costs the node-side answer too, and it
-// fails honestly: nothing fronts a plugin, because a subprocess on this
-// machine is a call away, so there are no remembered answers to serve. The
-// durable rows are the node's memory of what it minted; what the source said
-// is the source's to say again.
+// Outages split by whose fact is missing. A dark source costs only what the
+// source says: every minted row still reads, stamped stale, while an entry
+// with no row is absent. A dark plugin fails the read, because nothing fronts
+// a plugin: a subprocess on this machine is a call away, so there are no
+// remembered answers to serve.
 package pluginhost
 
 import (
@@ -51,11 +35,9 @@ import (
 	"github.com/josephburnett/gridwell/internal/namespace"
 )
 
-// Supervisor is whoever owns the plugin's subprocess, as the adapter sees it:
-// a source of health to announce on this namespace's event stream. The
-// adapter never decides liveness itself and keeps no state about it — it asks
-// the owner (internal/plugin.Supervisor). nil is an unsupervised adapter,
-// which still has a stream, just no health on it.
+// Supervisor is whoever owns the plugin's subprocess. The adapter never decides
+// liveness itself and keeps no state about it; nil still has a stream, just no
+// health on it.
 type Supervisor interface {
 	// Health is the current state: up, or down with the reason.
 	Health() (healthy bool, detail string)
@@ -65,17 +47,16 @@ type Supervisor interface {
 }
 
 // Adapter implements namespace.Namespace over one plugin and its namespace of
-// the node's store. The router calls it as a Go value, and the one gRPC hop
-// underneath is the plugin.v1 subprocess, the third-party door.
+// the node's store. The router calls it as a Go value; the one gRPC hop
+// underneath is the plugin.v1 subprocess.
 type Adapter struct {
 	namespace.Unimplemented
 	cp  pluginv1.PluginClient
 	mem *store.Namespace
 	sup Supervisor
 
-	// subs are this namespace's event subscribers. The stream is the
-	// adapter's own: the supervisor's health, and the grids the adapter's own
-	// writes changed. Nothing else can see either.
+	// subs are this namespace's event subscribers. The stream carries the
+	// supervisor's health and the grids the adapter's own writes changed.
 	subsMu sync.Mutex
 	subs   map[int]chan *gridwellv1.Event
 	subSeq int
@@ -84,21 +65,15 @@ type Adapter struct {
 // A plugin reaches the router as a Go value; the compiler is what says so.
 var _ namespace.Namespace = (*Adapter)(nil)
 
-// New builds the adapter. The caller owns both halves' lifecycles. sup may be
-// nil for an adapter whose plugin nobody supervises.
+// New builds the adapter; the caller owns both halves' lifecycles.
 func New(cp pluginv1.PluginClient, mem *store.Namespace, sup Supervisor) *Adapter {
 	return &Adapter{cp: cp, mem: mem, sup: sup, subs: map[int]chan *gridwellv1.Event{}}
 }
 
 // Info translates the plugin handshake, resolving each declared collection's
-// context to a grid id and reading that grid's persisted viewport from the
-// store.
-//
-// The node declares no root of its own for a plugin. A plugin is not a place:
-// it contributes doorways, one menu entry per collection, and the node has no
-// landing to choose among them. root_context is retired on the plugin door
-// (api/plugin/v1/plugin.proto), and a plugin that still answers one gets the
-// one compat derivation below.
+// context to a grid id and reading that grid's persisted viewport. The node
+// declares no root of its own: a plugin is not a place, it contributes
+// doorways, and the node has no landing to choose among them.
 func (a *Adapter) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwellv1.InfoResponse, error) {
 	ci, err := a.cp.Info(ctx, &pluginv1.InfoRequest{})
 	if err != nil {
@@ -108,29 +83,17 @@ func (a *Adapter) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwel
 		Kind:        ci.Kind,
 		DisplayName: ci.DisplayName,
 		Glyph:       ci.Glyph,
-		// Watch and Writable are the adapter's declarations, not the
-		// plugin's: the node-facing Info describes the doors THIS ADAPTER
-		// opens, and the plugin's own answer says nothing about them.
-		//
-		// Watch is true because the adapter has a stream of its own
-		// (Subscribe below): the supervisor's health, and the grids its own
-		// writes changed. It does not yet relay the plugin's cp.Watch —
-		// mapping ContextChanged to GridChanged by context id and
-		// EntryRemoved to TileRemoved by the id map — so a plugin that
-		// watches its source is still polled by the client; the door the node
-		// sees is open either way.
-		//
-		// Writable is false because there is no WriteContent here: a
-		// passed-through writable:true would offer editing that is then
-		// refused. It follows ci again when the adapter carries the verb.
+		// Watch and Writable describe the doors this adapter opens, not the
+		// plugin's answer: Watch because Subscribe below is a stream, and
+		// Writable false because there is no WriteContent here and passing
+		// the plugin's through would offer editing that is then refused.
 		Watch:    true,
 		Writable: false,
 	}
 	for _, m := range declaredEntries(ci) {
-		// A menu entry names one of the plugin's collections: the context it
-		// targets becomes a grid id the node can serve, and the framing the
-		// node remembers for that grid rides along, so re-entering the
-		// collection lands where the user left it.
+		// A collection's context becomes a grid id the node can serve, and the
+		// framing the node remembers rides along, so re-entering lands where
+		// the user left it.
 		out := &gridwellv1.MenuEntry{
 			Id: m.Id, Label: m.Label, Glyph: m.Glyph, Color: m.Color,
 		}
@@ -147,17 +110,11 @@ func (a *Adapter) Info(ctx context.Context, _ *gridwellv1.InfoRequest) (*gridwel
 	return resp, nil
 }
 
-// declaredEntries is the collections a plugin declares, and the ONE place
-// root_context is still read. A plugin written before collections were
-// declared answers a root_context and no menu entries; its root is its single
-// collection, so it becomes one entry, wearing the plugin's own name and face
-// because it declares neither of its own. A plugin that declares entries has
-// said what its collections are, and its root_context — if it still sends one
-// — gets no privilege among them, because there is no privileged collection.
-//
-// The derivation is here rather than in the plugin, because retiring a wire
-// field is the node's job: a third-party binary built against the old proto
-// keeps presenting without being rebuilt.
+// declaredEntries is the one place root_context is still read. A plugin written
+// before collections were declared has one collection, so its root becomes one
+// entry wearing the plugin's own name and face; once a plugin declares entries,
+// a root_context it still sends gets no privilege among them. Retiring the
+// field is the node's job, so an old third-party binary keeps presenting.
 func declaredEntries(ci *pluginv1.InfoResponse) []*pluginv1.MenuEntry {
 	if len(ci.MenuEntries) > 0 || ci.RootContext == "" {
 		return ci.MenuEntries
@@ -165,10 +122,9 @@ func declaredEntries(ci *pluginv1.InfoResponse) []*pluginv1.MenuEntry {
 	return []*pluginv1.MenuEntry{{Id: ci.RootContext, Context: ci.RootContext}}
 }
 
-// contextFraming is the framing the node remembers for one context's grid,
-// zero when the grid has no row yet or was never framed. It is the one read
-// behind every doorway this handshake declares — the row's root and each menu
-// entry alike — so a collection cannot end up with a rule of its own.
+// contextFraming is the framing the node remembers for one context's grid, the
+// one read behind every doorway the handshake declares, so a collection cannot
+// get a rule of its own.
 func (a *Adapter) contextFraming(ckey string) (cx, cy, zoom float64) {
 	gid, ok, err := a.mem.LookupContext(ckey)
 	if err != nil || !ok {
@@ -181,18 +137,12 @@ func (a *Adapter) contextFraming(ckey string) (cx, cy, zoom float64) {
 	return f.Cx, f.Cy, f.Zoom
 }
 
-// Subscribe serves this namespace's event stream. It carries what the adapter
-// itself can see and nothing else: the supervisor's health — the subprocess
-// died, the subprocess came back — and a GridChanged for a grid one of the
-// adapter's own writes changed, so a second pane standing in that grid
-// repaints instead of holding a placement the user has since moved.
-//
-// A subscriber that arrives while the plugin is DOWN is told so at once —
-// nothing else would tell it until the recovery, and a client that has been
-// staring at failed reads deserves the reason. A healthy plugin announces
-// nothing on connect: healthy is what a client already assumes, and the event
-// costs it a full resync (client/wasm reportPluginHealth), so saying it would
-// make every reconnect re-fetch every plugin for no news.
+// Subscribe serves this namespace's event stream: the supervisor's health, and
+// a GridChanged for a grid the adapter's own writes changed, so a second pane
+// repaints instead of holding a placement the user has moved. A subscriber
+// arriving while the plugin is down is told at once, since nothing else would
+// tell it until recovery; a healthy plugin announces nothing, because a health
+// event costs the client a full resync.
 func (a *Adapter) Subscribe(ctx context.Context, _ *gridwellv1.SubscribeRequest, send func(*gridwellv1.Event) error) error {
 	id, ch := a.addSub()
 	defer a.removeSub(id)
@@ -232,9 +182,9 @@ func (a *Adapter) removeSub(id int) {
 	delete(a.subs, id)
 }
 
-// emit hands one event to every subscriber. A subscriber too far behind to
-// take it loses it rather than blocking the writer: every event on this stream
-// is a cue to look again, never a fact only it carries.
+// emit hands one event to every subscriber. A subscriber too far behind loses
+// it rather than blocking the writer: every event here is a cue to look again,
+// never a fact only it carries.
 func (a *Adapter) emit(ev *gridwellv1.Event) {
 	a.subsMu.Lock()
 	defer a.subsMu.Unlock()
@@ -247,8 +197,7 @@ func (a *Adapter) emit(ev *gridwellv1.Event) {
 }
 
 // healthEvent is one health state as this namespace announces it. The uuid
-// rides empty: the server's fan-in fills in the namespace the event came from
-// (rpc.QualifyEventIDs).
+// rides empty; the server's fan-in fills it (rpc.QualifyEventIDs).
 func healthEvent(healthy bool, detail string) *gridwellv1.Event {
 	return &gridwellv1.Event{Payload: &gridwellv1.Event_PluginHealth{
 		PluginHealth: &gridwellv1.EventPluginHealth{Healthy: healthy, Detail: detail},
@@ -257,10 +206,9 @@ func healthEvent(healthy bool, detail string) *gridwellv1.Event {
 
 func (a *Adapter) emitHealth(healthy bool, detail string) { a.emit(healthEvent(healthy, detail)) }
 
-// emitGridChanged announces that a grid this adapter serves has changed. The
-// id is the grid's canonical address — the one every client holds, since a
-// grid keeps its address as its name (canonicalGridID) — so a listener does
-// not have to know whether the write minted anything.
+// emitGridChanged announces that a grid this adapter serves has changed,
+// under the canonical address (canonicalGridID), so a listener does not have
+// to know whether the write minted anything.
 func (a *Adapter) emitGridChanged(gridID string) {
 	if gridID == "" {
 		return
@@ -270,16 +218,10 @@ func (a *Adapter) emitGridChanged(gridID string) {
 	}})
 }
 
-// checkEntries refuses a listing that declares a shape the node cannot
-// present. It runs once, at the door where a plugin's entries enter, so a
-// refused shape never reaches the store, the wire, or a client.
-//
-// The one shape refused today: kind "url" together with serves_page. A url
-// entry names the address it opens; a page has no address of its own and is
-// served at the node's /content/ door. Both at once is neither, and it failed
-// silently — every reader answers the url arm first, so the page simply never
-// served and nothing said why. A misbehaving plugin is told, loudly, with the
-// key that is wrong.
+// checkEntries refuses a shape the node cannot present, at the one door where a
+// plugin's entries enter, so it never reaches the store, the wire or a client.
+// The one shape refused today is kind "url" together with serves_page: every
+// reader answers the url arm first, so the page would never serve.
 func checkEntries(entries []*pluginv1.Entry) error {
 	for _, e := range entries {
 		if e.Kind == rpc.KindURL && e.ServesPage {
@@ -304,12 +246,9 @@ func engineEntries(entries []*pluginv1.Entry) []store.Entry {
 	return out
 }
 
-// buildTiles joins the overlay's rows with the listing's content facts and
-// names each one by its derived address, row or no row (see tileAddr). A
-// well's CHILD GRID is named the same way, by canonicalGridID: the id a well
-// hands the client must be the id GetGrid answers under, and the row the mint
-// stored stays what it is — storage, resolved on the way in, never a name
-// handed out.
+// buildTiles joins the overlay's rows with the listing's content facts, naming
+// each by its derived address, a well's child grid included: the id a well
+// hands the client must be the id GetGrid answers under.
 func buildTiles(gridID, context string, tiles []store.ExtTile, entries []*pluginv1.Entry, childGrid func(string) (string, error), rowContext func(int64) (string, error)) ([]*gridwellv1.Tile, error) {
 	byKey := map[string]*pluginv1.Entry{}
 	for _, e := range entries {
@@ -345,9 +284,9 @@ func buildTiles(gridID, context string, tiles []store.ExtTile, entries []*plugin
 			}
 			pt.ChildGridId = cg
 		case t.ChildGridID != 0:
-			// A minted well the listing does not carry — a dark or stale
-			// source. The row remembers WHICH child grid; its context is read
-			// back so the name handed out is still the address.
+			// A minted well the listing does not carry, from a dark or stale
+			// source. The row remembers which child grid, and its context is
+			// read back so the name handed out is still the address.
 			ck, err := rowContext(t.ChildGridID)
 			if err != nil {
 				return nil, err
@@ -370,10 +309,9 @@ func buildTiles(gridID, context string, tiles []store.ExtTile, entries []*plugin
 	return out, nil
 }
 
-// synthesized is one grid as the adapter derives it: the wire grid, the
-// joined rows, which carry the plugin keys, the wire tiles, with row i
-// matching tile i, and the listing that produced them, which the mint reads
-// back to store an entry's content snapshot.
+// synthesized is one grid as the adapter derives it: the wire grid, the joined
+// rows carrying the plugin keys, the wire tiles with row i matching tile i,
+// and the listing the mint reads back for an entry's content snapshot.
 type synthesized struct {
 	grid    *gridwellv1.Grid
 	context string
@@ -384,8 +322,7 @@ type synthesized struct {
 }
 
 // resolveGrid reads a wire grid id as the context it names plus the grid row
-// backing it, 0 when nobody has touched the context. Both shapes resolve:
-// digits are a row, a key form is the context itself.
+// backing it, 0 when nobody has touched the context. Both shapes resolve.
 func (a *Adapter) resolveGrid(gridID string) (gid int64, context string, err error) {
 	switch rpc.ShapeOf(gridID) {
 	case rpc.ShapeRow:
@@ -407,17 +344,14 @@ func (a *Adapter) resolveGrid(gridID string) (gid int64, context string, err err
 	}
 }
 
-// canonicalGridID is the one name a context answers to, and it is the derived
-// address FOR GOOD — a grid keeps its name even after the store mints a row
-// for it. It is the grid half of the rule tileAddr states for entries: the
-// address is the name, the row is storage. Both still resolve on the way in
+// canonicalGridID stays the derived address even after the store mints a row:
+// the address is the name, the row is storage. Both still resolve on the way in
 // (resolveGrid), so a reference stored before this rule keeps working.
 func (a *Adapter) canonicalGridID(context string) (string, error) {
 	return gridAddr(context), nil
 }
 
-// grid fetches, joins, and builds one grid. It is GetGrid's core, shared with
-// GetTile so the two cannot disagree.
+// grid is GetGrid's core, shared with GetTile so the two cannot disagree.
 func (a *Adapter) grid(ctx context.Context, gridID string) (*gridwellv1.Grid, []*gridwellv1.Tile, error) {
 	s, err := a.synthesize(ctx, gridID)
 	if err != nil {
@@ -426,22 +360,17 @@ func (a *Adapter) grid(ctx context.Context, gridID string) (*gridwellv1.Grid, []
 	return s.grid, s.tiles, nil
 }
 
-// synthesize is grid() keeping the join: Search resolves a plugin key to its
-// tile through the rows, and the mint reads the derived placement back out of
-// them, so both are the same tile GetGrid answers and never a parallel
-// derivation.
+// synthesize is grid() keeping the join, so Search's key lookup and the mint's
+// derived placement read the same tile GetGrid answers.
 func (a *Adapter) synthesize(ctx context.Context, gridID string) (*synthesized, error) {
 	gid, ckey, err := a.resolveGrid(gridID)
 	if err != nil {
 		return nil, err
 	}
-	// The listing is the source's half. When it fails transport-shaped — "not
-	// right now", not a verdict — the adapter carries on with an empty,
-	// non-authoritative one: nothing is authoritatively absent, so nothing
-	// retires and the rows the node minted still answer. That is the whole
-	// degradation. There is no remembered listing to serve, because the rows
-	// are the remembered answer and they are durable; an entry with no row is
-	// absent for as long as the source is.
+	// A transport-shaped failure is "not right now", not a verdict, so the
+	// adapter carries on with an empty non-authoritative listing and nothing
+	// retires. The rows are the whole remembered answer, so an entry with no
+	// row is absent for as long as the source is.
 	stale := false
 	resp, err := a.cp.List(ctx, &pluginv1.ListRequest{Context: ckey})
 	if err != nil {
@@ -453,9 +382,8 @@ func (a *Adapter) synthesize(ctx context.Context, gridID string) (*synthesized, 
 	if err := checkEntries(resp.Entries); err != nil {
 		return nil, err
 	}
-	// An authoritative listing is a verdict on every key: rows it does not
-	// mention are gone, and their ids retire. Only rows are swept; an
-	// untouched entry has nothing to retire and simply stops appearing.
+	// An authoritative listing is a verdict on every key, so rows it does not
+	// mention retire. An untouched entry has nothing to retire.
 	if !stale && resp.Authoritative && gid != 0 {
 		present := map[string]bool{}
 		for _, e := range resp.Entries {
@@ -466,9 +394,9 @@ func (a *Adapter) synthesize(ctx context.Context, gridID string) (*synthesized, 
 		}
 	}
 	entries := engineEntries(resp.Entries)
-	// The rows' outage snapshot follows what the source last said. It is not
-	// what a listed entry reads by — the join takes those facts from the entry
-	// — so this writes only where the source actually changed something.
+	// The rows' outage snapshot follows what the source last said. A listed
+	// entry reads by the join instead, so this writes only where the source
+	// changed something.
 	if !stale && gid != 0 {
 		if err := a.mem.Refresh(gid, entries); err != nil {
 			return nil, err
@@ -478,10 +406,9 @@ func (a *Adapter) synthesize(ctx context.Context, gridID string) (*synthesized, 
 	if err != nil {
 		return nil, err
 	}
-	// A live non-authoritative listing sweeps by arbitration: ROWS the
-	// listing did not include are probed, and only a definitive GONE retires
-	// them. An untouched entry never reaches this arm — absence from the
-	// listing is its whole story.
+	// A live non-authoritative listing sweeps by arbitration: rows it did not
+	// include are probed, and only a definitive GONE retires them. An
+	// untouched entry never reaches this arm.
 	if !stale && !resp.Authoritative {
 		live := map[string]bool{}
 		for _, e := range resp.Entries {
@@ -504,12 +431,9 @@ func (a *Adapter) synthesize(ctx context.Context, gridID string) (*synthesized, 
 		}
 		tiles = kept
 	}
-	// The plugin's DECLARATIONS stamp the grid: host_content (these rows
-	// project host state, so they wear the host treatment) and glyph (the
-	// grid's identity face). Both ride the grid rather than a plugin-list
-	// lookup, because a grid reached through a mount has no local row to look
-	// up. A dark plugin fails here, and the whole read fails with it: the
-	// declared face is the plugin's own fact and nothing else can supply it.
+	// host_content and glyph ride the grid rather than a plugin-list lookup,
+	// because a grid reached through a mount has no local row. A dark plugin
+	// fails the whole read here: nothing else can supply the declared face.
 	ci, err := a.cp.Info(ctx, &pluginv1.InfoRequest{})
 	if err != nil {
 		return nil, err
@@ -540,9 +464,8 @@ func (a *Adapter) GetGrid(ctx context.Context, req *gridwellv1.GetGridRequest) (
 }
 
 // tileRef is a resolved tile: the context that lists it, its plugin key, and
-// its row, 0 when the user has never touched it. Every verb that needs more
-// than the key resolves through here, so the two id shapes are read in one
-// place.
+// its row, 0 when untouched. Every verb needing more than the key resolves
+// here, so the two id shapes are read in one place.
 type tileRef struct {
 	id      int64
 	gid     int64
@@ -550,11 +473,10 @@ type tileRef struct {
 	key     string
 }
 
-// resolveTile reads a wire tile id. Digits are a row, and the row is the one
-// that says which key and context it stands for; a key form carries both
-// itself, and picks up a row id when the entry has since been minted, so an
-// id the client is still holding from before a move keeps answering as the
-// same tile.
+// resolveTile reads a wire tile id. Digits are a row, which says which key and
+// context it stands for; a key form carries both itself and picks up a row id
+// once the entry is minted, so an id a client held from before a move keeps
+// answering as the same tile.
 func (a *Adapter) resolveTile(tileID string) (tileRef, error) {
 	switch rpc.ShapeOf(tileID) {
 	case rpc.ShapeRow:
@@ -590,9 +512,8 @@ func (a *Adapter) resolveTile(tileID string) (tileRef, error) {
 	}
 }
 
-// contentKey is the cheap half of resolution: the plugin key alone, which is
-// all a content verb needs. A derived address carries its key, so an untouched
-// entry reads with no store hit at all.
+// contentKey is the plugin key alone, all a content verb needs. A derived
+// address carries its key, so an untouched entry reads with no store hit.
 func (a *Adapter) contentKey(tileID string) (string, error) {
 	ref, err := a.resolveTile(tileID)
 	if err != nil {
@@ -601,12 +522,9 @@ func (a *Adapter) contentKey(tileID string) (string, error) {
 	return ref.key, nil
 }
 
-// mint is the ONE place a plugin tile becomes a row, and it happens only
-// where a durable fact needs one: a placement, a framing, a stored reference.
-// The row takes the placement the entry is ALREADY being answered at — the
-// derived one, read back out of the same join GetGrid runs — so minting never
-// moves anything. It is idempotent: an id that already names a row is that
-// row.
+// mint is the one place a plugin tile becomes a row, and only where a durable
+// fact needs one. The row takes the placement the entry is already answered at,
+// out of the same join GetGrid runs, so minting never moves anything.
 func (a *Adapter) mint(ctx context.Context, tileID string) (int64, error) {
 	ref, err := a.resolveTile(tileID)
 	if err != nil {
@@ -640,8 +558,7 @@ func (a *Adapter) mint(ctx context.Context, tileID string) (int64, error) {
 		return 0, status.Errorf(codes.NotFound, "plugin: no entry %q in context %q", ref.key, ref.context)
 	}
 	// The grid row comes first: a tile row needs a grid to belong to, and a
-	// well row needs its child grid to exist, so a stored reference is always
-	// a row id.
+	// well row needs its child grid to exist.
 	gid, err := a.mem.ContextID(ref.context)
 	if err != nil {
 		return 0, err
@@ -656,17 +573,12 @@ func (a *Adapter) mint(ctx context.Context, tileID string) (int64, error) {
 }
 
 // MintRef is the router's canonicalizer, called before a reference to a plugin
-// tile or grid is STORED. A plugin's canonical id is its derived address —
-// tile and grid alike (tileAddr, canonicalGridID) — so this mints nothing: the
-// address is what the listing answers, what a write answers, and therefore what
-// a reference must hold, or the same document reached through a link would wear
-// a second name and open a second live surface.
-//
-// A row id arriving here is a reference made under the older rule, being
-// re-stored: it answers the address so the copy moves forward, while the
-// original keeps resolving where it lies (resolveTile and resolveGrid read
-// both shapes). Digits alone do not say whether they name a tile row or a
-// grid row, so both are tried, in that order.
+// tile or grid is stored. A plugin's canonical id is its derived address, so
+// this mints nothing: a reference holding anything else would give the same
+// document a second name and a second live surface. A row id arriving here is
+// a reference made under the older rule being re-stored, and digits do not say
+// whether they name a tile row or a grid row, so both are tried, in that
+// order.
 func (a *Adapter) MintRef(_ context.Context, localID string) (string, error) {
 	switch rpc.ShapeOf(localID) {
 	case rpc.ShapeRow:
@@ -676,8 +588,8 @@ func (a *Adapter) MintRef(_ context.Context, localID string) (string, error) {
 		if _, ckey, err := a.resolveGrid(localID); err == nil {
 			return gridAddr(ckey), nil
 		}
-		// A row nothing here answers to — retired, or never this namespace's
-		// — answers itself: what it names is not this call's verdict to make.
+		// A row nothing here answers to, retired or never this namespace's,
+		// answers itself: what it names is not this call's verdict to make.
 		return localID, nil
 	case rpc.ShapeKey:
 		return localID, nil
@@ -686,8 +598,7 @@ func (a *Adapter) MintRef(_ context.Context, localID string) (string, error) {
 	}
 }
 
-// tileByID resolves one tile through the same grid synthesis GetGrid uses,
-// never a parallel derivation.
+// tileByID resolves one tile through the same grid synthesis GetGrid uses.
 func (a *Adapter) tileByID(ctx context.Context, tileID string) (*gridwellv1.Tile, error) {
 	ref, err := a.resolveTile(tileID)
 	if err != nil {
@@ -703,17 +614,11 @@ func (a *Adapter) tileByID(ctx context.Context, tileID string) (*gridwellv1.Tile
 	return nil, status.Errorf(codes.NotFound, "plugin: no tile %q", tileID)
 }
 
-// Search forwards the query to the plugin and turns each hit into a place, the
-// way the store's Search answers one: the tile plus the containing-well chain
-// from the plugin root. The plugin names a key and a context path, and the
-// adapter resolves both through the same grid synthesis GetGrid runs, one
-// synthesis per distinct context per call, so a hit carries the id the store
-// minted at the placement the user left it. A hit the synthesis cannot place —
-// the key is not in its context's listing, or a path step is not a well of the
-// step before — is dropped, because a result is a promise you can go there. An
-// id: locate is refused: the store keeps no parent index for a plugin
-// namespace, and an empty or root-anchored path would be a wrong place rather
-// than a missing one.
+// Search turns each hit into a place the way the store's Search does: the tile
+// plus its containing-well chain, both through the same grid synthesis GetGrid
+// runs. A hit the synthesis cannot place is dropped, because a result is a
+// promise you can go there. An id: locate is refused: the store keeps no parent
+// index here, so the path would be a wrong place, not a missing one.
 func (a *Adapter) Search(ctx context.Context, req *gridwellv1.SearchRequest) (*gridwellv1.SearchResponse, error) {
 	if q := rpc.ParseSearchQuery(req.Query); q.ID != "" {
 		return nil, status.Error(codes.Unimplemented, "plugin: locate by id is not supported (no parent index in the memory DB)")
@@ -773,8 +678,7 @@ func (a *Adapter) Search(ctx context.Context, req *gridwellv1.SearchRequest) (*g
 	return out, nil
 }
 
-// tileForKey answers the wire tile minted for a plugin key, or nil when the
-// synthesis holds none.
+// tileForKey answers the wire tile for a plugin key, nil when there is none.
 func (s *synthesized) tileForKey(key string) *gridwellv1.Tile {
 	for i, row := range s.rows {
 		if row.Key == key {
@@ -784,8 +688,8 @@ func (s *synthesized) tileForKey(key string) *gridwellv1.Tile {
 	return nil
 }
 
-// tileOpening answers the well tile whose descent is the grid, or nil when
-// there is none.
+// tileOpening answers the well tile whose descent is the grid, nil when there
+// is none.
 func (s *synthesized) tileOpening(childGridID string) *gridwellv1.Tile {
 	for _, t := range s.tiles {
 		if t.ChildGridId == childGridID {
@@ -829,16 +733,14 @@ func (a *Adapter) PlaceTile(ctx context.Context, req *gridwellv1.PlaceTileReques
 	return a.changed(a.GetTile(ctx, &gridwellv1.GetTileRequest{TileId: strconv.FormatInt(id, 10)}))
 }
 
-// resolveGridContext is resolveGrid's context half, for the callers that only
-// need to know WHICH grid an id names, minting nothing.
+// resolveGridContext is resolveGrid's context half, minting nothing.
 func (a *Adapter) resolveGridContext(gridID string) (string, error) {
 	_, ckey, err := a.resolveGrid(gridID)
 	return ckey, err
 }
 
-// SetTile terminates the framing arms at the store. Rename is refused,
-// because a plugin tile's name is its source name, and the content arms do not
-// exist for a plugin tile.
+// SetTile terminates the framing arms at the store. Rename is refused because
+// a plugin tile's name is its source name.
 func (a *Adapter) SetTile(ctx context.Context, req *gridwellv1.SetTileRequest) (*gridwellv1.TileResponse, error) {
 	if req.Rename != "" {
 		return nil, status.Error(codes.InvalidArgument, "plugin: tiles derive their names from the source")
@@ -867,8 +769,7 @@ func (a *Adapter) SetTile(ctx context.Context, req *gridwellv1.SetTileRequest) (
 }
 
 // changed announces the grid a write landed in, on the way back out with the
-// write's own answer: the answer names the grid, so no caller has to resolve
-// it a second time and no write can forget to say what it moved.
+// write's own answer, so no write can forget to say what it moved.
 func (a *Adapter) changed(resp *gridwellv1.TileResponse, err error) (*gridwellv1.TileResponse, error) {
 	if err == nil {
 		a.emitGridChanged(resp.GetTile().GetGridId())
@@ -876,10 +777,9 @@ func (a *Adapter) changed(resp *gridwellv1.TileResponse, err error) (*gridwellv1
 	return resp, err
 }
 
-// SetFraming persists framing into this plugin's namespace of the store: the
-// one framing write, aimed at a doorway tile row or a context's root grid row.
-// It is framing-class — the node's memory of the user's view, never the
-// plugin's content.
+// SetFraming persists framing into this plugin's namespace of the store,
+// aimed at a doorway tile row or a context's root grid row. It is the node's
+// memory of the user's view, never the plugin's content.
 func (a *Adapter) SetFraming(ctx context.Context, req *gridwellv1.SetFramingRequest) (*gridwellv1.SetFramingResponse, error) {
 	f := rpc.Framing{Cx: req.Cx, Cy: req.Cy, Zoom: req.Zoom}
 	if req.RootGridId != "" {
@@ -887,8 +787,8 @@ func (a *Adapter) SetFraming(ctx context.Context, req *gridwellv1.SetFramingRequ
 		if err != nil {
 			return nil, err
 		}
-		// Framing a root grid is a durable fact about it, so the grid gets
-		// its row here — the same mint, one position up.
+		// Framing a root grid is a durable fact about it, so the grid gets its
+		// row here.
 		gid, err := a.mem.ContextID(ckey)
 		if err != nil {
 			return nil, err
@@ -973,9 +873,8 @@ func (a *Adapter) GetTilePreview(ctx context.Context, req *gridwellv1.GetTilePre
 }
 
 func (a *Adapter) Probe(ctx context.Context, req *gridwellv1.ProbeRequest) (*gridwellv1.ProbeResponse, error) {
-	// An id that names nothing this namespace can read — a malformed shape,
-	// a retired row — is GONE. A derived address always resolves to a key,
-	// and the plugin is the one that says whether the key is still there.
+	// An id this namespace cannot read at all is GONE. A derived address
+	// always resolves to a key, and the plugin says whether the key is there.
 	key, err := a.contentKey(req.TileId)
 	if err != nil {
 		return &gridwellv1.ProbeResponse{Presence: gridwellv1.ProbeResponse_PRESENCE_GONE}, nil
@@ -999,19 +898,14 @@ func (a *Adapter) Probe(ctx context.Context, req *gridwellv1.ProbeRequest) (*gri
 	}
 }
 
-// DeleteTile hands the gesture to the plugin, which is the only one that says
-// what deleting its thing means, and then retires the row only if the key went
-// with it. An already-gone row succeeds: the verb is idempotent.
+// DeleteTile hands the gesture to the plugin, the only one that says what
+// deleting its thing means, and retires the row only if the key went with it.
 //
-// Delete is not removal by definition: fs unlinks the file, gitlab marks the
-// todo done and the tile stays and changes state. So the row's fate is settled
-// the way every other absence is — ask the source, by the same arbitration
-// synthesize runs on a non-authoritative listing: only a definitive GONE
-// retires, and a failed or unsure read keeps. The row is where the placement
-// and every stored reference live, so retiring one whose thing is still there
-// would snap the tile back to its hint under a fresh id and kill every link to
-// it. An authoritative listing sweeps the row later if the thing really is
-// gone, so keeping it on doubt costs nothing durable.
+// Delete is not removal by definition: one plugin unlinks the file, another
+// marks the todo done and the tile stays. So the row's fate is settled by the
+// same arbitration synthesize runs, where only a definitive GONE retires:
+// retiring a row whose thing is still there would snap the tile back under a
+// fresh id and kill every link to it.
 func (a *Adapter) DeleteTile(ctx context.Context, req *gridwellv1.DeleteTileRequest) (*gridwellv1.DeleteTileResponse, error) {
 	ref, err := a.resolveTile(req.TileId)
 	if err != nil {
@@ -1020,9 +914,8 @@ func (a *Adapter) DeleteTile(ctx context.Context, req *gridwellv1.DeleteTileRequ
 	if _, err := a.cp.Delete(ctx, &pluginv1.DeleteRequest{Key: ref.key}); err != nil {
 		return nil, err
 	}
-	// Only a row can be retired. Deleting an untouched entry is the plugin's
-	// verdict and nothing else: there is no id to retire, and the next
-	// listing simply does not name it.
+	// Only a row can be retired. Deleting an untouched entry leaves no id to
+	// retire, and the next listing simply does not name it.
 	if ref.id != 0 {
 		pr, perr := a.cp.Probe(ctx, &pluginv1.ProbeRequest{Key: ref.key})
 		if perr == nil && pr.Presence == pluginv1.ProbeResponse_PRESENCE_GONE {
@@ -1031,9 +924,8 @@ func (a *Adapter) DeleteTile(ctx context.Context, req *gridwellv1.DeleteTileRequ
 			}
 		}
 	}
-	// Either way the source changed, and the client must look again: for a
-	// delete that removes, the tile is gone; for one that transforms, this
-	// refetch is what repaints the new state on the same row.
+	// Either way the source changed and the client must look again: for a
+	// delete that transforms, this refetch repaints the new state.
 	a.emitGridChanged(gridAddr(ref.context))
 	return &gridwellv1.DeleteTileResponse{}, nil
 }
