@@ -8,6 +8,7 @@ import (
 
 	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/client/barslot"
+	"github.com/josephburnett/gridwell/client/bartitle"
 	"github.com/josephburnett/gridwell/client/errsurface"
 	"github.com/josephburnett/gridwell/client/nav"
 	"github.com/josephburnett/gridwell/client/pane"
@@ -169,8 +170,8 @@ func (a *App) barTitleGeom() (x, w float64, label string, editable, muted, ok bo
 	if p == nil {
 		return
 	}
-	label, editable, muted = a.bubbleLabel(p)
-	label = a.bubbleDecorate(p, label)
+	v, _ := a.barTitle(p)
+	label, editable, muted = a.bubbleDecorate(p, v.Label), v.Editable, v.Muted
 	if label == "" {
 		return
 	}
@@ -532,8 +533,8 @@ func (a *App) openRenameInput() {
 	if p == nil {
 		return
 	}
-	target, ok := a.renameTarget(p)
-	if !ok {
+	v, target := a.barTitle(p)
+	if v.Rename == bartitle.RenameNone {
 		return
 	}
 	x, w, _, _, _, geomOK := a.barTitleGeom()

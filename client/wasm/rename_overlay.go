@@ -9,6 +9,7 @@ import (
 	"syscall/js"
 
 	"github.com/josephburnett/gridwell/api/rpc"
+	"github.com/josephburnett/gridwell/client/bartitle"
 	"github.com/josephburnett/gridwell/client/door"
 	"github.com/josephburnett/gridwell/client/pane"
 )
@@ -19,33 +20,50 @@ import (
 // canvas, shells and live url panes. An unchanged value never writes, because
 // reading never mutates.
 
-// renameTarget returns the tile the focused pane's rename input edits, or
-// false when nothing here is renamable. A url or shell descent edits that
-// tile; a text tile's name derives from its first line, which the server
-// refuses to override, and an ephemeral tile dies on ascent, so naming one is
-// a lie. Inside a well's grid it is the containing well, since renaming the
-// room names its door. A declared doorway is config-owned.
-func (a *App) renameTarget(p *pane.Pane) (*gridwellv1.Tile, bool) {
+// barTitle is the one answer to what the bar's centered title says and which
+// row a right-click there renames; bartitle.Decide owns the choice and this
+// gathers its inputs from the caches. The door lookup kicks a grid fetch and
+// the declared-label scan walks every declaration, so each is resolved only on
+// the arm that reads it.
+func (a *App) barTitle(p *pane.Pane) (bartitle.Verdict, *gridwellv1.Tile) {
 	if p == nil {
-		return nil, false
+		return bartitle.Verdict{}, nil
 	}
-	if p.ContentID() != "" {
-		t, ok := a.descendedTile(p)
-		if !ok || t.Kind == rpc.KindText || a.possiblyEphemeral(p, t) {
-			return nil, false
+	in := bartitle.Input{Descent: p.ContentID() != "", AtAnchor: len(p.Path()) == 0}
+	var descended, entered, parent *gridwellv1.Tile
+	if t, ok := a.descendedTile(p); ok {
+		descended = t
+		in.Descended, in.DescendedName = true, t.AltText
+		in.DescendedText = t.Kind == rpc.KindText
+		in.PossiblyEphemeral = a.possiblyEphemeral(p, t)
+		in.CertainlyEphemeral = a.certainlyEphemeral(p, t)
+	}
+	if !in.Descent {
+		if in.AtAnchor {
+			entered, in.Door = a.doorFind(p)
+			if entered != nil {
+				in.DoorName = entered.AltText
+			}
+		} else if t, ok := a.parentWell(p); ok {
+			parent, in.Parent, in.ParentName = t, true, t.AltText
 		}
-		return t, true
+		in.ConfigLabel = a.declaredLabel(p)
 	}
-	if len(p.Path()) == 0 {
-		// At a namespace level the well descended through is a real row, so
-		// renaming the room names its door. Declarations stay unrenamable.
-		if t, kind := a.doorFind(p); kind == door.Well {
-			return t, true
-		}
-		return nil, false
+	v := bartitle.Decide(in)
+	switch v.Rename {
+	case bartitle.RenameDescent:
+		return v, descended
+	case bartitle.RenameDoor:
+		return v, entered
+	case bartitle.RenameParent:
+		return v, parent
 	}
-	parentGridID := a.gridIDForPathFrom(p.Anchor(), p.Path()[:len(p.Path())-1])
-	g, ok := a.c.Grid(parentGridID)
+	return v, nil
+}
+
+// parentWell is the well row at the tail of the pane's path, from the cache.
+func (a *App) parentWell(p *pane.Pane) (*gridwellv1.Tile, bool) {
+	g, ok := a.c.Grid(a.gridIDForPathFrom(p.Anchor(), p.Path()[:len(p.Path())-1]))
 	if !ok {
 		return nil, false
 	}
@@ -56,53 +74,23 @@ func (a *App) renameTarget(p *pane.Pane) (*gridwellv1.Tile, bool) {
 	return t, true
 }
 
-// bubbleDecorate applies pane-state markers to the title text. bubbleLabel is
-// what the bar title shows and whether it is user-editable: the renameTarget's
-// name, or else a read-only context label. Everything that shows the name
-// renders bubbleLabel's output.
+// declaredLabel is the plugin declaration's label for the pane's grid.
+func (a *App) declaredLabel(p *pane.Pane) string {
+	want := uuidOf(a.gridIDForPane(p))
+	for _, pl := range a.allPlugins() {
+		if pl.Uuid == want && pl.Label != "" {
+			return pl.Label
+		}
+	}
+	return ""
+}
+
+// bubbleDecorate applies pane-state markers to the title text.
 func (a *App) bubbleDecorate(p *pane.Pane, label string) string {
 	if a.tree.Zoomed == p.ID {
 		return "⛶ " + label
 	}
 	return label
-}
-
-func (a *App) bubbleLabel(p *pane.Pane) (label string, editable, muted bool) {
-	if t, ok := a.renameTarget(p); ok {
-		if t.AltText == "" {
-			return "unnamed", true, true
-		}
-		return t.AltText, true, false
-	}
-	if p.ContentID() != "" {
-		if t, ok := a.descendedTile(p); ok {
-			if a.certainlyEphemeral(p, t) {
-				return "ephemeral", false, true
-			}
-			if t.AltText != "" {
-				return t.AltText, false, false // derived, read-only
-			}
-		}
-		return "unnamed", false, true
-	}
-	// At a namespace level, the door's declared label. A renamable door was
-	// already answered by the renameTarget arm above.
-	if len(p.Path()) == 0 {
-		if t, kind := a.doorFind(p); kind != door.None {
-			if t.AltText == "" {
-				return "unnamed", false, true
-			}
-			return t.AltText, false, true
-		}
-	}
-	// An uncached parent: the plugin's config-owned label.
-	want := uuidOf(a.gridIDForPane(p))
-	for _, pl := range a.allPlugins() {
-		if pl.Uuid == want && pl.Label != "" {
-			return pl.Label, false, true
-		}
-	}
-	return "unnamed", false, true
 }
 
 // doorFind resolves the tile the pane's current level was entered through,
