@@ -2,9 +2,8 @@ package barslot
 
 import "testing"
 
-// Every arm of the slot and the priority between them. The drawer and the
-// click dispatcher read the same answer, so a row here pins the drawn
-// affordance and the click verdict together.
+// The drawer and the click dispatcher read the same answer, so a row here pins
+// the drawn affordance and the click verdict together.
 func TestDecide(t *testing.T) {
 	cases := []struct {
 		name string
@@ -76,8 +75,7 @@ func TestDecide(t *testing.T) {
 	}
 }
 
-// The url arm wins over the shell arm. No real pane is both, since a shell
-// tile is not web content, so nothing but this test holds the priority still.
+// No real pane is both, so nothing but this test holds the priority still.
 func TestDecideURLBeatsShell(t *testing.T) {
 	in := Input{
 		Descent:             true,
@@ -91,7 +89,6 @@ func TestDecideURLBeatsShell(t *testing.T) {
 	}
 }
 
-// A pane with no descent is the + menu whatever the url and shell facts say.
 // Descent is the outer gate, so a leftover fact from the level below cannot
 // turn a grid's slot into a url button.
 func TestDecideGridIgnoresDescentFacts(t *testing.T) {
