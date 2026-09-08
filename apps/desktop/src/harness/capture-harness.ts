@@ -700,6 +700,38 @@ app.whenReady().then(async () => {
   await regMenu.remove('paneDur');
   console.log('canFreeze ok: offered on the durable tile, withheld from the ephemeral visit');
 
+  // ── removeAll clears every pane, and a dead view does not stop it ─────
+  // The before-quit flush in index.ts is its only caller, so nothing else
+  // reaches it. It runs while Chromium is already tearing windows down, where
+  // a view can be gone before its turn: one rejection there would skip the
+  // localStorage flush for every other pane and leave the quit to its
+  // watchdog.
+  const quitErrs: string[] = [];
+  const regQ = new WebviewRegistry(win, { onError: (ev) => quitErrs.push(ev.message) });
+  const quitPanes = ['paneQ1', 'paneQ2', 'paneQ3'];
+  for (let i = 0; i < quitPanes.length; i++) {
+    await regQ.place(quitPanes[i], `u1/8${i}`, DATA_URL, { x: i * 200, y: 0, width: 200, height: 150 });
+  }
+  const quitWcs = quitPanes.map((id) => regQ.webContentsFor(id)!);
+  quitWcs[1].close(); // destroyed behind the registry's back, as a quit does
+  if (!(await waitFor(() => quitWcs[1].isDestroyed(), 4000))) fail('paneQ2: the view never died');
+  let quitRejection = '';
+  await regQ.removeAll().catch((err) => {
+    quitRejection = String(err);
+  });
+  if (quitRejection) fail(`removeAll rejected on a dead view: ${quitRejection}`);
+  if (regQ.paneIds().length !== 0) fail(`removeAll left ${JSON.stringify(regQ.paneIds())} registered`);
+  for (let i = 0; i < quitWcs.length; i++) {
+    if (!(await waitFor(() => quitWcs[i].isDestroyed(), 4000))) {
+      fail(`removeAll left ${quitPanes[i]}'s view alive: its teardown never ran`);
+    }
+  }
+  if (!quitErrs.some((m) => m.includes('view crashed while closing'))) {
+    fail(`removeAll hid the dead view's report (errors: ${JSON.stringify(quitErrs)})`);
+  }
+  await regQ.removeAll(); // an empty registry resolves rather than throwing
+  console.log('removeAll ok: every pane torn down, a dead view neither rejected nor silenced');
+
   console.log('HARNESS PASS');
   app.exit(0);
 });
