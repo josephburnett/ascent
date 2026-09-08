@@ -1,8 +1,5 @@
 // Package touchgest classifies raw touch input into the canvas's existing
-// mouse-gesture vocabulary. The wasm client is mouse-only: every interaction is
-// a left, right or middle button press, drag, or wheel event
-// (client/wasm/input.go). This machine translates touch streams into that
-// vocabulary, so the gesture engine needs no touch knowledge:
+// mouse-gesture vocabulary, so the gesture engine needs no touch knowledge:
 //
 //	tap                → left click        (focus / descend / select)
 //	drag past slop     → left drag         (pan / move tile / palette drag)
@@ -13,17 +10,15 @@
 //	two-finger pinch   → wheel at midpoint (zoom; spread = wheel-up = zoom in)
 //	two-finger scroll  → wheel at midpoint (doc scroll, matching a trackpad)
 //
-// The package is js-free and pure. The wasm shell (client/wasm/touch.go) feeds
-// it timestamped events and dispatches the returned Actions as synthetic
-// MouseEvent and WheelEvent objects.
+// It is js-free. client/wasm/touch.go feeds it timestamped events and
+// dispatches the returned Actions as synthetic MouseEvent and WheelEvent.
 package touchgest
 
 import "math"
 
-// Point is a touch position in the canvas's CSS-pixel coordinates.
+// Point is in the canvas's CSS-pixel coordinates.
 type Point struct{ X, Y float64 }
 
-// Kind is the type of synthetic input to dispatch.
 type Kind int
 
 const (
@@ -33,9 +28,8 @@ const (
 	Wheel
 )
 
-// Action is one synthetic input event for the shell to dispatch at the
-// canvas. Button follows MouseEvent.button (0 left, 1 middle, 2 right);
-// DeltaY is set only for Wheel.
+// Action is one synthetic input event for the shell to dispatch. Button
+// follows MouseEvent.button (0 left, 1 middle, 2 right); DeltaY is Wheel only.
 type Action struct {
 	Kind   Kind
 	Pos    Point
@@ -46,23 +40,19 @@ type Action struct {
 // Tunables. Times are milliseconds (event.timeStamp domain), distances CSS px.
 const (
 	// HoldMs: a press held this long within SlopPx becomes the right button.
-	// Long enough that deliberate taps and drag starts never trip it, short
-	// enough that a hold feels immediate.
 	HoldMs = 400.0
-	// SlopPx is the finger jitter allowance: movement beyond it before HoldMs
-	// makes the press a left drag, and in a two-finger press it separates a
-	// tap from a pinch or scroll.
+	// SlopPx is the jitter allowance: movement beyond it before HoldMs makes
+	// the press a left drag, and separates a two-finger tap from a pinch.
 	SlopPx = 8.0
 	// TwoTapMs: both fingers down and up within this time, and within slop,
 	// is a two-finger tap.
 	TwoTapMs = 250.0
-	// lockPx is the accumulated dominant-axis travel that locks a two-finger
-	// gesture as pinch (distance change) or scroll (parallel travel). It locks
-	// once, so a wandering pinch never flips into a scroll mid-gesture.
+	// lockPx is the dominant-axis travel that locks a two-finger gesture as
+	// pinch or scroll. It locks once, so a wandering pinch never flips.
 	lockPx = 12.0
-	// pinchGain and scrollGain convert finger px into wheel deltaY units.
-	// zoomtrans.WheelZoom clamps its step per event, so a per-move delta only
-	// needs a physical wheel notch's order of magnitude.
+	// pinchGain and scrollGain convert finger px into wheel deltaY.
+	// zoomtrans.WheelZoom clamps its step, so only the order of magnitude of a
+	// physical wheel notch matters.
 	pinchGain  = 1.5
 	scrollGain = 1.0
 )
@@ -81,8 +71,7 @@ const (
 	dead      // gesture over or abandoned; swallow until all fingers lift
 )
 
-// Machine converts a stream of touch events into Actions. It is not safe for
-// concurrent use, because the wasm client is single-threaded.
+// Machine is not safe for concurrent use; the wasm client is single-threaded.
 type Machine struct {
 	st     state
 	origin Point   // pending1: press point; drags: anchored press point
@@ -103,12 +92,11 @@ func dist(a, b Point) float64 { return math.Hypot(a.X-b.X, a.Y-b.Y) }
 
 func midpoint(a, b Point) Point { return Point{X: (a.X + b.X) / 2, Y: (a.Y + b.Y) / 2} }
 
-// Start is called on touchstart with the full current touch list.
+// Start takes the full current touch list.
 func (m *Machine) Start(pts []Point, t float64) []Action {
 	switch len(pts) {
 	case 1:
 		if m.st != idle {
-			// A finger landed mid-gesture, so it is noise.
 			return nil
 		}
 		m.st = pending1
@@ -119,9 +107,9 @@ func (m *Machine) Start(pts []Point, t float64) []Action {
 	case 2:
 		switch m.st {
 		case pending1, idle:
-			// Second finger before classification, or both at once when idle
-			// because the first landed on a DOM overlay that forwards only
-			// multi-finger touches (the editing textarea).
+			// Second finger before classification, or both at once when the
+			// first landed on a DOM overlay that forwards only multi-finger
+			// touches (the editing textarea).
 			m.st = twoDown
 			m.mid = midpoint(pts[0], pts[1])
 			m.dist = dist(pts[0], pts[1])
@@ -129,8 +117,7 @@ func (m *Machine) Start(pts []Point, t float64) []Action {
 			m.accDist, m.accTrav = 0, 0
 			return nil
 		case dragLeft, dragRight:
-			// A stray extra finger mid-drag ends the drag cleanly, and the
-			// machine waits for a full lift.
+			// A stray extra finger mid-drag ends the drag cleanly.
 			as := []Action{{Kind: MouseUp, Pos: m.last, Button: m.dragButton()}}
 			m.st = dead
 			return as
@@ -139,7 +126,7 @@ func (m *Machine) Start(pts []Point, t float64) []Action {
 			return nil
 		}
 	default:
-		// 3+ fingers: not our vocabulary.
+		// 3+ fingers is not our vocabulary.
 		if m.st == dragLeft || m.st == dragRight {
 			as := []Action{{Kind: MouseUp, Pos: m.last, Button: m.dragButton()}}
 			m.st = dead
@@ -150,7 +137,6 @@ func (m *Machine) Start(pts []Point, t float64) []Action {
 	}
 }
 
-// Move is called on touchmove with the full current touch list.
 func (m *Machine) Move(pts []Point, t float64) []Action {
 	switch m.st {
 	case pending1:
@@ -161,8 +147,8 @@ func (m *Machine) Move(pts []Point, t float64) []Action {
 		if dist(m.origin, pts[0]) <= SlopPx {
 			return nil
 		}
-		// Crossed slop before the hold: a left drag, pressed at the origin so
-		// the gesture engine sees the same press point a mouse would.
+		// Pressed at the origin, so the gesture engine sees the same press
+		// point a mouse would.
 		m.st = dragLeft
 		return []Action{
 			{Kind: MouseDown, Pos: m.origin, Button: 0},
@@ -217,11 +203,11 @@ func (m *Machine) Move(pts []Point, t float64) []Action {
 	}
 }
 
-// End is called on touchend and touchcancel with the remaining touch list.
+// End takes the remaining touch list, on touchend and touchcancel.
 func (m *Machine) End(remaining []Point, t float64) []Action {
 	if len(remaining) > 0 {
-		// Fingers still down. Hardware and CDP injection both lift one finger
-		// per event, so this is the ordinary end of a two-finger gesture.
+		// Hardware and CDP injection both lift one finger per event, so this
+		// is the ordinary end of a two-finger gesture.
 		switch m.st {
 		case dragLeft, dragRight:
 			as := []Action{{Kind: MouseUp, Pos: m.last, Button: m.dragButton()}}
@@ -243,7 +229,6 @@ func (m *Machine) End(remaining []Point, t float64) []Action {
 	m.st = idle
 	switch st {
 	case pending1:
-		// A quick tap is the full left click at the press point.
 		return []Action{
 			{Kind: MouseDown, Pos: m.origin, Button: 0},
 			{Kind: MouseUp, Pos: m.origin, Button: 0},
@@ -256,7 +241,6 @@ func (m *Machine) End(remaining []Point, t float64) []Action {
 		return []Action{{Kind: MouseUp, Pos: m.last, Button: btn}}
 	case twoDown, twoLift:
 		if t-m.twoT0 <= TwoTapMs && m.accDist < SlopPx && m.accTrav < SlopPx {
-			// Two-finger tap: middle click = ascend.
 			return []Action{
 				{Kind: MouseDown, Pos: m.mid, Button: 1},
 				{Kind: MouseUp, Pos: m.mid, Button: 1},
@@ -268,9 +252,9 @@ func (m *Machine) End(remaining []Point, t float64) []Action {
 	}
 }
 
-// Timer is called when a long-press timer armed at a touchstart fires. The
-// shell arms one per press and never cancels, so the machine ignores a firing
-// from the wrong state or from an earlier press.
+// Timer takes a long-press timer firing. The shell arms one per press and
+// never cancels, so a firing from the wrong state or an earlier press is
+// ignored.
 func (m *Machine) Timer(t float64) []Action {
 	if m.st != pending1 || t-m.t0 < HoldMs {
 		return nil
