@@ -79,8 +79,7 @@ const (
 
 // recoverLostRelease treats a move reporting the gesture's own button already
 // up as that release arriving late, so each state finishes through its own
-// commit path, never by being cleared. The order matches onMouseUp's, because
-// finishRightDrag commits the a.dragging a center right-drag arms alongside it.
+// commit path, never by being cleared. The order matches onMouseUp's.
 func (a *App) recoverLostRelease(buttons int, sx, sy float64) bool {
 	switch {
 	case a.leftResize != nil && buttons&buttonsLeft == 0:
@@ -109,9 +108,8 @@ func (a *App) paneAtScreen(sx, sy float64) (*pane.Pane, pane.Rect, bool) {
 }
 
 // menuPaneForPointer routes an open palette's pointer events to the menu's own
-// pane, never the pane under the cursor: the popover floats over whatever pane
-// sits under the bar slot while every swatch rect is laid out for the menu's
-// pane, so routing by the pointer would move focus out of the menu in use.
+// pane, never the pane under the cursor: every swatch rect is laid out for the
+// menu's pane, so routing by the pointer would move focus out of the menu.
 func (a *App) menuPaneForPointer() (*pane.Pane, pane.Rect, bool) {
 	mp := a.tree.FindPane(a.menu.PaneID()) // PaneID is "" while closed
 	if mp == nil {
@@ -161,8 +159,7 @@ func (a *App) onWheel(this js.Value, args []js.Value) any {
 	dy := args[0].Get("deltaY").Float()
 	sx, sy := mouseXY(args[0], a.canvas)
 	// A wheel over the bar zooms the focused pane from its center: the escape
-	// hatch for a grid tiled wall to wall with wells, where every content
-	// position claims the well zoom. The band is below every pane.
+	// hatch for a grid tiled wall to wall with wells. The band is below panes.
 	if bx, top, bw, barOK := a.bottomBarRect(); barOK &&
 		wsbar.Where(sx, sy, bx, top, bw) == wsbar.ZoneBar {
 		if fp := a.tree.FocusedPane(); fp != nil && fp.ContentID() == "" {
@@ -300,8 +297,7 @@ func (a *App) onMouseDown(this js.Value, args []js.Value) any {
 		return nil
 	}
 	// Routed before pane resolution: resolving the pane under the popover first
-	// would transfer focus and close the very menu being used. Missing a swatch
-	// swallows the click, so the popover stays open.
+	// would close the very menu being used. Missing a swatch swallows the click.
 	if mp, mr, ok := a.menuPaneForPointer(); ok && args[0].Get("button").Int() == 0 {
 		if a.pointInPalette(mp, sx, sy) {
 			// Not a swatch, so no drag arms; it changes only the menu.
@@ -342,9 +338,9 @@ func (a *App) onMouseDown(this js.Value, args []js.Value) any {
 	}
 
 	// Checked first, so a grab near the edge wins over content interactions.
-	// preventDefault because native selection or drag engages past the OS drag
-	// threshold and steals the pointer mid-resize; that steal is invisible to
-	// synthetic input, so the e2e pins the prevented flag instead.
+	// preventDefault because native selection engages past the OS drag threshold
+	// and steals the pointer; that steal is invisible to synthetic input, so the
+	// e2e pins the prevented flag instead.
 	if a.armLeftResize(r, sx, sy) {
 		args[0].Call("preventDefault")
 		return nil
@@ -554,9 +550,8 @@ func (a *App) overDeleteButton(d *dragState, sx, sy float64) bool {
 	return a.pointInPlus(sx, sy)
 }
 
-// attemptDescentOrAscent routes a bare left-click, which only ever descends,
-// and reports whether it did anything. inNewPane is the ctrl-click ask: the
-// descent lands in a new pane split below. Only a descent splits, so the
+// attemptDescentOrAscent routes a bare left-click, which only ever descends.
+// inNewPane is the ctrl-click ask, and only a descent splits, so the
 // url-configure prompt stays in place.
 func (a *App) attemptDescentOrAscent(p *pane.Pane, r pane.Rect, sx, sy float64, inNewPane bool) bool {
 	if p.ContentID() != "" {
@@ -601,9 +596,8 @@ const zoomDistFactor = 4.0
 // (nav.go), on the same path a plain well takes.
 
 // persistedGridView reads the framing the grid at (anchor, path) was left at
-// from the row that owns it: the containing well, or the plugin for a root. It
-// restores every ascent with no session state, where 0,0 at zoom 1 would be a
-// framing the user never set.
+// from the row that owns it. It restores every ascent with no session state,
+// where 0,0 at zoom 1 would be a framing the user never set.
 func (a *App) persistedGridView(p *pane.Pane, anchor string, path []string) (cx, cy, zoom float64, ok bool) {
 	r := paneRectFor(a, p)
 	if r.W <= 0 || r.H <= 0 {
