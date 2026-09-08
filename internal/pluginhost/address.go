@@ -1,28 +1,15 @@
 package pluginhost
 
-// The derived address: how the node names a plugin entry, minted row or not.
-//
-// An id is a chain of segments (docs/ids.md). Digits name a row. A key-form
-// segment — "~" plus base64url, rpc.KeyTileID — names a thing by what it IS,
-// and the payload inside it is this package's business alone: everything
-// between here and the browser treats the segment as opaque, so the grammar
-// has exactly one owner.
-//
-// Two positions, one payload:
+// The derived address: how the node names a plugin entry, minted row or not. A
+// key-form segment (rpc.KeyTileID) carries a payload only this package reads:
 //
 //	grid: the context key                    "~" + b64("/home/joe")
 //	tile: the context key, NUL, the entry key "~" + b64("/home" NUL "/home/joe")
 //
-// The context half is what makes a tile answerable on its own. The node keeps
-// no key→context index — that would be a second copy of the plugin's own
-// structure, written on every listing, which is exactly the row we are here
-// to stop minting — and plugin.v1 has no verb that describes one entry. So the
-// address carries the listing that names it, and GetTile on an untouched entry
-// is one List of its context, the same call GetGrid would make.
-//
-// NUL cannot appear in a plugin key that is a path, a URL, or a handle, and
-// base64url hides it from the URL either way; a payload without one is a
-// context, with one is an entry.
+// The context half makes a tile answerable on its own, since plugin.v1 has no
+// verb describing one entry. A key→context index would be a second copy of the
+// plugin's structure written on every listing, so instead GetTile on an
+// untouched entry is one List of the context the address names.
 
 import (
 	"strings"
@@ -37,24 +24,15 @@ const addrSep = "\x00"
 func gridAddr(context string) string { return rpc.KeyTileID(context) }
 
 // tileAddr renders an entry as a tile segment: the context that lists it and
-// its key. It is the entry's ONE PUBLIC ID, and it is what the listing answers
-// forever — the row the first durable fact mints is bookkeeping, resolved on
-// the way in (Adapter.resolveTile) and never handed out as a name.
-//
-// A mint that renamed the entry took the id out from under whoever was standing
-// on it. A URL segment naming a directory doorway stopped resolving the moment
-// the descent's own reframe minted the doorway's row: urlwalk.Walk skips an id
-// the refetched listing does not contain, so the restore landed at the plugin
-// root. A pane descended into a read-only file lost its content id the moment a
-// scroll or a ctrl+wheel zoom minted the row, and the document vanished with
-// nothing said. The address cannot do that: it names the entry by what it IS,
-// so it is derivable from the row's own stored key even after the source stops
-// listing the entry at all.
+// its key. It is the entry's one public id; the row a first durable fact mints
+// is bookkeeping, resolved on the way in (Adapter.resolveTile) and never handed
+// out. A mint that renamed the entry would take the id out from under whoever
+// was standing on it, so a URL restore or a descended pane would lose its
+// target the moment a scroll minted a row.
 func tileAddr(context, key string) string { return rpc.KeyTileID(context + addrSep + key) }
 
-// splitAddr decodes a key-form segment. isTile distinguishes the two
-// positions: a tile address carries an entry key, a grid address is a bare
-// context. ok is false for a segment of any other shape.
+// splitAddr decodes a key-form segment. isTile is true when the payload
+// carries an entry key rather than a bare context.
 func splitAddr(seg string) (context, key string, isTile, ok bool) {
 	payload, ok := rpc.TileKey(seg)
 	if !ok {
