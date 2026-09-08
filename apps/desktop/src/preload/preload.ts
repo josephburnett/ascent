@@ -25,8 +25,7 @@ import {
 const api = {
   version: 1,
   // Which parts of the bridge this preload implements. caps.Derive reads it, so
-  // exposing the bridge does not imply every native feature. Shells ride the
-  // web door and need nothing from the host.
+  // exposing the bridge does not imply every native feature.
   caps: { liveUrl: true },
 
   placeWebview(args: PlaceArgs): Promise<void> {
@@ -38,8 +37,7 @@ const api = {
   setHidden(args: SetHiddenArgs): Promise<void> {
     return ipcRenderer.invoke(CH.setHidden, args);
   },
-  // setZoom sets the live view's user content zoom, the tile's persisted
-  // content_zoom. Main composes it with the min-width zoom.
+  // The tile's persisted content_zoom; main composes it with the min-width zoom.
   setZoom(args: SetZoomArgs): Promise<void> {
     return ipcRenderer.invoke(CH.setZoom, args);
   },
@@ -49,15 +47,13 @@ const api = {
   goBack(args: PaneRef): Promise<void> {
     return ipcRenderer.invoke(CH.goBack, args);
   },
-  // showMenu is the bar circle's right-click onto the live view's context menu,
-  // with no in-page context.
+  // The bar circle's right-click, with no in-page context.
   showMenu(args: PaneRef): Promise<void> {
     return ipcRenderer.invoke(CH.showMenu, args);
   },
 
 
-  // onFrame and onNav register renderer-side listeners for main→renderer
-  // pushes. Each returns an unsubscribe function.
+  // Every on* here returns an unsubscribe function.
   onFrame(cb: (ev: FrameEvent) => void): () => void {
     const h = (_e: unknown, ev: FrameEvent) => cb(ev);
     ipcRenderer.on(EV.frame, h);
@@ -68,58 +64,49 @@ const api = {
     ipcRenderer.on(EV.nav, h);
     return () => ipcRenderer.removeListener(EV.nav, h);
   },
-  // onRightForward fires when a right-button press lands on a live url view, in
-  // canvas coords, so the renderer can begin the pane gesture and park the view.
+  // A right-button press on a live url view, in canvas coords, so the renderer
+  // begins the pane gesture and parks the view.
   onRightForward(cb: (ev: ForwardedRightdown) => void): () => void {
     const h = (_e: unknown, ev: ForwardedRightdown) => cb(ev);
     ipcRenderer.on(EV.rightForward, h);
     return () => ipcRenderer.removeListener(EV.rightForward, h);
   },
-  // onMiddleForward fires when a middle-button press lands on a live url view,
-  // in canvas coords, so the renderer can ascend the pane.
+  // A middle-button press, so the renderer ascends the pane.
   onMiddleForward(cb: (ev: ForwardedRightdown) => void): () => void {
     const h = (_e: unknown, ev: ForwardedRightdown) => cb(ev);
     ipcRenderer.on(EV.middleForward, h);
     return () => ipcRenderer.removeListener(EV.middleForward, h);
   },
-  // onLeftForward fires when a left-button press lands on a live url view, in
-  // canvas coords, so the renderer can transfer pane focus. The click is not
+  // A left-button press, so the renderer transfers pane focus. The click is not
   // prevented, so in-page interaction stays with the page.
   onLeftForward(cb: (ev: ForwardedRightdown) => void): () => void {
     const h = (_e: unknown, ev: ForwardedRightdown) => cb(ev);
     ipcRenderer.on(EV.leftForward, h);
     return () => ipcRenderer.removeListener(EV.leftForward, h);
   },
-  // onOpenBelow fires when a live view's page tried to open a new window. The
-  // wasm splits the pane and opens the url as an ephemeral visit below.
+  // The wasm splits the pane and opens the url as an ephemeral visit below.
   onOpenBelow(cb: (ev: OpenBelowEvent) => void): () => void {
     const h = (_e: unknown, ev: OpenBelowEvent) => cb(ev);
     ipcRenderer.on(EV.openBelow, h);
     return () => ipcRenderer.removeListener(EV.openBelow, h);
   },
-  // onFreezeURL fires when the user picked "Freeze Page" in a live view's
-  // context menu.
   onFreezeURL(cb: (ev: FreezeURLEvent) => void): () => void {
     const h = (_e: unknown, ev: FreezeURLEvent) => cb(ev);
     ipcRenderer.on(EV.freezeUrl, h);
     return () => ipcRenderer.removeListener(EV.freezeUrl, h);
   },
-  // onContextMenu fires just before a live view's context menu opens, naming the
-  // pane it acts in, so the wasm can move focus to that pane.
+  // Just before a context menu opens, so the wasm moves focus to that pane.
   onContextMenu(cb: (ev: ContextMenuEvent) => void): () => void {
     const h = (_e: unknown, ev: ContextMenuEvent) => cb(ev);
     ipcRenderer.on(EV.menuPane, h);
     return () => ipcRenderer.removeListener(EV.menuPane, h);
   },
-  // onZoomKey fires when the content-zoom chord was pressed while a live view
-  // owned OS keyboard focus.
   onZoomKey(cb: (ev: ZoomKeyEvent) => void): () => void {
     const h = (_e: unknown, ev: ZoomKeyEvent) => cb(ev);
     ipcRenderer.on(EV.zoomKey, h);
     return () => ipcRenderer.removeListener(EV.zoomKey, h);
   },
-  // onError fires for every main-process failure that must reach the user, and
-  // is the one channel the wasm client feeds into its error surface.
+  // The one channel the wasm client feeds into its error surface.
   onError(cb: (ev: ErrorEvent) => void): () => void {
     const h = (_e: unknown, ev: ErrorEvent) => cb(ev);
     ipcRenderer.on(EV.error, h);
