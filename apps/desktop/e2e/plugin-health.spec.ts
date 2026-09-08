@@ -1,20 +1,12 @@
 import { test, expect } from './fixtures';
 
-// Crosses the plugin-classification seam: a plugin whose Info handshake
-// succeeds and declares no grid of its own, an fs plugin with no config.root,
-// is healthy. A plugin contributes + menu entries and is not itself a place, so
-// having nothing to enter is not a failure and must not present as one. A row
-// with nothing to offer contributes nothing to the menu.
-//
-// The two non-healthy statuses are "broken", a recorded failure whatever the
-// reason, and "waiting", asked and not yet answered, which only a connection
-// row can be in (conn-config.spec.ts covers it). Both still get a swatch,
-// because the menu has something to say about them.
-//
-// A plugin whose Info fails outright is not covered here: a plugin that fails
-// to spawn aborts the whole server by design, in internal/plugin's loader, so
-// no real app boot reaches it. buildPluginInfo tests in
-// internal/server/plugininfo_test.go cover that shape.
+// A plugin whose Info succeeds and declares no grid of its own, an fs plugin
+// with no config.root, is healthy: a plugin contributes menu entries and is not
+// itself a place, so having nothing to enter is not a failure. The non-healthy
+// statuses are "broken" and "waiting", which only a connection row can be in
+// (conn-config.spec.ts). A plugin whose Info fails outright aborts the server
+// at spawn, so no app boot reaches it; internal/server/plugininfo_test.go
+// covers that shape.
 test.use({ extraPlugins: [{ kind: 'fs', name: 'noroot' }] });
 
 test('a plugin that declares no doorway is healthy and shows nothing', async ({ gw, window }) => {
@@ -25,8 +17,7 @@ test('a plugin that declares no doorway is healthy and shows nothing', async ({ 
   expect(noroot!.infoError, 'and it answered without any Info error').toBe('');
   expect(noroot!.status, 'answered with no doorway is healthy, not broken').toBe('nodoor');
 
-  // Boot landed on home: a node's home is where "/" means, and no plugin
-  // competes for it.
+  // A node's home is where "/" means, and no plugin competes for it.
   const before = await gw.focused();
   expect(before.anchor, 'boots into the node home').toBe(
     pls.find((p) => p.label === 'home')!.rootGridID,

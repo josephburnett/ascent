@@ -1,9 +1,6 @@
 // Integration harness for the IPC contract. capture-harness calls the registry
-// directly; this drives the whole path the wasm renderer uses, where a real
-// renderer page calls window.gridwell.* from the preload bridge, which invokes
-// the ipcMain handlers, which drive the registry. It covers preload exposure,
-// the IPC round trip, capture and freeze, and the context menu's focus
-// announce.
+// directly; this drives the whole path the wasm renderer uses, from
+// window.gridwell.* through the preload bridge and the ipcMain handlers.
 //
 //   npm run build && xvfb-run -a electron dist/harness/bridge-harness.js
 import { app, BaseWindow, WebContentsView, Menu } from 'electron';
@@ -64,12 +61,10 @@ app.whenReady().then(() => {
   win.contentView.addChildView(root);
   root.setBounds({ x: 0, y: 0, width: 800, height: 600 });
 
-  // The context menu's focus announce, recorded in order against the pop.
-  // showContextMenu is the one funnel both doors into the menu pass through,
-  // an in-page right-click and the bar circle. The announce has to land before
-  // the menu is up, because once it is up an item can run, and it would run in
-  // a pane that never took focus. Menu.popup is stubbed, because a real native
-  // menu under xvfb would never be dismissed.
+  // The announce has to land before the menu is up, because once it is up an
+  // item can run, and it would run in a pane that never took focus.
+  // showContextMenu is the funnel both doors pass through. Menu.popup is
+  // stubbed, because a native menu under xvfb would never be dismissed.
   const order: string[] = [];
   const realPopup = Menu.prototype.popup;
   Menu.prototype.popup = function stubPopup(this: Menu): void {
@@ -82,10 +77,9 @@ app.whenReady().then(() => {
 
   root.webContents.on('console-message', (_e, _level, message) => {
     if (message === 'BRIDGE_PLACED') {
-      // PlaceArgs.focused crossed the seam. The entry must carry the
-      // renderer's verdict, because the focus-steal guard reads it from the
-      // first frame, before the renderer's next setHidden could correct it and
-      // before addChildView and loadURL hand the widget OS focus.
+      // The entry must carry the renderer's verdict, because the steal guard
+      // reads it from the first frame, before the next setHidden could correct
+      // it and before addChildView and loadURL hand the widget OS focus.
       const f = registry.focusedFor('p1');
       if (f !== false) fail(`PlaceArgs.focused did not reach the registry entry (focusedFor=${String(f)})`);
       console.log('bridge ok: PlaceArgs.focused=false reached the entry');

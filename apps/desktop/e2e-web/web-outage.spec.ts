@@ -6,18 +6,13 @@ import { Served, spawnServe, freePort, authenticate } from './fixtures';
 import { GridwellDriver } from '../e2e/driver';
 import { tileAt } from '../e2e/oracle';
 
-// The mid-session outage seam: the only gate that takes the link away under a
-// live client. A network blip during autosave can destroy the only copy of
-// unsaved text, a reconnect can render stale state silently, and a request the
-// network swallows can leave a pane loading forever. These specs type into a
-// doc, kill the server mid-session, keep the typing on screen, restart the
-// server on the same port, and prove the retry kick lands the save on the reborn
-// server with no user action. Others swallow a single request without killing
-// anything and prove the client recovers on its own.
-//
-// The stock `serve` fixture cannot revive its process, so this spec owns a
-// restartable server: the same seedHome, binary, and flags, plus kill() and
-// start() the test drives.
+// The mid-session outage seam, the only gate that takes the link away under a
+// live client: a blip during autosave can destroy the only copy of unsaved
+// text, and a request the network swallows can leave a pane loading forever.
+// These specs kill the server mid-session and prove the retry kick lands the
+// save on the reborn server with no user action, or swallow one request without
+// killing anything and prove the client recovers on its own. The stock `serve`
+// fixture cannot revive its process, so this file owns a restartable server.
 
 
 
@@ -39,9 +34,8 @@ class RestartableServe {
     this.child = served.child;
     this.token = served.token; // the same password gives the same token across restarts
   }
-  // kill is the outage: SIGKILL, so there is no graceful shutdown and no goodbye
-  // on any stream, the shape of a dropped link or a crashed machine. It waits
-  // for the exit so the port is genuinely free for the restart.
+  // SIGKILL, so there is no goodbye on any stream: the shape of a dropped link.
+  // It waits for the exit so the port is genuinely free for the restart.
   async kill(): Promise<void> {
     const child = this.child;
     this.child = null;
@@ -94,21 +88,18 @@ test('typing survives a server outage and saves itself after the restart', async
   const created = tileAt(await gw.getGrid(f.gridID), 'text', cx, cy)!;
   await gw.descendCell(cx, cy);
 
-  // Seed a saved baseline so the outage save is a real versioned edit rather than
-  // a first write.
+  // A saved baseline, so the outage save is a versioned edit, not a first write.
   await gw.typeText('saved before the outage. ');
   await expect
     .poll(async () => gw.getTileContent(created.id), { timeout: 10_000 })
     .toContain('saved before the outage.');
 
-  // The outage: kill the server, then type. The debounced autosave fires into a
-  // dead socket.
+  // The debounced autosave fires into a dead socket.
   await outage.kill();
   await gw.typeText('typed while the server was dead.');
 
-  // The typing must stay on screen and stay dirty. A failed save that drops the
-  // buffer drops the only copy, and the next render repaints the textarea from
-  // stale bytes.
+  // A failed save that drops the buffer drops the only copy, and the next
+  // render repaints the textarea from stale bytes.
   await expect
     .poll(
       async () =>
@@ -120,8 +111,7 @@ test('typing survives a server outage and saves itself after the restart', async
     )
     .toContain('typed while the server was dead.');
 
-  // The failure surfaces: some notice is on the strip, a save retry or a
-  // disconnect. Which one is not pinned here.
+  // Some notice is on the strip; which one is not pinned here.
   await expect
     .poll(async () => {
       const errs = await window.evaluate(() => (window as any).__gridwellTest.errors());
@@ -129,16 +119,14 @@ test('typing survives a server outage and saves itself after the restart', async
     })
     .toBeGreaterThan(0);
 
-  // The recovery: same port, same home. No user action from here on; the
-  // reconnect kick, which re-opens the event stream, plus the flush sweep must
-  // land the dirty buffer on the reborn server by themselves.
+  // Same port, same home. No user action from here on: the reconnect kick and
+  // the flush sweep must land the dirty buffer by themselves.
   await outage.start();
   await expect
     .poll(async () => gw.getTileContent(created.id), { timeout: 30_000 })
     .toContain('typed while the server was dead.');
 
-  // The screen still shows the full document, with no revert and no
-  // double-apply.
+  // No revert and no double-apply.
   const value = await window.evaluate(() => {
     const ta = document.querySelector('textarea');
     return ta ? (ta as HTMLTextAreaElement).value : '';
@@ -152,19 +140,12 @@ test('a grid fetch the network swallows does not latch "loading" forever', async
   window,
   outage,
 }) => {
-  // The zombie fetch, and the pane that waits on it forever. The client dedupes
-  // GetGrid per grid id, so the per-frame draw cannot dogpile the server, and
-  // the claim is released when the request returns. A killed server answers with
-  // a reset and the request does return. The shape that hurts is the black hole,
-  // a laptop asleep or a route that went away, where the request neither answers
-  // nor fails. A claim never released means no refetch ever fires, no error is
-  // ever reported, and the pane says "loading …" for the life of the page.
-  //
-  // Nothing here restarts the server. A fetch is bounded, so the pane comes back
-  // off its own clock with the link in the state that broke it. The event
-  // stream's reconnect resync also cancels in-flight fetches, which is faster
-  // when the stream does come back, and client/inflight's unit tests own that
-  // half.
+  // The client dedupes GetGrid per grid id and releases the claim when the
+  // request returns. A killed server answers with a reset, so the request does
+  // return; the shape that hurts is the black hole, where it neither answers
+  // nor fails, and a claim never released means no refetch, no error, and
+  // "loading …" for the life of the page. Nothing here restarts the server: a
+  // fetch is bounded, so the pane comes back off its own clock.
   test.setTimeout(150_000);
   await gw.enterPlugin('home');
   const f = await gw.focused();
@@ -176,8 +157,8 @@ test('a grid fetch the network swallows does not latch "loading" forever', async
   const well = tileAt(await gw.getGrid(f.gridID), 'well', cx, cy)!;
   const child = well.childGridId as string;
 
-  // A tile inside the well: an empty child grid signs the same as an uncached
-  // one, so without it "the grid came back" is unobservable.
+  // An empty child grid signs the same as an uncached one, so without a tile
+  // inside "the grid came back" is unobservable.
   await gw.descendCell(cx, cy);
   const inner = await gw.focused();
   const icx = Math.round(inner.cx);
@@ -187,10 +168,9 @@ test('a grid fetch the network swallows does not latch "loading" forever', async
   const note = tileAt(await gw.getGrid(child), 'text', icx, icy)!;
   expect(note, 'the well holds a tile to come back to').toBeTruthy();
 
-  // The black hole: the next GetGrid for this one grid is never fulfilled and
-  // never aborted. Every other request keeps working, the retry included, so the
-  // only thing between the pane and its grid is the client's own claim on that
-  // id.
+  // The next GetGrid for this one grid is never fulfilled and never aborted.
+  // Everything else keeps working, so the only thing between the pane and its
+  // grid is the client's own claim on that id.
   let blackhole = true;
   await window.route('**/gridwell.v1.Gridwell/GetGrid', async (route) => {
     if (blackhole && (route.request().postData() ?? '').includes(child)) {
@@ -200,8 +180,8 @@ test('a grid fetch the network swallows does not latch "loading" forever', async
     await route.continue();
   });
 
-  // Back to a fresh boot at home, so the child grid is out of the cache and the
-  // well's preview asks for it again, into the hole.
+  // A fresh boot, so the child grid is out of the cache and the well's preview
+  // asks again, into the hole.
   await window.goto(outage.origin + '/?e2e=1');
   await window.waitForFunction(() => !!(window as any).__gridwellTest, null, { timeout: 30_000 });
   const home = await gw.focused();
@@ -224,8 +204,7 @@ test('a grid fetch the network swallows does not latch "loading" forever', async
   );
   expect(stuck, 'the pane is showing a grid it does not have').toBe(0);
 
-  // No user action, no restart and no reconnect, only time. The bounded fetch
-  // gives up, says so, and the next draw asks again over a link that works.
+  // No user action, no restart, no reconnect: only the bounded fetch giving up.
   await expect
     .poll(
       async () =>
@@ -250,7 +229,7 @@ test('framing settled during an outage lands after the restart', async ({ gw, ou
   const cx = Math.round(f.cx);
   const cy = Math.round(f.cy);
 
-  // A fresh well: its zoom stays 0 until the first framing write, the same oracle
+  // A fresh well's zoom stays 0 until the first framing write, the oracle
   // framing-roundtrip.spec.ts settles with.
   await gw.openPalette();
   await gw.dragCreate('well', cx, cy);
@@ -260,9 +239,8 @@ test('framing settled during an outage lands after the restart', async ({ gw, ou
 
   await outage.kill();
 
-  // Pan inside the well: the settle persister fires SetFraming into the dead
-  // socket, and the outbox must park it. Otherwise the optimistic patch survives
-  // on screen and nothing ever re-posts it.
+  // The settle persister fires SetFraming into the dead socket, and the outbox
+  // must park it, or the optimistic patch survives on screen unposted.
   await gw.panFocusedGrid(
     Math.round(inside.cx) + 1,
     Math.round(inside.cy),
@@ -272,8 +250,7 @@ test('framing settled during an outage lands after the restart', async ({ gw, ou
 
   await outage.start();
 
-  // The parked framing write lands on the reborn server with no user action, so
-  // the well row's zoom leaves its never-written 0.
+  // The parked write lands with no user action, so the zoom leaves its 0.
   await expect
     .poll(
       async () => {
@@ -286,12 +263,10 @@ test('framing settled during an outage lands after the restart', async ({ gw, ou
     .toBeGreaterThan(0);
 });
 
-// The ephemeral cleanup is the one delete with nothing on screen to reconcile.
-// The row lives in the off-grid scratch grid, and a shell's tmux session with
-// all its processes lives behind it. Ascending is what deletes it, so the delete
-// has to park like every other unacknowledged write and drain on reconnect. A
-// delete sent outside the dispatcher would be lost to an outage at exactly that
-// moment, with no outbox entry and no retry.
+// The ephemeral cleanup is the one delete with nothing on screen to reconcile:
+// the row is off-grid and a shell's tmux session lives behind it. Ascending
+// deletes it, so the delete has to park like every other unacknowledged write.
+// One sent outside the dispatcher would be lost to an outage at that moment.
 test('an ephemeral visit left during an outage parks its delete and drains on reconnect', async ({
   gw,
   window,
@@ -302,8 +277,7 @@ test('an ephemeral visit left during an outage parks its delete and drains on re
 
   await gw.enterPlugin('home');
 
-  // An ephemeral shell: created off-grid in the scratch grid, descended into,
-  // PTY spawned. Shells ride the web door, so this is the browser's own visit.
+  // Shells ride the web door, so this is the browser's own visit.
   await gw.clickPaletteSwatch('shell');
   await expect.poll(async () => (await gw.focused()).textFocus, { timeout: 15_000 }).not.toBe('');
   const ephemeralID = (await gw.focused()).textFocus;
@@ -312,7 +286,7 @@ test('an ephemeral visit left during an outage parks its delete and drains on re
     'the scratch row is there to be cleaned up',
   ).toBe(1);
 
-  // The outage, then the ascent, so the delete fires into a dead socket.
+  // The ascent's delete fires into a dead socket.
   await outage.kill();
   await gw.ascendViaCrumb();
 
@@ -321,25 +295,18 @@ test('an ephemeral visit left during an outage parks its delete and drains on re
     .poll(() => window.evaluate(() => (window as any).__gridwellTest.outbox()), { timeout: 15_000 })
     .toContain('DeleteTile:' + ephemeralID);
 
-  // The reconnect drains it with no user action, so the scratch row is gone and
-  // the tmux session behind it went with the delete.
+  // The reconnect drains it with no user action, and the tmux session goes too.
   await outage.start();
   await expect
     .poll(async () => ((await gw.getGrid(scratchGridID)).tiles ?? []).length, { timeout: 30_000 })
     .toBe(0);
 });
 
-// The swallowed WRITE, #298, and the mirror of the swallowed grid read above.
-// Killing a server resets its sockets, so every write returns and every outage
-// spec above sees an answer. The shape that hurts is the black hole, a laptop
-// asleep or a route that went away, where the request neither answers nor fails.
-// An outbox that recorded a write on its RETURN would have no entry and no drain
-// for the one write it exists for, and the closure holding the user's value
-// would die with its goroutine.
-//
-// Nothing is killed and nothing is restarted here. The write parks the moment it
-// is sent, so the outbox is the truth about it while it hangs, and the retry
-// drains it over a link that works, with no user action.
+// The swallowed write, the mirror of the swallowed read above. Killing a server
+// resets its sockets, so every write returns; the shape that hurts is the black
+// hole, where an outbox that recorded a write on its RETURN would have no entry
+// and no drain for the one write it exists for. Nothing is killed here: the
+// write parks the moment it is sent and the retry drains it.
 test('a write the network swallows parks in the outbox and drains itself', async ({
   gw,
   window,
@@ -350,25 +317,22 @@ test('a write the network swallows parks in the outbox and drains itself', async
   const cx = Math.round(f.cx);
   const cy = Math.round(f.cy);
 
-  // A fresh well: its zoom stays 0 until the first framing write, the same
-  // oracle the restart spec above settles with.
+  // A fresh well's zoom stays 0 until the first framing write.
   await gw.openPalette();
   await gw.dragCreate('well', cx, cy);
   const well = tileAt(await gw.getGrid(f.gridID), 'well', cx, cy)!;
   await gw.descendCell(cx, cy);
   const inside = await gw.focused();
 
-  // The black hole: every SetFraming for this well is neither fulfilled nor
-  // aborted until the test opens the route. Everything else keeps working, so
-  // the only thing between the user's viewport and the server is the client's
-  // own bookkeeping.
+  // Every SetFraming for this well hangs until the test opens the route, so the
+  // only thing between the viewport and the server is the client's bookkeeping.
   let blackhole = true;
   await window.route('**/gridwell.v1.Gridwell/SetFraming', async (route) => {
     if (blackhole && (route.request().postData() ?? '').includes(well.id)) return;
     await route.continue();
   });
 
-  // Pan inside the well: the settle persister fires SetFraming into the hole.
+  // The settle persister fires SetFraming into the hole.
   await gw.panFocusedGrid(
     Math.round(inside.cx) + 1,
     Math.round(inside.cy),
@@ -376,8 +340,8 @@ test('a write the network swallows parks in the outbox and drains itself', async
     Math.round(inside.cy),
   );
 
-  // While it hangs, the write is owed a verdict and the outbox says so. A write
-  // recorded on its return would be invisible here (#298).
+  // While it hangs the write is owed a verdict and the outbox says so; one
+  // recorded on its return would be invisible here.
   await expect
     .poll(() => window.evaluate(() => (window as any).__gridwellTest.outbox()), {
       message: 'the swallowed write is parked while it waits',
@@ -385,8 +349,7 @@ test('a write the network swallows parks in the outbox and drains itself', async
     })
     .toContain('SetFraming:' + well.id);
 
-  // The route comes back. With no restart, no reconnect and no user action, the
-  // outbox drain is the only thing that can carry the viewport across.
+  // With no restart and no reconnect, the drain is the only thing left.
   blackhole = false;
 
   await expect

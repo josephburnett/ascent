@@ -2,12 +2,10 @@ import { test, expect } from './fixtures';
 import { tileAt } from '../e2e/oracle';
 
 // A text pane left in rendered mode must stay rendered when focus moves to a
-// sibling pane. The rendered view is a focused-pane DOM overlay, so an unfocused
-// pane that fell back to painting raw source on canvas would be a visible flip
-// the user never asked for. The uncovered pane paints the rendered raster
-// instead, which makes the swap between overlay and raster invisible. The oracle
-// is the renderedPreviews hook's panePaints counter, which attributes raster
-// paints per tile, so staying rendered is a counted fact.
+// sibling. The rendered view is a focused-pane DOM overlay, so an unfocused
+// pane falling back to raw source on canvas would be a visible flip the user
+// never asked for; it paints the rendered raster instead. The oracle is the
+// renderedPreviews hook's per-tile panePaints counter.
 test('a rendered pane stays rendered when focus moves to a sibling', async ({ gw, window }) => {
   await gw.enterPlugin('home');
   const f = await gw.focused();
@@ -25,13 +23,11 @@ test('a rendered pane stays rendered when focus moves to a sibling', async ({ gw
     .poll(async () => (await gw.focused()).textMode)
     .toBe('rendered');
 
-  // The sibling takes focus, so the original pane keeps its rendered descent and
-  // loses the DOM overlay.
+  // The original pane keeps its rendered descent and loses the DOM overlay.
   await gw.splitFocusedPaneVertical();
   await gw.waitIdle();
 
-  // The unfocused pane must paint the rendered raster: panePaints climbs and the
-  // raster decodes. A pane that flipped to raw leaves the counter at 0 forever.
+  // A pane that flipped to raw leaves panePaints at 0 forever.
   await expect
     .poll(
       async () => {
@@ -43,7 +39,6 @@ test('a rendered pane stays rendered when focus moves to a sibling', async ({ gw
     )
     .toBe(true);
 
-  // And the pane's mode fact never changed.
   const panes = await window.evaluate(() => (window as any).__gridwellTest.panes());
   const orig = panes.find((p: any) => p.textFocus === created.id);
   expect(orig, 'the original pane still holds the rendered descent').toBeTruthy();

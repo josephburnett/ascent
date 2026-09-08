@@ -1,11 +1,10 @@
 import { test, expect } from './fixtures';
 
-// A bare LF must keep the cursor column. tmux paints TUI output using LF as a
-// keep-the-column index; xterm's convertEol option snaps every bare LF to
-// column 0 and scatters characters down the left margin. The PTY path cannot
-// reproduce this, because the inner PTY's ONLCR rewrites a shell command's LFs
-// to CRLF, so the spec feeds the terminal through the shellFeed hook, the same
-// write path the /shell WebSocket's frames take.
+// A bare LF must keep the cursor column, because tmux paints TUI output using
+// LF as a keep-the-column index and xterm's convertEol would scatter characters
+// down the left margin. The PTY path cannot reproduce it, since the inner PTY's
+// ONLCR rewrites LFs to CRLF, so this feeds the terminal through shellFeed, the
+// write path the /shell frames take.
 
 const shellText = (window: any): Promise<string> =>
   window.evaluate(() => (window as any).__gridwellTest.shellText());
@@ -21,11 +20,9 @@ test('a bare LF keeps the cursor column (#211)', async ({ gw, window }) => {
   await gw.descendCell(sx, sy); // the drop lands bare; the descent creates the session
   await expect.poll(async () => (await gw.focused()).textFocus, { timeout: 15_000 }).not.toBe('');
 
-  // \r\n first, to start at column 0 regardless of the prompt. Then 13 chars, a
-  // bare \n, and a marker, which must land at column 13. tmux knows nothing
-  // about the injected text and may repaint over it at any moment, so each poll
-  // attempt feeds and reads in one go: polling then re-reading races the
-  // repaint and reads back nothing.
+  // \r\n starts at column 0 whatever the prompt; the marker after the bare \n
+  // must land at column 13. tmux may repaint over the injected text at any
+  // moment, so each poll attempt feeds and reads in one go.
   await expect
     .poll(
       async () => {
@@ -40,8 +37,7 @@ test('a bare LF keeps the cursor column (#211)', async ({ gw, window }) => {
     )
     .toMatch(/^ {13}END-MARKER/);
 
-  // Delete the shell tile so its tmux session dies and teardown does not hang
-  // on a live PTY.
+  // Delete the tile so its tmux session dies before teardown.
   await gw.ascendViaCrumb();
   await expect.poll(async () => (await gw.focused()).textFocus).toBe('');
   await gw.deleteTileCell(sx, sy);

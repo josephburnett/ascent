@@ -1,15 +1,10 @@
 import { test, expect } from './fixtures';
 import { tileAt, GridSnapshot } from './oracle';
 
-// Drives the tile-manipulation gestures over the real canvas and asserts each
-// against the server oracle. The gestures are opaque on the canvas, so the
-// server's record is the ground truth for what mutated.
-//
-// Every palette primitive is 1x1, so a tile occupies exactly one cell. Cells
-// render around 150px, so offsets stay small and aim inward from the viewport
-// center. A drop must land on the canvas, because the wasm mouseup listener is
-// bound to the canvas element; releasing off-canvas would strand the drag and is
-// not a real user action on a maximized window.
+// The tile-manipulation gestures over the real canvas, each asserted against
+// the server oracle, which is the ground truth for what mutated. Offsets stay
+// small and aim inward from the viewport center, because a drop must land on
+// the canvas: the wasm mouseup listener is bound to the canvas element.
 
 function countKind(snap: GridSnapshot, kind: string): number {
   return (snap.tiles ?? []).filter((t) => t.kind === kind).length;
@@ -19,7 +14,7 @@ test('tile gestures (move, clone, resize, delete) mutate server state', async ({
   await gw.enterPlugin('home');
   const f = await gw.focused();
   const grid = f.gridID;
-  // Work from the center cell toward the upper-left interior, clear of the edges.
+  // From the center cell toward the upper-left interior, clear of the edges.
   const cx = Math.round(f.cx);
   const cy = Math.round(f.cy);
 
@@ -50,8 +45,8 @@ test('tile gestures (move, clone, resize, delete) mutate server state', async ({
   expect(Number(resized.h), 'tile grew taller').toBeGreaterThan(1);
 
   // ── DELETE ──────────────────────────────────────────────────────────────
-  // The resized clone now spans where the moved original sits, so create a fresh
-  // 1x1 tile and trash that instead, keeping the target unambiguous.
+  // The resized clone now spans where the moved original sits, so trash a fresh
+  // 1x1 tile instead and keep the target unambiguous.
   await gw.openPalette();
   await gw.dragCreate('markdown', cx + 1, cy + 1);
   const beforeDel = countKind(await gw.getGrid(grid), 'text');
@@ -61,10 +56,9 @@ test('tile gestures (move, clone, resize, delete) mutate server state', async ({
   expect(tileAt(snap, 'text', cx + 1, cy + 1), 'deleted tile is gone').toBeFalsy();
 });
 
-// A multi-cell tile dragged a short distance, so its new footprint overlaps its
-// old one, must move. The client's drop preflight excludes the moving tile
-// itself, as the server's PlaceTile does; counting it as an obstacle would snap
-// the drag back with nothing visibly in the way.
+// A multi-cell tile whose new footprint overlaps its old one must still move:
+// the client's drop preflight excludes the moving tile, as PlaceTile does, or
+// the drag snaps back with nothing visibly in the way.
 test('a multi-cell tile moves one cell into its own old footprint (#231)', async ({ gw }) => {
   await gw.enterPlugin('home');
   const f = await gw.focused();
