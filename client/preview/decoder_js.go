@@ -4,17 +4,14 @@ package preview
 
 import "syscall/js"
 
-// JSDecoder is the production Decoder. It feeds bytes through the browser's
-// Blob, URL.createObjectURL and new Image() chain, so the browser does the
-// decode and onReady fires on the JS event loop once the load event resolves.
+// JSDecoder feeds bytes through the browser's Blob, createObjectURL and new
+// Image() chain, so onReady fires on the JS event loop.
 type JSDecoder struct{}
 
-// NewJSDecoder returns a Decoder suitable for the wasm build.
 func NewJSDecoder() JSDecoder { return JSDecoder{} }
 
-// Decode implements Decoder. The decoded handle is a *JSImage whose Val gives
-// the renderer the HTMLImageElement for canvas.drawImage. Each Decode allocates
-// an onload and an onerror js.Func, and both are released once either fires.
+// Decode allocates an onload and an onerror js.Func, both released once either
+// fires.
 func (JSDecoder) Decode(bytes []byte, onReady func(Image), onError func()) {
 	if len(bytes) == 0 {
 		if onError != nil {
@@ -59,19 +56,16 @@ func (JSDecoder) Decode(bytes []byte, onReady func(Image), onError func()) {
 }
 
 // JSImage wraps an HTMLImageElement and the createObjectURL it was loaded from.
-// The renderer reaches the raw js.Value through Val, and the cache calls Revoke
-// when the entry is replaced or dropped.
 type JSImage struct {
 	val       js.Value
 	objectURL string
 	revoked   bool
 }
 
-// Val returns the underlying HTMLImageElement for canvas.drawImage.
+// Val is the HTMLImageElement for canvas.drawImage.
 func (i *JSImage) Val() js.Value { return i.val }
 
-// Truthy reports whether the element is still usable. After Revoke the object
-// URL is gone and the image would fail to paint, so it reports false.
+// Truthy is false after Revoke, the object URL being gone.
 func (i *JSImage) Truthy() bool {
 	if i == nil || i.revoked {
 		return false
@@ -79,8 +73,7 @@ func (i *JSImage) Truthy() bool {
 	return i.val.Truthy()
 }
 
-// Revoke releases the createObjectURL. It is idempotent, and the cache calls
-// it when a newer Put supersedes the entry or Drop removes it.
+// Revoke releases the createObjectURL. It is idempotent.
 func (i *JSImage) Revoke() {
 	if i == nil || i.revoked {
 		return
