@@ -22,9 +22,12 @@ import (
 	"github.com/josephburnett/gridwell/internal/namespace"
 )
 
-// shellWriteTimeout bounds one PTY-output frame write, so a viewer whose
-// socket has stopped draining cannot pin the plugin's PTY reader forever.
-const shellWriteTimeout = 30 * time.Second
+// defaultShellWriteTimeout bounds one PTY-output frame write, so a viewer
+// whose socket has stopped draining cannot pin the plugin's PTY reader
+// forever. New copies it onto the Server, which is what the door reads, so a
+// seam test can wedge a socket on a server of its own rather than waiting the
+// bound out or lowering it under a door that is already serving.
+const defaultShellWriteTimeout = 30 * time.Second
 
 // shellRoute answers whether this attach may happen and who owns the PTY. It is
 // side-effect-free on purpose: the WebSocket door answers it before upgrading,
@@ -104,17 +107,17 @@ func (s *Server) shellDoor() http.Handler {
 
 		// The PTY is acquired only now: an upgrade nobody completed must never
 		// leave a session behind.
-		msg, gone := pumpShell(ctx, cancel, conn, func(recv func() (*pb.OpenShellRequest, error), send func(*pb.OpenShellResponse) error) error {
+		msg, gone := pumpShell(ctx, cancel, conn, s.shellWriteTimeout, func(recv func() (*pb.OpenShellRequest, error), send func(*pb.OpenShellResponse) error) error {
 			return s.openShellBound(ctx, ns, local, bind, recv, send)
 		})
-		writeShellExit(conn, msg, gone)
+		writeShellExit(conn, s.shellWriteTimeout, msg, gone)
 	})
 }
 
 // writeShellExit carries the verdict a WebSocket close code cannot: why the
 // attachment ended, and whether the session itself is gone.
-func writeShellExit(conn *websocket.Conn, message string, sessionGone bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), shellWriteTimeout)
+func writeShellExit(conn *websocket.Conn, bound time.Duration, message string, sessionGone bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), bound)
 	_ = conn.Write(ctx, websocket.MessageText, shellwire.EncodeExit(message, sessionGone))
 	cancel()
 	_ = conn.Close(websocket.StatusNormalClosure, "")
@@ -125,7 +128,7 @@ func writeShellExit(conn *websocket.Conn, message string, sessionGone bool) {
 // as an exit frame, and a websocket read whose context is cancelled tears the
 // connection down where it stands, so "the session is gone" would arrive as
 // "something broke". The caller cancels once the frame is on the wire.
-func pumpShell(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn,
+func pumpShell(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, bound time.Duration,
 	attach func(recv func() (*pb.OpenShellRequest, error), send func(*pb.OpenShellResponse) error) error) (message string, sessionGone bool) {
 	// A write failure is the viewer's socket breaking, not the PTY ending, and
 	// is remembered separately so it is reported as itself.
@@ -136,7 +139,7 @@ func pumpShell(ctx context.Context, cancel context.CancelFunc, conn *websocket.C
 			if len(resp.Data) == 0 {
 				return nil
 			}
-			wctx, wcancel := context.WithTimeout(ctx, shellWriteTimeout)
+			wctx, wcancel := context.WithTimeout(ctx, bound)
 			werr := conn.Write(wctx, websocket.MessageBinary, resp.Data)
 			wcancel()
 			if werr != nil {

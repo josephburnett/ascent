@@ -14,6 +14,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"time"
 
 	pb "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 	"github.com/josephburnett/gridwell/api/gen/gridwell/v1/gridwellv1connect"
@@ -51,6 +52,10 @@ type Server struct {
 
 	mux *http.ServeMux
 
+	// shellWriteTimeout is this server's PTY-output write bound; see
+	// defaultShellWriteTimeout.
+	shellWriteTimeout time.Duration
+
 	// infoCache memoizes each plugin's first successful Info handshake by uuid,
 	// because its facts are stable for the plugin's lifetime and without it a
 	// slow remote makes every palette open pay pluginInfoTimeout. Failures are
@@ -65,10 +70,11 @@ func New(reg *plugin.Registry, cfg Config) (*Server, error) {
 		return nil, errors.New("server: a web password is required (the browser door is never open)")
 	}
 	srv := &Server{
-		cfg:       cfg,
-		pluginReg: reg,
-		mux:       http.NewServeMux(),
-		infoCache: map[string]*pb.InfoResponse{},
+		cfg:               cfg,
+		pluginReg:         reg,
+		mux:               http.NewServeMux(),
+		shellWriteTimeout: defaultShellWriteTimeout,
+		infoCache:         map[string]*pb.InfoResponse{},
 	}
 	srv.routes()
 	return srv, nil

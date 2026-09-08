@@ -7,8 +7,10 @@ package server
 // in client/shellwire, and this proves both ends read it the same way.
 
 import (
+	"bytes"
 	"context"
 	gridwellv1 "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,7 +43,7 @@ type shellDoorFixture struct {
 	uuid string
 }
 
-func newShellDoorFixture(t *testing.T, cfg Config) *shellDoorFixture {
+func newShellDoorFixture(t *testing.T, cfg Config, tweak ...func(*Server)) *shellDoorFixture {
 	t.Helper()
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -60,7 +62,11 @@ func newShellDoorFixture(t *testing.T, cfg Config) *shellDoorFixture {
 	if err != nil {
 		t.Fatalf("root grid: %v", err)
 	}
-	hs := serveWeb(t, mustNew(t, reg, cfg))
+	srv := mustNew(t, reg, cfg)
+	for _, fn := range tweak {
+		fn(srv)
+	}
+	hs := serveWeb(t, srv)
 	return &shellDoorFixture{
 		hs:   hs,
 		cl:   rpc.NewClient(hs.Client(), hs.URL, connect.WithProtoJSON()),
@@ -310,5 +316,72 @@ func TestShellDoorRefusedWhenShellsDisabled(t *testing.T) {
 	}
 	if resp == nil || resp.StatusCode != http.StatusForbidden {
 		t.Fatalf("shells-disabled dial: want 403, got %v", resp)
+	}
+}
+
+// tinyReadBuffer shrinks a connection's receive buffer. A peer that stops
+// reading then wedges the writer after kilobytes, rather than after however
+// much the kernel decides to buffer, which is what makes the two tests below
+// about the timeout instead of about autotuning.
+func tinyReadBuffer(c net.Conn) net.Conn {
+	if tc, ok := c.(*net.TCPConn); ok {
+		_ = tc.SetReadBuffer(4096)
+	}
+	return c
+}
+
+// deafClient carries hs's auth cookie on a socket that fills fast.
+func deafClient(hs *httptest.Server) *http.Client {
+	var d net.Dialer
+	return &http.Client{
+		Jar: hs.Client().Jar,
+		Transport: &http.Transport{DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			c, err := d.DialContext(ctx, network, addr)
+			if err != nil {
+				return nil, err
+			}
+			return tinyReadBuffer(c), nil
+		}},
+	}
+}
+
+// A viewer that stops draining its socket must not pin the PTY reader: the
+// door bounds one output frame by the server's shell write timeout and the
+// attachment ends with the PTY released. Without the bound the writer parks
+// forever and the tile stays held by a viewer that is no longer listening.
+// The bound is the server's own, because 30 seconds is not a test and a
+// package-wide one would be lowered under doors already serving.
+func TestShellDoorReleasesThePTYWhenTheViewerStopsDraining(t *testing.T) {
+	const bound = 250 * time.Millisecond
+	f := newShellDoorFixture(t, Config{}, func(s *Server) { s.shellWriteTimeout = bound })
+	tile := f.createShell(t, 0, 0)
+	addr, err := shellwire.AttachURL(f.hs.URL, tile.Id, 80, 24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	conn, _, err := websocket.Dial(ctx, addr, &websocket.DialOptions{HTTPClient: deafClient(f.hs)})
+	if err != nil {
+		t.Fatalf("dial the shell door: %v", err)
+	}
+	t.Cleanup(func() { conn.CloseNow() })
+	sess := waitSession(t, f.fake)
+
+	// Keystrokes the fake PTY echoes back, at a volume no socket buffer
+	// holds, to a client that never reads a frame.
+	blob := bytes.Repeat([]byte("x"), 1<<20)
+	for i := 0; i < 4; i++ {
+		if err := conn.Write(ctx, websocket.MessageBinary, blob); err != nil {
+			t.Fatalf("write %d: %v", i, err)
+		}
+	}
+
+	deadline := time.Now().Add(20 * bound)
+	for !sess.IsClosed() {
+		if time.Now().After(deadline) {
+			t.Fatalf("the PTY was still held %v after the viewer stopped draining; the write bound is %v", 20*bound, bound)
+		}
+		time.Sleep(bound / 10)
 	}
 }
