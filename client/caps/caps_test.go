@@ -20,15 +20,13 @@ func TestDerive(t *testing.T) {
 	if c := Derive(LegacyBridge(), true); c.Shells || c.LiveShell {
 		t.Errorf("shells_disabled must kill both Shells and LiveShell, got %+v", c)
 	}
-	// A plain browser attaches a live PTY like the desktop, because the PTY
-	// rides the web door.
+	// The PTY rides the web door, so a browser attaches one too.
 	if c := Derive(NoBridge(), false); !c.LiveShell || !c.Shells {
 		t.Errorf("browser host: shells are live there too, got %+v", c)
 	}
 	if c := Derive(NoBridge(), true); c.LiveShell || c.Shells {
 		t.Errorf("browser host on a shells-disabled node: nothing, got %+v", c)
 	}
-	// A bridge declaring only live url views says nothing about shells.
 	urlOnly := Bridge{Present: true, LiveURL: true}
 	if c := Derive(urlOnly, false); !c.LiveURL || !c.LiveShell || !c.Shells {
 		t.Errorf("url-only bridge: shells still ride the web door, got %+v", c)
