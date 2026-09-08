@@ -1,22 +1,15 @@
 package connection
 
 // The transport's store: what the node remembers about its connections beyond
-// what server.yaml declares. That is the learned landing, the far node's home
-// grid id, so a dark remote still has a room to show through the source cache.
-// Everything else about a connection — where it is, how to reach it, what it
-// is called — is config, read fresh every boot.
+// server.yaml, which is the learned landing, so a dark remote still has a room
+// to show. Everything else is config, read fresh every boot. The rows' shape
+// belongs to internal/local/store; this file holds the queries only.
 //
-// The rows live in the node's one database and their shape belongs to
-// internal/local/store, which renders the DDL from its column descriptor and
-// migrates it with everything else. This file holds the queries only.
-//
-// The `deleted` flag is not a fact of its own: it is the mirror of the
-// config's retired_names, which is the one owner of retirement, reconciled
-// onto these rows at boot (see New) so route and Probe can read "retired" off
-// the row they already hold. A retired name never returns and its namespace
-// stays reserved forever, so stored references through it stay dangling rather
-// than re-routed. A name the config merely stopped declaring is NOT retired:
-// its row stays as it was, and its references come back with its stanza.
+// The `deleted` flag is the mirror of the config's retired_names, the one owner
+// of retirement, reconciled onto these rows at boot (see New) so route and
+// Probe can read "retired" off the row they hold. A retired name never returns
+// and its namespace stays reserved, so stored references through it stay
+// dangling. A name the config merely stopped declaring is not retired.
 
 import (
 	"context"
@@ -36,16 +29,10 @@ type DB struct {
 	owned bool // Close closes the handle only when this DB opened it
 }
 
-// NewDB binds the connection store to the node's one database handle. A second
-// handle on the same SQLite file would meet an instant SQLITE_BUSY. Close is a
-// no-op; the store owns the handle.
-//
-// The connections table is the store's too: internal/local/store renders its
-// DDL from the column descriptor and the migration chain evolves it, so this
-// package holds no DDL and only the queries below. What is checked here is
-// that the handle really came from an opened store — a handle the store never
-// migrated would otherwise fail at the first Get, long after the wiring
-// mistake that caused it.
+// NewDB binds the connection store to the node's one database handle; a second
+// handle on the same SQLite file would meet an instant SQLITE_BUSY. It checks
+// that the handle came from an opened store, since one the store never
+// migrated would fail at the first Get, long after the wiring mistake.
 func NewDB(db *sql.DB) (*DB, error) {
 	var n int
 	if err := db.QueryRow(
@@ -61,7 +48,7 @@ func NewDB(db *sql.DB) (*DB, error) {
 }
 
 // Close closes the handle when this DB opened it; a shared handle is the
-// store's to close.
+// store's.
 func (d *DB) Close() error {
 	if !d.owned {
 		return nil
@@ -134,10 +121,8 @@ func (d *DB) Tombstone(ctx context.Context, name string) error {
 	return err
 }
 
-// Revive clears a tombstone the config's retired_names does not hold. It
-// un-retires nothing: retirement lives in retired_names, and this only brings
-// the mirror back in line with it. Everything else on the row — the learned
-// landing above all — is untouched.
+// Revive clears a tombstone the config's retired_names does not hold, bringing
+// the mirror back in line with it. Everything else on the row is untouched.
 func (d *DB) Revive(ctx context.Context, name string) error {
 	_, err := d.db.ExecContext(ctx, `UPDATE connections SET deleted = 0 WHERE name = ?`, name)
 	return err
