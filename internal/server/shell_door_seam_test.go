@@ -345,6 +345,17 @@ func deafClient(hs *httptest.Server) *http.Client {
 	}
 }
 
+// deafListener accepts and never reads what arrives.
+type deafListener struct{ net.Listener }
+
+func (l deafListener) Accept() (net.Conn, error) {
+	c, err := l.Listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+	return tinyReadBuffer(c), nil
+}
+
 // A viewer that stops draining its socket must not pin the PTY reader: the
 // door bounds one output frame by the server's shell write timeout and the
 // attachment ends with the PTY released. Without the bound the writer parks
@@ -383,5 +394,52 @@ func TestShellDoorReleasesThePTYWhenTheViewerStopsDraining(t *testing.T) {
 			t.Fatalf("the PTY was still held %v after the viewer stopped draining; the write bound is %v", 20*bound, bound)
 		}
 		time.Sleep(bound / 10)
+	}
+}
+
+// The client's half of the same bound: keystrokes must not park in a wedged
+// socket. client/shellws has no tests of its own, so its write bound is bound
+// here, where the client stack is already dialed for real. The far end is a
+// socket that accepts the upgrade and reads nothing — the shape a hung host
+// presents; the door itself never stops reading, so it cannot play that part.
+func TestShellClientSurfacesAWedgedSocket(t *testing.T) {
+	const bound = 250 * time.Millisecond
+
+	stop := make(chan struct{})
+	t.Cleanup(func() { close(stop) })
+	deaf := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		<-stop
+		conn.CloseNow()
+	}))
+	deaf.Listener = deafListener{deaf.Listener}
+	deaf.Start()
+	t.Cleanup(deaf.Close)
+
+	exit := make(chan shellstream.Exit, 4)
+	reg := shellstream.New(shellws.Dialer(shellws.Options{Origin: deaf.URL, HTTPClient: deaf.Client(), WriteTimeout: bound}),
+		func(string, []byte) {}, func(e shellstream.Exit) { exit <- e })
+	reg.Open("pane-1", "wedged1/9", 80, 24)
+	t.Cleanup(func() { reg.Close("pane-1") })
+
+	// More keystrokes than any socket buffer holds, at a far end that reads
+	// none of them.
+	blob := bytes.Repeat([]byte("x"), 1<<20)
+	for i := 0; i < 4; i++ {
+		reg.Write("pane-1", blob)
+	}
+
+	select {
+	case e := <-exit:
+		// The timed-out write tears the socket down, so the read loop may
+		// reach the end first; either way the viewer is told, with a reason.
+		if e.Message == "" || e.SessionGone {
+			t.Fatalf("exit = %+v, want the wedged socket reported with a reason and no claim the session died", e)
+		}
+	case <-time.After(20 * bound):
+		t.Fatalf("a wedged socket parked the terminal for %v; the write bound is %v", 20*bound, bound)
 	}
 }

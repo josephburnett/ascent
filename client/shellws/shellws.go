@@ -17,8 +17,9 @@ import (
 	"github.com/josephburnett/gridwell/client/shellwire"
 )
 
-// writeTimeout bounds one frame write, so a wedged socket surfaces as an
-// error instead of parking the terminal's keystrokes forever.
+// writeTimeout bounds one frame write, so a wedged socket surfaces as an error
+// instead of parking the terminal's keystrokes forever. Options.WriteTimeout
+// lowers it for the seam test that wedges a socket for real.
 const writeTimeout = 30 * time.Second
 
 type Options struct {
@@ -29,12 +30,18 @@ type Options struct {
 	// its own cookies and forbids setting handshake headers.
 	HTTPClient *http.Client
 	Header     http.Header
+	// WriteTimeout overrides writeTimeout for one dialer; zero is the default.
+	WriteTimeout time.Duration
 }
 
 func Dialer(o Options) shellstream.Dialer {
 	return func(tileID string, cols, rows int, onData func([]byte), onEnd func(string, bool)) shellstream.Handle {
 		ctx, cancel := context.WithCancel(context.Background())
-		c := &conn{wake: make(chan struct{}, 1), ctx: ctx, cancel: cancel, onEnd: onEnd}
+		bound := o.WriteTimeout
+		if bound == 0 {
+			bound = writeTimeout
+		}
+		c := &conn{wake: make(chan struct{}, 1), ctx: ctx, cancel: cancel, onEnd: onEnd, writeBound: bound}
 		addr, err := shellwire.AttachURL(o.Origin, tileID, cols, rows)
 		if err != nil {
 			c.end("shell address: "+err.Error(), false)
@@ -62,6 +69,8 @@ type conn struct {
 	wake   chan struct{}
 	ctx    context.Context
 	cancel context.CancelFunc
+	// writeBound is this conn's frame-write bound; see writeTimeout.
+	writeBound time.Duration
 
 	once  sync.Once
 	onEnd func(string, bool)
@@ -134,7 +143,7 @@ func (c *conn) writeLoop() {
 			if !ok {
 				break
 			}
-			wctx, wcancel := context.WithTimeout(c.ctx, writeTimeout)
+			wctx, wcancel := context.WithTimeout(c.ctx, c.writeBound)
 			err := c.ws.Write(wctx, f.typ, f.data)
 			wcancel()
 			if err != nil {
