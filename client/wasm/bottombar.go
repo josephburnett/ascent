@@ -388,80 +388,61 @@ func (a *App) chainCrumbTile(cr pane.Crumb) *gridwellv1.Tile {
 	return t
 }
 
-// bottomBarClick consumes a click in the bar's band, always on the focused
-// pane, and the background either side swallows clicks too. Every crumb
-// answers a left-click by going there, one verb whether the target is above,
-// beside or outside the current level. A right-click renames, and on the slot
-// of a live url descent it pops the view's context menu.
+// bottomBarClick consumes a press in the bar's band, always on the focused
+// pane, and the background either side swallows presses too. wsbar.RouteClick
+// says where the press goes; this gathers the world facts and runs the effect.
+// They are gathered on the ZoneBar arm alone, so a press anywhere else in the
+// window never walks the caches.
 func (a *App) bottomBarClick(sx, sy float64, button int) bool {
 	bx, top, bw, ok := a.bottomBarRect()
 	if !ok {
 		return false
 	}
-	switch wsbar.Where(sx, sy, bx, top, bw) {
-	case wsbar.ZoneOutside:
-		return false
-	case wsbar.ZoneBand:
-		return true // beside the bar: no pane under it
-	}
-	chain := a.navChain()
-	if button == 2 {
-		if sx >= bx+bw-wsbar.SlotW {
-			if p := a.tree.FocusedPane(); p != nil && a.isURLDescent(p) && a.urlViewFor(p.ID) != nil {
-				a.bridgeShowMenu(p.ID)
+	p := a.tree.FocusedPane()
+	in := wsbar.Click{Button: button, X: sx - bx, BarW: bw,
+		Zone: wsbar.Where(sx, sy, bx, top, bw)}
+	var visit *gridwellv1.Tile
+	if in.Zone == wsbar.ZoneBar {
+		in.Chain = a.navChain()
+		in.Segments = a.bottomBarSegments(in.Chain)
+		if tx, tw, _, _, _, tOK := a.barTitleGeom(); tOK {
+			in.TitleX, in.TitleW, in.TitleOK = tx-bx, tw, true
+		}
+		if p != nil {
+			in.URLMenu = a.isURLDescent(p) && a.urlViewFor(p.ID) != nil
+			if t, ok := a.descendedTile(p); ok && t.Kind == rpc.KindURL &&
+				a.certainlyEphemeral(p, t) {
+				visit, in.Promote = t, true
 			}
-			return true
 		}
-		if tx, tw, _, _, _, tOK := a.barTitleGeom(); tOK && sx >= tx && sx < tx+tw {
-			a.openRenameInput()
-			return true
-		}
-		if seg, segOK := wsbar.At(a.bottomBarSegments(chain), sx-bx); segOK && chain[seg.Index].PaneTile {
-			a.openWorkspaceRenameInput(chain[seg.Index].WsLevel)
-		}
-		return true
 	}
-	if sx >= bx+bw-wsbar.SlotW {
+	hit := wsbar.RouteClick(in)
+	switch hit.Action {
+	case wsbar.ActionPass:
+		return false
+	case wsbar.ActionURLMenu:
+		a.bridgeShowMenu(p.ID)
+	case wsbar.ActionSlot:
 		a.barSlotClick(button)
-		return true
-	}
-	// The centered title is the pane's handle: left-click toggles the
-	// tmux-style pane zoom.
-	if tx, tw, _, _, _, ok := a.barTitleGeom(); ok && sx >= tx && sx < tx+tw {
-		if button == 0 {
-			a.togglePaneZoom()
-		}
-		return true
-	}
-	seg, segOK := wsbar.At(a.bottomBarSegments(chain), sx-bx)
-	if !segOK {
-		return true // empty band space swallows clicks
-	}
-	if button != 0 {
-		return true
-	}
-	nc := chain[seg.Index]
-	if nc.PaneTile || nc.CloseOnly {
+	case wsbar.ActionRename:
+		a.openRenameInput()
+	case wsbar.ActionZoom:
+		a.togglePaneZoom()
+	case wsbar.ActionWorkspaceRename:
+		a.openWorkspaceRenameInput(in.Chain[hit.Segment.Index].WsLevel)
+	case wsbar.ActionLeaveLevels:
 		// Be inside level wsLevel, or for the root crumb back in the
 		// session, whose own state the bar never touches.
-		a.runGesture(nav.Gesture{Kind: nav.GestureLeaveLevels, Count: a.ws.PopCountTo(nc.WsLevel)})
-		return true
-	}
-	// The current crumb of an ephemeral url visit is a drag handle that
-	// promotes the visit onto the grid it is dropped on. Armed on the press;
-	// the release decides between a click, which does nothing, and a drop.
-	if seg.Index == len(chain)-1 {
-		if p := a.tree.FocusedPane(); p != nil {
-			if t, ok := a.descendedTile(p); ok && t.Kind == rpc.KindURL && a.certainlyEphemeral(p, t) {
-				a.startPromoteDrag(p, t, seg, bx, top, sx, sy)
-				return true
-			}
-		}
-	}
-	// How many ascents a chain crumb is is pane.AscentsTo's arithmetic. The
-	// last hop animates and the ones above it are instant.
-	if p := a.tree.FocusedPane(); p != nil {
-		a.ascend(p, p.AscentsTo(nc.Crumb), true)
+		a.runGesture(nav.Gesture{Kind: nav.GestureLeaveLevels,
+			Count: a.ws.PopCountTo(in.Chain[hit.Segment.Index].WsLevel)})
+	case wsbar.ActionPromote:
+		a.startPromoteDrag(p, visit, hit.Segment, bx, top, sx, sy)
+	case wsbar.ActionAscend:
+		// Only the focused pane's own frame stack yields an ascending crumb
+		// (pane.Levels.NavChain), so there is a pane here. How many ascents
+		// the crumb is is pane.AscentsTo's arithmetic; the last hop animates
+		// and the ones above it are instant.
+		a.ascend(p, p.AscentsTo(in.Chain[hit.Segment.Index].Crumb), true)
 	}
 	return true
 }
