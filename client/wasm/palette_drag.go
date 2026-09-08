@@ -17,8 +17,9 @@ import (
 
 // The + menu swatch as a gesture: arming a template drag, what a bare click
 // does, and what a release over a grid creates. What a swatch shows is
-// client/palette's decision; what a click means is palette.ClickOn's. The
-// create RPCs are in create_tile.go.
+// client/palette's decision, what a click means is palette.ClickOn's, and
+// what a release does is palette.DropOn's. The create RPCs are in
+// create_tile.go.
 
 // startPaletteDrag arms a drag from the i'th palette item, as a regular tile
 // drag but with isTemplate=true so the release branches to creation. The
@@ -131,65 +132,52 @@ func (a *App) visitShellFromMenu(p *pane.Pane) {
 	a.visitEphemeralShell(p) // reports if there is nowhere to open
 }
 
-// commitTemplateDrop resolves the template drag at release: the create RPC at
-// the snapped cell, or a snap-back with the palette left open. The
-// destination is the (t, dropX, dropY) the one gather produced for the
-// verdict that routed this call, so the create lands exactly where DecideDrop
-// said it may, and dropTargetAt owns what is legal.
+// commitTemplateDrop resolves the template drag at release. palette.DropOn
+// says what the release does; this gathers the facts and runs it. The
+// destination is the (t, dropX, dropY) the one gather produced for the verdict
+// that routed this call, so the create lands exactly where DecideDrop said it
+// may, and dropTargetAt owns what is legal.
 func (a *App) commitTemplateDrop(d *dragState, t *dropTarget, dropX, dropY int64) {
-	if t == nil {
-		a.cancelDragSnapBack(d)
-		return
-	}
-	destPane := t.pane
-
-	// The target's grid is the open well's child when the cursor promoted
-	// into one, not the pane's own leaf grid.
-	if a.occupiedForDrop(t.gridID, dropX, dropY,
-		max(d.snapshotTile.W, 1), max(d.snapshotTile.H, 1), "") {
-		a.cancelDragSnapBack(d)
-		return
-	}
-
-	// A plugin item becomes an exit-well link to its root grid, and a
-	// connection row drops the same way with its chained root already
-	// qualified.
-	if d.item.isPlugin {
-		droppable := pluginhealth.Classify(d.item.plugin) == pluginhealth.Enterable
-		// Unknown is not writable here: minting into a grid that may refuse
-		// the link would show a tile the next read takes back.
-		writable, _ := a.gridWritable(t.gridID)
-		if !droppable || !writable {
-			a.cancelDragSnapBack(d)
-			return
+	r := palette.Release{Target: t != nil, Doorway: d.item.isPlugin,
+		Promote: d.item.primitive == tplURL && d.item.promotePane != ""}
+	if r.Target {
+		// The target's grid is the open well's child when the cursor promoted
+		// into one, not the pane's own leaf grid.
+		r.Occupied = a.occupiedForDrop(t.gridID, dropX, dropY,
+			max(d.snapshotTile.W, 1), max(d.snapshotTile.H, 1), "")
+		r.SameNode = a.gridNodeNS(t.gridID) == d.menuNS
+		r.Writable, _ = a.gridWritable(t.gridID)
+		if r.Doorway {
+			r.Enterable = pluginhealth.Classify(d.item.plugin) == pluginhealth.Enterable
 		}
-		a.landGhostAtCell(t, dropX, dropY)
-		a.createPluginLinkAtCell(t.gridID, d.item.plugin, dropX, dropY)
-		a.menu.Close()
-		return
 	}
-
-	// A primitive belongs to the node whose menu offered it, since the
-	// swatch was gated by that node's grids and policy. A cross-node drop
-	// refuses visibly.
-	if a.gridNodeNS(t.gridID) != d.menuNS {
+	switch palette.DropOn(r) {
+	case palette.DropSnapBack:
+		a.cancelDragSnapBack(d)
+		return
+	case palette.DropRefuse:
 		a.reportErr(errsurface.Info, "menu",
 			"this menu belongs to another node — drop into a grid on that node, or open the menu here")
 		a.cancelDragSnapBack(d)
 		return
-	}
-
-	// The drop never prompts: whatever a kind needs is asked for on the
-	// first descent, so create is one experience everywhere.
-	a.landGhostAtCell(t, dropX, dropY)
-
-	// A promote drag is the one arm that is not a plain create: the
-	// ephemeral url off the bar's crumb becomes a persistent tile and the
-	// pane relocates onto it.
-	if d.item.primitive == tplURL && d.item.promotePane != "" {
-		a.promoteEphemeralURL(d.item.promotePane, destPane.ID, t.gridID, dropX, dropY)
-	} else if pr, ok := primitiveFor(d.item.primitive); ok {
-		pr.create(a, t.gridID, dropX, dropY)
+	case palette.DropLink:
+		// A doorway becomes an exit-well link to its root grid, and a
+		// connection row drops the same way with its chained root already
+		// qualified.
+		a.landGhostAtCell(t, dropX, dropY)
+		a.createPluginLinkAtCell(t.gridID, d.item.plugin, dropX, dropY)
+	case palette.DropPromote:
+		// The ephemeral url off the bar's crumb becomes a persistent tile and
+		// the pane relocates onto it.
+		a.landGhostAtCell(t, dropX, dropY)
+		a.promoteEphemeralURL(d.item.promotePane, t.pane.ID, t.gridID, dropX, dropY)
+	case palette.DropCreate:
+		// The drop never prompts: whatever a kind needs is asked for on the
+		// first descent, so create is one experience everywhere.
+		a.landGhostAtCell(t, dropX, dropY)
+		if pr, ok := primitiveFor(d.item.primitive); ok {
+			pr.create(a, t.gridID, dropX, dropY)
+		}
 	}
 	a.menu.Close()
 }
