@@ -7,42 +7,37 @@ import (
 	"github.com/josephburnett/gridwell/internal/namespace"
 )
 
-// Registry maps plugin UUID strings to their namespaces: Go values the router
-// calls directly. It is thread-safe. Close terminates every managed
-// subprocess; a namespace with no subprocess behind it has nothing to
-// terminate.
+// Registry maps plugin UUIDs to namespaces the router calls directly. It is
+// thread-safe, and Close terminates every managed subprocess.
 type Registry struct {
 	mu      sync.RWMutex
 	clients map[string]namespace.Namespace
-	// kinds maps a plugin UUID to its kind, for Ordered's listing. There is
-	// deliberately no by-kind lookup.
+	// kinds is for Ordered's listing. There is deliberately no by-kind
+	// lookup.
 	kinds map[string]string
-	// labels maps a plugin UUID to its server.yaml display name. It is the
-	// label shown in the + menu and stamped on a mounted well, so the two
-	// agree and neither depends on a plugin-derived string.
+	// labels are the server.yaml display names, shown in the + menu and
+	// stamped on a mounted well, so neither depends on a plugin-derived
+	// string.
 	labels map[string]string
-	// order is the registration order of plugin UUIDs, which is config order,
-	// so the + menu presents plugins exactly as configured.
+	// order is config order, so the + menu presents plugins as configured.
 	order []string
-	// closers holds the cleanup function for each managed subprocess plugin.
+	// closers hold each managed subprocess.
 	closers map[string]func()
-	// transport is the node's connection namespace, "<id>/<conn>/…", installed
-	// by SetTransport. It is not a plugin: it has no uuid of its own, because
-	// the node's id qualifies it, and it never lists in Ordered.
+	// transport is the node's connection namespace, "<id>/<conn>/…". It is
+	// not a plugin: the node's id qualifies it, so it has no uuid of its own
+	// and never lists in Ordered.
 	transport      namespace.Namespace
 	transportRows  func(context.Context) []ConnectionRow
 	transportClose func()
 }
 
-// ConnectionRow is one connection as the transport lists it for the
-// handshake. It mirrors internal/connection.Row's shape, and lives here so the
-// registry needs no transport import.
+// ConnectionRow mirrors internal/connection.Row, here so the registry needs no
+// transport import.
 type ConnectionRow struct {
 	Name, Label, RootGridID, StatusDetail string
 	ViewCx, ViewCy, ViewZoom              float64
 }
 
-// NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{
 		clients: make(map[string]namespace.Namespace),
@@ -52,24 +47,21 @@ func NewRegistry() *Registry {
 	}
 }
 
-// SetLabel records the configured display name for a plugin. It is optional:
-// an unset label falls back to the plugin's own Info or kind in Handshake.
+// SetLabel is optional: an unset label falls back to the plugin's own Info or
+// kind in Handshake.
 func (r *Registry) SetLabel(id, label string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.labels[id] = label
 }
 
-// Label returns the configured display name for a plugin, or "" if none was
-// set.
 func (r *Registry) Label(id string) string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.labels[id]
 }
 
-// Register adds a plugin client for the given UUID and kind. closer, when
-// non-nil, is called on Close to terminate the backing subprocess.
+// Register's closer, when non-nil, terminates the backing subprocess on Close.
 func (r *Registry) Register(id, kind string, ns namespace.Namespace, closer func()) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -83,7 +75,7 @@ func (r *Registry) Register(id, kind string, ns namespace.Namespace, closer func
 	}
 }
 
-// Ordered returns (uuid, kind) for every registered plugin in config order.
+// Ordered lists every registered plugin in config order.
 func (r *Registry) Ordered() []struct{ UUID, Kind string } {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -96,16 +88,14 @@ func (r *Registry) Ordered() []struct{ UUID, Kind string } {
 	return out
 }
 
-// SetTransport installs the node's connection namespace: its client, its row
-// lister for the handshake, and the closer Close runs.
+// SetTransport installs the connection namespace, its row lister for the
+// handshake, and the closer Close runs.
 func (r *Registry) SetTransport(ns namespace.Namespace, rows func(context.Context) []ConnectionRow, closer func()) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.transport, r.transportRows, r.transportClose = ns, rows, closer
 }
 
-// Connections lists the transport's rows, or nil when there is no
-// transport.
 func (r *Registry) Connections(ctx context.Context) []ConnectionRow {
 	r.mu.RLock()
 	rows := r.transportRows
@@ -116,16 +106,12 @@ func (r *Registry) Connections(ctx context.Context) []ConnectionRow {
 	return rows(ctx)
 }
 
-// Transport returns the connection namespace, or (nil, false) when the node
-// has none.
 func (r *Registry) Transport() (namespace.Namespace, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.transport, r.transport != nil
 }
 
-// Get returns the namespace for id, or (nil, false) when it is not
-// registered.
 func (r *Registry) Get(id string) (namespace.Namespace, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -133,7 +119,6 @@ func (r *Registry) Get(id string) (namespace.Namespace, bool) {
 	return c, ok
 }
 
-// Close terminates all subprocess plugins and clears the registry.
 func (r *Registry) Close() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
