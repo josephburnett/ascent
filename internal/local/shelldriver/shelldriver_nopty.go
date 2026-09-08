@@ -1,8 +1,7 @@
 //go:build !unix
 
-// The no-PTY half: Windows and anything else without a unix PTY. Start
-// refuses, so this build links no creack/pty and no syscall.Kill. The
-// package doc and the shared Config live in shelldriver.go.
+// The no-PTY half. Start refuses, so this build links no creack/pty and no
+// syscall.Kill.
 package shelldriver
 
 import (
@@ -10,10 +9,10 @@ import (
 	"runtime"
 )
 
-// Session exists here only so both halves present the same type to
-// shellsvc.Session. Start never returns one, so these methods are unreachable
-// in practice. Their channels are already closed and their writes refused, so
-// a caller that ignored Start's error terminates instead of hanging.
+// Session exists so both halves present the same type to shellsvc.Session.
+// Start never returns one; its channels are already closed and its writes
+// refused, so a caller that ignored Start's error terminates instead of
+// hanging.
 type Session struct{}
 
 var (
@@ -29,8 +28,7 @@ var (
 	}()
 )
 
-// Start refuses on a platform with no PTY. The error travels the ordinary
-// shell-open path to the client; see ErrShellsUnavailable.
+// Start refuses; see ErrShellsUnavailable.
 func Start(_ Config) (*Session, error) {
 	return nil, fmt.Errorf("shelldriver: %w (%s)", ErrShellsUnavailable, runtime.GOOS)
 }
