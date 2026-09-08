@@ -1,21 +1,15 @@
 // Package shellstream owns the lifecycle of the client's live shell
-// attachments: which pane holds which stream, what a replacement does to the
-// one it replaced, and when the renderer is told a stream ended. The PTY rides
-// a WebSocket on the web door (client/shellwire). This package is js-free and
-// unit-tested; the wasm shim hands it a dialer and two callbacks.
-//
-// The rules:
+// attachments. It is js-free; the wasm shim hands it a dialer and two
+// callbacks. The rules:
 //
 //   - Open for a pane closes and replaces that pane's existing stream.
-//   - Write and Resize after Close, or before Open, are silent no-ops. A race
+//   - Write and Resize after Close, or before Open, are silent no-ops; a race
 //     between a teardown and an in-flight keystroke is expected.
-//   - An end fires at most once per stream, and only while that stream is
-//     still the pane's current one. A local Close or a replacement suppresses
-//     it, because the caller already knows and a replaced stream's late end
-//     would freeze the pane right after its new stream attached.
+//   - An end fires at most once, and only while that stream is still the
+//     pane's current one, so a replaced stream's late end cannot freeze the
+//     pane right after its new stream attached.
 //   - Output routes through the registry rather than the closure, so a
-//     replaced stream's late bytes cannot reach the renderer as the new
-//     stream's output.
+//     replaced stream's late bytes cannot reach the renderer.
 package shellstream
 
 import "sync"
@@ -25,14 +19,13 @@ type Handle interface {
 	Write(data []byte)
 	Resize(cols, rows int)
 	// Close ends the attachment from this side. The dialer must still
-	// deliver onEnd exactly once afterwards.
+	// deliver onEnd exactly once.
 	Close()
 }
 
-// Dialer opens one attachment bound to tileID. onData delivers PTY output.
-// onEnd delivers the end exactly once, with message "" for a clean end and the
-// failure text otherwise. sessionGone is the server's verdict that the session
-// no longer exists, which the caller reads to hide the refresh affordance.
+// Dialer opens one attachment bound to tileID. onEnd fires exactly once, with
+// message "" for a clean end. sessionGone is the server's verdict that the
+// session is gone, which the caller reads to hide the refresh affordance.
 type Dialer func(tileID string, cols, rows int, onData func(data []byte), onEnd func(message string, sessionGone bool)) Handle
 
 // Exit is an unexpected end reported to the caller.
@@ -47,7 +40,6 @@ type entry struct {
 	ended  bool
 }
 
-// Registry is the per-pane map of live attachments.
 type Registry struct {
 	dial   Dialer
 	onData func(paneID string, data []byte)
@@ -58,13 +50,12 @@ type Registry struct {
 }
 
 // New wires a registry to its dialer and the two renderer callbacks. Both run
-// outside the registry's lock, so a callback may call back in without
-// deadlocking.
+// outside the registry's lock, so a callback may call back in.
 func New(dial Dialer, onData func(paneID string, data []byte), onExit func(Exit)) *Registry {
 	return &Registry{dial: dial, onData: onData, onExit: onExit, streams: map[string]*entry{}}
 }
 
-// Open attaches paneID to tileID's PTY, replacing whatever that pane held.
+// Open replaces whatever that pane held.
 func (r *Registry) Open(paneID, tileID string, cols, rows int) {
 	r.Close(paneID)
 	// The slot is claimed before the dial: a dialer that fails instantly calls
@@ -114,14 +105,12 @@ func (r *Registry) current(paneID string, e *entry) bool {
 	return r.streams[paneID] == e
 }
 
-// Write forwards keystroke bytes to the pane's PTY.
 func (r *Registry) Write(paneID string, data []byte) {
 	if h := r.handle(paneID); h != nil {
 		h.Write(data)
 	}
 }
 
-// Resize forwards a winsize change.
 func (r *Registry) Resize(paneID string, cols, rows int) {
 	if h := r.handle(paneID); h != nil {
 		h.Resize(cols, rows)
@@ -137,8 +126,7 @@ func (r *Registry) handle(paneID string) Handle {
 	return nil
 }
 
-// Close ends the pane's attachment from this side. The exit report is
-// suppressed, because this side asked and does its own teardown.
+// Close suppresses the exit report, because this side asked.
 func (r *Registry) Close(paneID string) {
 	r.mu.Lock()
 	e, ok := r.streams[paneID]
