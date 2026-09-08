@@ -131,7 +131,7 @@ func New(db *DB, dialer Dialer, home string, conns []config.ConnectionConfig, re
 	ctx := context.Background()
 	s := &Server{db: db, dial: dialer, home: home, conns: map[string]*Conn{},
 		live: map[string]*liveConn{}, rootErr: map[string]string{}, dark: map[string]string{},
-		mismatch: map[string]string{}, hub: eventhub.New(eventKey)}
+		mismatch: map[string]string{}, hub: eventhub.New(rpc.EventKey)}
 	retiredSet := map[string]bool{}
 	for _, r := range retired {
 		retiredSet[r] = true
@@ -962,21 +962,4 @@ func stripPrefix(id, ns string) string {
 		return id[len(ns)+1:]
 	}
 	return id
-}
-
-// eventKey names the entity a wire event is about, so internal/eventhub can
-// replace an older undelivered event for the same entity and never drop a
-// distinct one. "" is never coalesced.
-func eventKey(ev *gridwellv1.Event) string {
-	switch p := ev.GetPayload().(type) {
-	case *gridwellv1.Event_GridChanged:
-		return "g/" + p.GridChanged.GetGridId()
-	case *gridwellv1.Event_TileChanged:
-		return "t/" + p.TileChanged.GetTile().GetId()
-	case *gridwellv1.Event_TileRemoved:
-		return "r/" + p.TileRemoved.GetGridId() + "/" + p.TileRemoved.GetTileId()
-	case *gridwellv1.Event_PluginHealth:
-		return "h/" + p.PluginHealth.GetPluginUuid()
-	}
-	return ""
 }

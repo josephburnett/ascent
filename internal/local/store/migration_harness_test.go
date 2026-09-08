@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/josephburnett/gridwell/api/rpc"
 	"github.com/josephburnett/gridwell/internal/eventhub"
 )
 
@@ -185,7 +186,7 @@ func compareFingerprints(t *testing.T, want, got map[string]tableFP) {
 // storeOver wraps an open *sql.DB in a Store with a deterministic clock, so
 // the harness can drive real internal methods against a hand-built file.
 func storeOver(db *sql.DB) *Store {
-	s := &Store{db: db, hub: eventhub.New(eventKey)}
+	s := &Store{db: db, hub: eventhub.New(rpc.EventKey)}
 	seedDeterministic(s)
 	return s
 }

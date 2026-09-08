@@ -80,7 +80,7 @@ func Open(path string) (*Store, error) {
 		db:    db,
 		now:   time.Now,
 		newID: newUUID,
-		hub:   eventhub.New(eventKey),
+		hub:   eventhub.New(rpc.EventKey),
 	}
 	// Migrate before bootstrapping: bootstrapRoot writes through the current
 	// column set, and a v1 file's grids still carries the NOT NULL object_id
