@@ -11,26 +11,19 @@ import (
 )
 
 // Client wraps the Connect-generated gridwell client: one method per verb,
-// streams assembled, and the typed sugar over the unified CreateTile and
-// SetTile. It accepts and returns the generated proto values. Tests, the
-// WASM client, and any future Go callers should use this rather than the raw
-// connect client.
+// streams assembled. Go callers use this rather than the raw connect client.
 type Client struct {
 	cl gridwellv1connect.GridwellClient
 }
 
-// NewClient wires a Client to a Connect-RPC server reachable via the
-// given HTTP client + base URL. baseURL is the protocol + host, with
-// no path (e.g. "http://localhost:3137"); Connect appends the
-// per-method procedure path.
+// NewClient wires a Client to a Connect-RPC server. baseURL is protocol and
+// host with no path.
 func NewClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) *Client {
 	return &Client{cl: gridwellv1connect.NewGridwellClient(httpClient, baseURL, opts...)}
 }
 
-// NewDefaultClient is the WASM-friendly constructor: it uses
-// http.DefaultClient (under WASM this rides on fetch via syscall/js)
-// and Connect's JSON-over-proto codec so dev-tools network panels
-// still show readable bodies.
+// NewDefaultClient uses http.DefaultClient, which rides fetch under WASM, and
+// the JSON-over-proto codec so dev-tools network panels show readable bodies.
 func NewDefaultClient(baseURL string) *Client {
 	return NewClient(http.DefaultClient, baseURL, connect.WithProtoJSON())
 }
@@ -55,10 +48,8 @@ func (c *Client) Handshake(ctx context.Context) (*pb.HandshakeResponse, error) {
 	return c.HandshakeNS(ctx, "")
 }
 
-// HandshakeNS is the routed plugin list. ns "" answers for the node this
-// client talks to (the boot handshake); a namespace chain answers for the
-// node it names, with ids re-qualified per hop and node-local fields
-// zeroed. The + menu inside a remote pane is built from this.
+// HandshakeNS is the routed plugin list. ns "" answers for the node this client
+// talks to; a chain answers for the node it names, re-qualified per hop.
 func (c *Client) HandshakeNS(ctx context.Context, ns string) (*pb.HandshakeResponse, error) {
 	r, err := c.cl.Handshake(ctx, connect.NewRequest(&pb.HandshakeRequest{Namespace: ns}))
 	if err != nil {
@@ -67,7 +58,6 @@ func (c *Client) HandshakeNS(ctx context.Context, ns string) (*pb.HandshakeRespo
 	return r.Msg, nil
 }
 
-// GetTile reads a single tile's metadata by id.
 func (c *Client) GetTile(ctx context.Context, tileID string) (*pb.Tile, error) {
 	r, err := c.cl.GetTile(ctx, connect.NewRequest(&pb.GetTileRequest{TileId: tileID}))
 	if err != nil {
@@ -76,10 +66,7 @@ func (c *Client) GetTile(ctx context.Context, tileID string) (*pb.Tile, error) {
 	return r.Msg.Tile, nil
 }
 
-// tileResp unwraps a TileResponse from any of the Tile-returning RPCs (or
-// the transport error). The mirror of the server's tileResp: every Create /
-// Move / Clone / Resize / Set / Update method ends the same way, so the
-// unwrap lives in one place rather than being hand-copied per method.
+// tileResp mirrors the server's tileResp.
 func tileResp(r *connect.Response[pb.TileResponse], err error) (*pb.Tile, error) {
 	if err != nil {
 		return nil, err
@@ -87,18 +74,14 @@ func tileResp(r *connect.Response[pb.TileResponse], err error) (*pb.Tile, error)
 	return r.Msg.Tile, nil
 }
 
-// CreateTile is the one create: the wire carries a single CreateTile whose
-// tile.kind selects the meaningful fields, and the serving namespace fans it
-// back out.
+// CreateTile is the one create: tile.kind selects the meaningful fields.
 func (c *Client) CreateTile(ctx context.Context, req *pb.CreateTileRequest) (*pb.Tile, error) {
 	return tileResp(c.cl.CreateTile(ctx, connect.NewRequest(req)))
 }
 
-// CreateWithContent makes the metadata row and, when data is set, follows
-// with the one content write. Creation is metadata-only on the wire; this
-// composes the two so a text tile or a pane tile can be made in one call. A
-// failure between the two leaves an empty tile — visible and deletable,
-// never silent.
+// CreateWithContent follows the create with a content write, because creation
+// is metadata-only on the wire. A failure between the two leaves an empty tile:
+// visible and deletable, never silent.
 func (c *Client) CreateWithContent(ctx context.Context, req *pb.CreateTileRequest, data []byte) (*pb.Tile, error) {
 	t, err := c.CreateTile(ctx, req)
 	if err != nil || len(data) == 0 {
@@ -107,17 +90,14 @@ func (c *Client) CreateWithContent(ctx context.Context, req *pb.CreateTileReques
 	return c.WriteContent(ctx, t.Id, t.Version, data)
 }
 
-// SetTile is the one capture and framing writeback: tile.kind selects the
-// operation, and the scalar arms (rename, content_zoom, url_frozen) carry
+// SetTile is the one capture and framing writeback; each scalar arm carries
 // exactly one operation per call.
 func (c *Client) SetTile(ctx context.Context, req *pb.SetTileRequest) (*pb.Tile, error) {
 	return tileResp(c.cl.SetTile(ctx, connect.NewRequest(req)))
 }
 
-// SetFraming persists a grid's framing: the one framing write. The server
-// routes on whichever target the request names, the doorway tile or the
-// root grid. Returns the updated doorway tile, or nil for a root, which has
-// no tile row.
+// SetFraming is the one framing write, routed on whichever target the request
+// names. Returns nil for a root grid, which has no tile row.
 func (c *Client) SetFraming(ctx context.Context, req *pb.SetFramingRequest) (*pb.Tile, error) {
 	resp, err := c.cl.SetFraming(ctx, connect.NewRequest(req))
 	if err != nil {
@@ -126,11 +106,9 @@ func (c *Client) SetFraming(ctx context.Context, req *pb.SetFramingRequest) (*pb
 	return resp.Msg.GetTile(), nil
 }
 
-// ReadContent fetches a tile's content bytes: the one content read. The
-// stream is assembled here, and chunk 1 carries the media type and the row
-// version the bytes belong to — the save basis, paired with the bytes at
-// the owner. A leaf link resolves to its target at the serving node, so
-// callers never reimplement link semantics.
+// ReadContent's first chunk carries the media type and the row version the
+// bytes belong to, which is the save basis. A leaf link resolves at the
+// serving node.
 func (c *Client) ReadContent(ctx context.Context, tileID string) (data []byte, mediaType string, version int64, err error) {
 	stream, err := c.cl.ReadContent(ctx, connect.NewRequest(&pb.ReadContentRequest{TileId: tileID}))
 	if err != nil {
@@ -156,10 +134,8 @@ func (c *Client) ReadContent(ctx context.Context, tileID string) (data []byte, m
 // and commits once, at clean close.
 const writeContentChunkBytes = 256 * 1024
 
-// WriteContent writes a tile's content bytes: the one content write. It is
-// version-claimed and commits at close, so a failure anywhere leaves the
-// old value intact. data is the complete new value; chunking is a transport
-// detail.
+// WriteContent is version-claimed and commits at close, so a failure anywhere
+// leaves the old value intact. data is the complete new value.
 func (c *Client) WriteContent(ctx context.Context, tileID string, version int64, data []byte) (*pb.Tile, error) {
 	stream := c.cl.WriteContent(ctx)
 	end := min(writeContentChunkBytes, len(data))
@@ -187,8 +163,8 @@ func (c *Client) WriteContent(ctx context.Context, tileID string, version int64,
 	return resp.Msg.Tile, nil
 }
 
-// PlaceTile is the single placement writeback: one verb owns
-// (grid, x, y, w, h), whether that is a move, a resize, or both.
+// PlaceTile is the single placement writeback: one verb owns (grid, x, y, w,
+// h), move or resize or both.
 func (c *Client) PlaceTile(ctx context.Context, req *pb.PlaceTileRequest) (*pb.Tile, error) {
 	return tileResp(c.cl.PlaceTile(ctx, connect.NewRequest(req)))
 }
@@ -206,27 +182,22 @@ func (c *Client) ShellSessionAlive(ctx context.Context, tileID string) (bool, er
 	return r.Msg.Alive, nil
 }
 
-// RenameTile is the versioned rename, over the SetTile rename arm. It is a
-// real user edit with an optimistic-concurrency claim, and the server
-// latches alt_user so automatic captures defer.
+// RenameTile is a real user edit, so the server latches alt_user and automatic
+// captures defer.
 func (c *Client) RenameTile(ctx context.Context, tileID string, version int64, alt string) (*pb.Tile, error) {
 	return tileResp(c.cl.SetTile(ctx, connect.NewRequest(&pb.SetTileRequest{
 		TileId: tileID, Version: version, Rename: alt,
 	})))
 }
 
-// SetContentZoom persists a tile's content scale — the text or terminal
-// font size, or the page zoom. It is framing: no claim, and it never bumps
-// version. Rides the SetTile content_zoom arm.
+// SetContentZoom is framing: no claim, and it never bumps version.
 func (c *Client) SetContentZoom(ctx context.Context, tileID string, zoom float64) (*pb.Tile, error) {
 	return tileResp(c.cl.SetTile(ctx, connect.NewRequest(&pb.SetTileRequest{
 		TileId: tileID, ContentZoom: &zoom,
 	})))
 }
 
-// SetURLFrozen persists the user's standing freeze on a url tile. It is
-// framing: no claim, and it never bumps version. Rides the SetTile
-// url_frozen arm.
+// SetURLFrozen is framing: no claim, and it never bumps version.
 func (c *Client) SetURLFrozen(ctx context.Context, tileID string, frozen bool) (*pb.Tile, error) {
 	return tileResp(c.cl.SetTile(ctx, connect.NewRequest(&pb.SetTileRequest{
 		TileId: tileID, UrlFrozen: &frozen,
@@ -238,15 +209,12 @@ func (c *Client) DeleteTile(ctx context.Context, req *pb.DeleteTileRequest) erro
 	return err
 }
 
-// EventStream is the typed wrapper around Connect's server-stream
-// client. Recv blocks until the next event arrives, or returns false
-// if the stream ended cleanly. Always call Close.
+// EventStream wraps Connect's server-stream client. Always call Close.
 type EventStream struct {
 	s *connect.ServerStreamForClient[pb.Event]
 }
 
-// Subscribe opens the event stream. The returned context-tied stream
-// closes when ctx is cancelled.
+// Subscribe opens the event stream, which closes when ctx is cancelled.
 func (c *Client) Subscribe(ctx context.Context) (*EventStream, error) {
 	s, err := c.cl.Subscribe(ctx, connect.NewRequest(&pb.SubscribeRequest{}))
 	if err != nil {
@@ -255,8 +223,7 @@ func (c *Client) Subscribe(ctx context.Context) (*EventStream, error) {
 	return &EventStream{s: s}, nil
 }
 
-// Recv returns the next event, or (nil, false, nil) on clean end-of-stream.
-// Errors during read surface as (nil, false, err).
+// Recv returns (nil, false, nil) at clean end-of-stream.
 func (s *EventStream) Recv() (*pb.Event, bool, error) {
 	if !s.s.Receive() {
 		return nil, false, s.s.Err()
@@ -264,5 +231,4 @@ func (s *EventStream) Recv() (*pb.Event, bool, error) {
 	return s.s.Msg(), true, nil
 }
 
-// Close releases the underlying HTTP connection.
 func (s *EventStream) Close() error { return s.s.Close() }
