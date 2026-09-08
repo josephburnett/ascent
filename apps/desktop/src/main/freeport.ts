@@ -1,9 +1,7 @@
 import * as net from 'node:net';
 
-// freePort asks the OS for an ephemeral port, then releases it. Another
-// process can take the port before the sidecar binds it. This is a
-// single-user local app on loopback, and a bind failure surfaces through
-// startSidecar.
+// freePort asks the OS for an ephemeral port, then releases it. Another process
+// can take it first, and that bind failure surfaces through startSidecar.
 export function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
