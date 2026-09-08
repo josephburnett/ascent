@@ -56,7 +56,7 @@ func (a *App) plusButtonCenter() (float64, float64) {
 func (a *App) pointInPlus(x, y float64) bool {
 	cx, cy := a.plusButtonCenter()
 	dx, dy := x-cx, y-cy
-	rr := palette.Default().PlusRadius
+	rr := plusButtonRadius
 	return dx*dx+dy*dy <= rr*rr
 }
 
@@ -76,7 +76,7 @@ func (a *App) drawPlusButton(p *pane.Pane) {
 	}
 	a.cctx.Set("fillStyle", bg)
 	a.cctx.Call("beginPath")
-	a.cctx.Call("arc", cx, cy, float64(plusButtonRadius), 0, 2*math.Pi)
+	a.cctx.Call("arc", cx, cy, plusButtonRadius, 0, 2*math.Pi)
 	a.cctx.Call("fill")
 	a.cctx.Set("strokeStyle", "#dff4f4")
 	if a.menu.OpenOn(p.ID) {
@@ -88,7 +88,7 @@ func (a *App) drawPlusButton(p *pane.Pane) {
 	a.cctx.Set("lineWidth", 1.0)
 
 	if deleting {
-		side := float64(plusButtonRadius) * 1.4
+		side := plusButtonRadius * 1.4
 		drawTrashcanIcon(a.cctx, cx-side/2, cy-side/2, side, side)
 		return
 	}

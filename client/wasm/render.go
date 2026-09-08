@@ -194,8 +194,9 @@ func drawTraceOutline(c js.Value, x, y, w, h, alpha float64) {
 	c.Call("restore")
 }
 
-// plusButtonRadius mirrors palette.Default().PlusRadius as a typed literal.
-const plusButtonRadius = 14
+// plusButtonRadius is read once from its owner, palette.Default(), so the
+// canvas draws and the DOM toggle cannot disagree about the button's size.
+var plusButtonRadius = palette.Default().PlusRadius
 
 // templateKind identifies one built-in tile primitive. Order matters:
 // primitiveKinds sets the popover layout and the hit-test indices.
@@ -646,7 +647,7 @@ func (a *App) drawCircleButtonChrome(cx, cy float64) {
 	_, button := a.barTheme()
 	a.cctx.Set("fillStyle", button)
 	a.cctx.Call("beginPath")
-	a.cctx.Call("arc", cx, cy, float64(plusButtonRadius), 0, 2*math.Pi)
+	a.cctx.Call("arc", cx, cy, plusButtonRadius, 0, 2*math.Pi)
 	a.cctx.Call("fill")
 	a.cctx.Set("strokeStyle", "#dff4f4")
 	a.cctx.Set("lineWidth", 1.0)

@@ -283,8 +283,8 @@ func (a *App) ensureFileToggle() {
 	style.Set("position", "absolute")
 	style.Set("display", "none")
 	style.Set("boxSizing", "border-box")
-	style.Set("width", strconv.Itoa(2*plusButtonRadius)+"px")
-	style.Set("height", strconv.Itoa(2*plusButtonRadius)+"px")
+	style.Set("width", pxf(2*plusButtonRadius))
+	style.Set("height", pxf(2*plusButtonRadius))
 	style.Set("borderRadius", "50%")
 	// background and color come from barTheme on every refreshFileToggle, so
 	// there is no second, frozen copy of the theme fact.
