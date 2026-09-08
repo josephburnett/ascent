@@ -2,9 +2,8 @@ package namespace
 
 // Follow supplies the moment an in-process subscription counts as established.
 // Subscribe is one call that runs for the stream's whole life, so there is no
-// open stream to observe. Deciding it here keeps the node's fan-in
-// (internal/server) and the transport's (internal/connection) agreed on what
-// established means.
+// open stream to observe, and deciding it here keeps internal/server and
+// internal/connection agreed on what established means.
 
 import (
 	"context"
@@ -13,16 +12,15 @@ import (
 	pb "github.com/josephburnett/gridwell/api/gen/gridwell/v1"
 )
 
-// SettleTime is how long a Subscribe must run without failing before it counts
-// as established, absent a first event. Short enough that a user waiting on a
-// recovery notice sees it promptly, long enough that a namespace failing
-// immediately never reports itself healthy between retries.
+// SettleTime is how long a Subscribe must run without failing to count as
+// established, absent a first event: short enough that a recovery notice
+// arrives promptly, long enough that a namespace failing immediately never
+// reports itself healthy between retries.
 const SettleTime = 250 * time.Millisecond
 
-// Follow runs ns.Subscribe, relaying events to onEvent, and calls established
-// exactly once: on the first event, or after SettleTime of a call that has
-// not failed, whichever comes first. A stream that fails before either never
-// calls it. Returns when the subscription ends.
+// Follow calls established exactly once: on the first event, or after
+// SettleTime of a call that has not failed. A stream that fails before either
+// never calls it.
 func Follow(ctx context.Context, ns Namespace, req *pb.SubscribeRequest, onEvent func(*pb.Event) error, established func()) error {
 	firstEvent := make(chan struct{}, 1)
 	done := make(chan error, 1)
