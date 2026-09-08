@@ -14,7 +14,6 @@ import (
 	"testing"
 )
 
-// TestClassifyError pins the sentinel-to-class mapping both transports read.
 func TestClassifyError(t *testing.T) {
 	cases := []struct {
 		err  error
@@ -32,7 +31,6 @@ func TestClassifyError(t *testing.T) {
 		{ErrSchemaDivergence, ClassInternal},
 		{nil, ClassInternal},
 		{errors.New("anything else"), ClassInternal},
-		// A wrapped sentinel classifies like the sentinel itself.
 		{fmt.Errorf("moving tile 7: %w", ErrOverlap), ClassConflict},
 		{fmt.Errorf("resolving path: %w", ErrNotFound), ClassNotFound},
 	}
@@ -43,8 +41,7 @@ func TestClassifyError(t *testing.T) {
 	}
 }
 
-// TestEverySentinelIsClassified pins that every exported Err* sentinel
-// appears in sentinelClasses. An unclassified one degrades to Internal.
+// An unclassified sentinel degrades to Internal.
 func TestEverySentinelIsClassified(t *testing.T) {
 	declared := declaredSentinelNames(t)
 	if len(declared) == 0 {
@@ -64,8 +61,8 @@ func TestEverySentinelIsClassified(t *testing.T) {
 	}
 }
 
-// declaredSentinelNames returns each top-level ErrX declaration's name and
-// message, read from the package source.
+// declaredSentinelNames reads the package source, so a new sentinel is
+// caught without being listed here too.
 func declaredSentinelNames(t *testing.T) map[string]string {
 	t.Helper()
 	out := map[string]string{}
@@ -118,8 +115,7 @@ func declaredSentinelNames(t *testing.T) map[string]string {
 	return out
 }
 
-// TestIsTransportPinsWireCodes pins the three transport codes. A coded
-// answer is never a transport failure.
+// A coded answer is never a transport failure.
 func TestIsTransportPinsWireCodes(t *testing.T) {
 	for _, c := range []codes.Code{codes.Unavailable, codes.DeadlineExceeded, codes.Canceled} {
 		if !IsTransport(status.Error(c, "x")) {

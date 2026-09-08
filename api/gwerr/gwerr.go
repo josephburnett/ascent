@@ -1,8 +1,7 @@
 // Package gwerr is the contract's error vocabulary: the sentinel errors a
 // store or plugin answers with, and the sentinel-to-class table every
-// transport maps from. It lives in the api module because the host maps the
-// classes and a third-party plugin answers with the same sentinels, and
-// neither may import the other.
+// transport maps from. It is in the api module so the host and a plugin
+// share the sentinels without importing each other.
 package gwerr
 
 import (
@@ -11,8 +10,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// Sentinel errors. A caller uses errors.Is and a plugin may return one
-// wrapped, so every transport classifies it the same way.
+// Sentinel errors. A plugin may return one wrapped, so callers use
+// errors.Is.
 var (
 	ErrNotFound        = errors.New("not found")
 	ErrOverlap         = errors.New("footprint overlaps an existing tile")
@@ -24,14 +23,13 @@ var (
 	ErrNotShellTile    = errors.New("not a shell tile")
 	ErrNotPaneTile     = errors.New("not a pane tile")
 	ErrVersionConflict = errors.New("version mismatch")
-	// ErrSchemaDivergence is a deployment problem, so its class is
-	// ClassInternal.
+	// ErrSchemaDivergence is a deployment problem, hence ClassInternal.
 	ErrSchemaDivergence = errors.New("database schema diverges from this binary's schema")
 )
 
 // ErrorClass is the transport-neutral category of a sentinel. Every
-// transport maps from the one table below, so a new sentinel cannot degrade
-// to Internal on one transport and not another.
+// transport maps from sentinelClasses, so one cannot degrade to Internal
+// where another does not.
 type ErrorClass int
 
 const (
@@ -42,8 +40,7 @@ const (
 )
 
 // sentinelClasses is total over the exported Err* sentinels, the
-// ClassInternal ones included. A sentinel missing here fails
-// TestEverySentinelIsClassified.
+// ClassInternal ones included; TestEverySentinelIsClassified pins that.
 var sentinelClasses = []struct {
 	Err   error
 	Class ErrorClass
@@ -61,9 +58,8 @@ var sentinelClasses = []struct {
 	{ErrSchemaDivergence, ClassInternal},
 }
 
-// ClassifyError returns the class of a sentinel, wrapped or not. nil and
-// any other error are ClassInternal, so a caller that must tell nil apart
-// checks it first.
+// ClassifyError returns the class of a sentinel, wrapped or not. nil and any
+// other error are ClassInternal, so a caller tells nil apart first.
 func ClassifyError(err error) ErrorClass {
 	for _, s := range sentinelClasses {
 		if errors.Is(err, s.Err) {
@@ -74,10 +70,9 @@ func ClassifyError(err error) ErrorClass {
 }
 
 // IsTransport reports that the far side of a gRPC hop never spoke. Every
-// server-side hop that degrades to a remembered answer keys on this and
-// nothing else, so a coded answer such as NotFound passes through verbatim
-// and is never served from a cache. clientsync.Of is the Connect-wire twin
-// on the client, pinned to the same three codes.
+// server-side hop that degrades to a remembered answer keys on this alone,
+// so a coded answer such as NotFound is never served from a cache.
+// clientsync.Of is the client twin on the same three codes.
 func IsTransport(err error) bool {
 	switch status.Code(err) {
 	case codes.Unavailable, codes.DeadlineExceeded, codes.Canceled:
