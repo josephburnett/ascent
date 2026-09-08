@@ -1,14 +1,10 @@
 package sourcecache
 
-// Bounded ServeContent caching: the /content/ door — fs photos, plugin pages
-// — degrades stale-but-viewable like every other read instead of staying
-// online-only. These bodies are the one genuinely unbounded class this cache
-// touches, so they get their own valves: a per-entry cap, above which a body
-// streams through live and uncached, and a per-source cap with oldest-first
-// eviction, an emergency valve rather than an LRU strategy, since the
-// small-data model makes tripping it exceptional. Only status-200 answers are
-// remembered: an error page is a verdict, and verdicts are never served
-// stale.
+// Bounded ServeContent caching, so the /content/ door degrades
+// stale-but-viewable like every other read. These bodies are the one genuinely
+// unbounded class this cache touches, so they get their own valves: a
+// per-entry cap and a per-source cap with oldest-first eviction, emergency
+// valves rather than an LRU strategy.
 
 import (
 	"context"
@@ -20,18 +16,17 @@ import (
 
 // Valves (vars for tests).
 var (
-	// serveContentEntryCap bounds one cached door body. Larger bodies
-	// stream through live and stay online-only.
+	// serveContentEntryCap bounds one cached door body. Larger bodies stream
+	// through live and stay online-only.
 	serveContentEntryCap = 32 << 20
 	// serveContentMountCap bounds the servecontent table per source; the
 	// oldest entries evict first when a store would exceed it.
 	serveContentMountCap = int64(512 << 20)
 )
 
-// ServeContent tees the door body the way ReadContent tees a tile's: it
-// remembers the complete body at a clean end, and a transport failure before
-// any chunk falls back to the remembered entry. Only status-200 answers are
-// remembered; an error page is a verdict and is never served stale.
+// ServeContent tees the door body the way ReadContent tees a tile's. Only
+// status-200 answers are remembered: an error page is a verdict, and verdicts
+// are never served stale.
 func (c *Layer) ServeContent(ctx context.Context, in *pb.ServeContentRequest, send func(*pb.ServeContentChunk) error) error {
 	var status int64
 	var mediaType string
