@@ -2,27 +2,17 @@
 
 // The connection door's deadline rule at the real-binary seam: a Subscribe
 // held through a real ssh tunnel for longer than any deadline
-// ConnectionDoorServer declares, then proven live by a remote edit's event. A
-// declared timeout is a fact, and its test is a wait bound to its value.
-// internal/server/door_deadline_test.go holds a stream through the door
-// shape; this holds one through the production binaries and a real sshd,
-// where a Go change to the ssh or h2 path lands first.
+// ConnectionDoorServer declares, then proven live by a remote edit's event.
+// internal/server/door_deadline_test.go holds a stream through the door shape;
+// this holds one through the production binaries and a real sshd, where a Go
+// change to the ssh or h2 path lands first.
 //
-// The symptom is a flap rather than the client's own stream ending, because
-// the local node's fanInRemote retries every five seconds. When the door cuts
-// the fan-in's tunneled stream at a deadline, fanInRemote publishes an
-// EventPluginHealth with Healthy false for the connection, so the hold
-// watches for that and for a remote edit's TileChanged on the same stream.
-//
-// The hold is derived from server.ConnectionDoorServer, the shape the
-// production node puts in front of the door, so it tracks a re-added deadline
-// on its own. The door declares none today, so the hold is the one-second
-// floor.
-//
-// test/connections may import internal/server: its go.mod replaces the root
-// module with ../.., it already reaches internal through
-// internal/connection/dial/dialtest, and test/boundary does not police this
-// leaf module. So the deadlines are read off the shape instead of hard-coded.
+// The symptom is a flap rather than the client's stream ending, because the
+// local node's fanInRemote retries every five seconds and publishes an
+// EventPluginHealth with Healthy false when the door cuts its tunneled stream.
+// The hold is derived from server.ConnectionDoorServer, so it tracks a
+// re-added deadline on its own; the door declares none today, so it is the
+// one-second floor.
 
 package connections_test
 
