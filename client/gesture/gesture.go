@@ -1,6 +1,6 @@
 // Package gesture classifies a right-button-down into a Kind and resolves the
-// gestures whose release is geometry. The App resolves the facts and hands
-// them in as an Input; a gesture whose release is a drop stays in the App.
+// gestures whose release is geometry. A gesture whose release is a drop stays
+// in the App.
 package gesture
 
 import "github.com/josephburnett/gridwell/client/pane"
@@ -13,15 +13,14 @@ const (
 	// Ascend is armed on the corner circle. Release inside it ascends,
 	// dragging out cancels.
 	Ascend
-	// TileCenter is the copy and link handle, a tile's inner third. A drag
-	// past the threshold clones, or links when ctrl was held at the press.
+	// TileCenter is the copy and link handle, a tile's inner third; ctrl at
+	// the press makes it a link.
 	TileCenter
 	// TileResize rubber-bands the footprint from the opposite corner.
 	TileResize
 	Swap
-	// Split splits along the armed side at the release ratio. The right
-	// button splits from a border wherever it starts; resizing and closing
-	// under pressure belong to the left button.
+	// Split splits along the armed side. The right button splits from a
+	// border wherever it starts; resizing and closing belong to the left.
 	Split
 )
 
@@ -56,9 +55,8 @@ func Classify(in Input) Kind {
 	return None
 }
 
-// SplitOutcome resolves a Split release into its final ratio, the side already
-// resolved by SplitSideFromDrag. The cursor must land where both children keep
-// pane.MinPanePx; ok is false for a silent cancel.
+// SplitOutcome needs the cursor where both children keep pane.MinPanePx; ok is
+// false for a silent cancel.
 func SplitOutcome(side pane.Side, paneRect pane.Rect, curX, curY float64) (ratio float64, ok bool) {
 	pos, ok := pane.SplitClampedPosition(side, paneRect, curX, curY)
 	if !ok {
@@ -68,9 +66,8 @@ func SplitOutcome(side pane.Side, paneRect pane.Rect, curX, curY float64) (ratio
 }
 
 // SplitSideFromDrag reads the drag rather than the grab, so either side of a
-// border behaves identically and the direction can flip mid-gesture. The new
-// pane opens between the grabbed border and the cursor. active is false until
-// the drag clears SplitArmPx, so jitter commits nothing.
+// border behaves identically and the direction can flip mid-gesture. active is
+// false until the drag clears SplitArmPx, so jitter commits nothing.
 func SplitSideFromDrag(axis pane.Direction, startX, startY, curX, curY float64) (side pane.Side, active bool) {
 	d := curX - startX
 	if axis == pane.Horizontal {
@@ -94,10 +91,9 @@ func SplitSideFromDrag(axis pane.Direction, startX, startY, curX, curY float64) 
 // SplitArmPx keeps a bare right-click on a border from splitting.
 const SplitArmPx = 8.0
 
-// ResizeAffordance says whether a left drag would arm a pane-boundary resize,
-// and which CSS cursor advertises it. The hover path and the arm path both
-// call it, so the cursor appears exactly where a drag would resize. g is
-// pane.GrabDividers' answer; a grab on both axes is a corner.
+// ResizeAffordance is called by the hover path and the arm path both, so the
+// cursor appears exactly where a drag would resize. g is pane.GrabDividers'
+// answer; a grab on both axes is a corner.
 func ResizeAffordance(g pane.DividerGrab) (arm bool, cursor string) {
 	if !g.Any() {
 		return false, ""
